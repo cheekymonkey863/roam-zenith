@@ -7,6 +7,7 @@ import { TripTimeline } from "@/components/TripTimeline";
 import { TrackingControl } from "@/components/TrackingControl";
 import { PhotoImport } from "@/components/PhotoImport";
 import { WorldMap } from "@/components/WorldMap";
+import { AddEventForm } from "@/components/AddEventForm";
 import type { Tables } from "@/integrations/supabase/types";
 
 type Trip = Tables<"trips">;
