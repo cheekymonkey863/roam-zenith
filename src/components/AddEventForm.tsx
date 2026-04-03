@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Plus, Plane, Hotel, Utensils, Camera, MapPin, ArrowRightLeft, Flag, CircleDot, X } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
+import { Plus, Plane, Hotel, Utensils, Camera, MapPin, ArrowRightLeft, Flag, CircleDot, X, Search, Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
@@ -16,6 +16,19 @@ const EVENT_TYPES = [
   { value: "other", label: "Other", icon: CircleDot },
 ] as const;
 
+interface PlaceResult {
+  display_name: string;
+  lat: string;
+  lon: string;
+  address?: {
+    country?: string;
+    city?: string;
+    town?: string;
+    village?: string;
+    state?: string;
+  };
+}
+
 interface AddEventFormProps {
   tripId: string;
   onEventAdded: () => void;
@@ -26,52 +39,88 @@ export function AddEventForm({ tripId, onEventAdded }: AddEventFormProps) {
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [eventType, setEventType] = useState("activity");
-  const [locationName, setLocationName] = useState("");
-  const [country, setCountry] = useState("");
-  const [latitude, setLatitude] = useState("");
-  const [longitude, setLongitude] = useState("");
+  const [activityName, setActivityName] = useState("");
+  const [locationQuery, setLocationQuery] = useState("");
+  const [locationResults, setLocationResults] = useState<PlaceResult[]>([]);
+  const [selectedPlace, setSelectedPlace] = useState<PlaceResult | null>(null);
+  const [searching, setSearching] = useState(false);
+  const [showResults, setShowResults] = useState(false);
   const [date, setDate] = useState(new Date().toISOString().slice(0, 16));
   const [notes, setNotes] = useState("");
+  const searchTimeout = useRef<ReturnType<typeof setTimeout>>();
+  const resultsRef = useRef<HTMLDivElement>(null);
 
   const resetForm = () => {
     setEventType("activity");
-    setLocationName("");
-    setCountry("");
-    setLatitude("");
-    setLongitude("");
+    setActivityName("");
+    setLocationQuery("");
+    setLocationResults([]);
+    setSelectedPlace(null);
     setDate(new Date().toISOString().slice(0, 16));
     setNotes("");
   };
 
-  const useCurrentLocation = () => {
-    if (!navigator.geolocation) {
-      toast.error("Geolocation not supported");
+  // Debounced location search via Nominatim
+  useEffect(() => {
+    if (locationQuery.length < 3) {
+      setLocationResults([]);
+      setShowResults(false);
       return;
     }
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        setLatitude(pos.coords.latitude.toFixed(6));
-        setLongitude(pos.coords.longitude.toFixed(6));
-        toast.success("Location captured");
-      },
-      () => toast.error("Could not get location")
-    );
+
+    if (searchTimeout.current) clearTimeout(searchTimeout.current);
+    searchTimeout.current = setTimeout(async () => {
+      setSearching(true);
+      try {
+        const res = await fetch(
+          `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=5&q=${encodeURIComponent(locationQuery)}`,
+          { headers: { "Accept-Language": "en" } }
+        );
+        const data: PlaceResult[] = await res.json();
+        setLocationResults(data);
+        setShowResults(true);
+      } catch {
+        setLocationResults([]);
+      }
+      setSearching(false);
+    }, 400);
+
+    return () => { if (searchTimeout.current) clearTimeout(searchTimeout.current); };
+  }, [locationQuery]);
+
+  // Close results on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (resultsRef.current && !resultsRef.current.contains(e.target as Node)) {
+        setShowResults(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  const selectPlace = (place: PlaceResult) => {
+    setSelectedPlace(place);
+    setLocationQuery(place.display_name);
+    setShowResults(false);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
 
-    const lat = parseFloat(latitude);
-    const lng = parseFloat(longitude);
-    if (isNaN(lat) || isNaN(lng)) {
-      toast.error("Please enter valid coordinates or use current location");
+    if (!selectedPlace) {
+      toast.error("Please search and select a location");
       return;
     }
-    if (!locationName.trim()) {
-      toast.error("Please enter a location name");
+    if (!activityName.trim()) {
+      toast.error("Please enter an activity name");
       return;
     }
+
+    const lat = parseFloat(selectedPlace.lat);
+    const lng = parseFloat(selectedPlace.lon);
+    const country = selectedPlace.address?.country || null;
 
     setSaving(true);
     const { error } = await supabase.from("trip_steps").insert({
@@ -79,8 +128,8 @@ export function AddEventForm({ tripId, onEventAdded }: AddEventFormProps) {
       user_id: user.id,
       latitude: lat,
       longitude: lng,
-      location_name: locationName.trim(),
-      country: country.trim() || null,
+      location_name: activityName.trim(),
+      country,
       notes: notes.trim() || null,
       recorded_at: new Date(date).toISOString(),
       source: "manual",
@@ -89,10 +138,10 @@ export function AddEventForm({ tripId, onEventAdded }: AddEventFormProps) {
 
     setSaving(false);
     if (error) {
-      toast.error("Failed to add event");
+      toast.error("Failed to add activity");
       console.error(error);
     } else {
-      toast.success("Event added!");
+      toast.success("Activity added!");
       resetForm();
       setOpen(false);
       onEventAdded();
@@ -106,7 +155,7 @@ export function AddEventForm({ tripId, onEventAdded }: AddEventFormProps) {
         className="flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
       >
         <Plus className="h-4 w-4" />
-        Add Event
+        Add Activity
       </button>
     );
   }
@@ -116,7 +165,7 @@ export function AddEventForm({ tripId, onEventAdded }: AddEventFormProps) {
   return (
     <div className="rounded-2xl bg-card p-6 shadow-card">
       <div className="mb-5 flex items-center justify-between">
-        <h3 className="font-display text-lg font-semibold text-foreground">Add Trip Event</h3>
+        <h3 className="font-display text-lg font-semibold text-foreground">Add Activity</h3>
         <button onClick={() => { setOpen(false); resetForm(); }} className="rounded-lg p-1.5 text-muted-foreground hover:bg-secondary transition-colors">
           <X className="h-4 w-4" />
         </button>
@@ -125,7 +174,7 @@ export function AddEventForm({ tripId, onEventAdded }: AddEventFormProps) {
       <form onSubmit={handleSubmit} className="flex flex-col gap-5">
         {/* Event type selector */}
         <div className="flex flex-col gap-2">
-          <label className="text-sm font-medium text-foreground">Event Type</label>
+          <label className="text-sm font-medium text-foreground">Activity Type</label>
           <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
             {EVENT_TYPES.map((type) => {
               const Icon = type.icon;
@@ -149,64 +198,57 @@ export function AddEventForm({ tripId, onEventAdded }: AddEventFormProps) {
           </div>
         </div>
 
-        {/* Location name */}
+        {/* Activity name */}
         <div className="flex flex-col gap-1.5">
-          <label className="text-sm font-medium text-foreground">Location Name *</label>
+          <label className="text-sm font-medium text-foreground">Activity Name *</label>
           <input
             type="text"
-            value={locationName}
-            onChange={(e) => setLocationName(e.target.value)}
-            placeholder="e.g. Eiffel Tower, Barcelona Airport"
+            value={activityName}
+            onChange={(e) => setActivityName(e.target.value)}
+            placeholder="e.g. Visit Eiffel Tower, Lunch at tapas bar"
             className="rounded-xl border border-border bg-background px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
             required
           />
         </div>
 
-        {/* Country */}
-        <div className="flex flex-col gap-1.5">
-          <label className="text-sm font-medium text-foreground">Country</label>
-          <input
-            type="text"
-            value={country}
-            onChange={(e) => setCountry(e.target.value)}
-            placeholder="e.g. France"
-            className="rounded-xl border border-border bg-background px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-          />
-        </div>
+        {/* Location search */}
+        <div className="relative flex flex-col gap-1.5" ref={resultsRef}>
+          <label className="text-sm font-medium text-foreground">Location *</label>
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <input
+              type="text"
+              value={locationQuery}
+              onChange={(e) => { setLocationQuery(e.target.value); setSelectedPlace(null); }}
+              onFocus={() => locationResults.length > 0 && setShowResults(true)}
+              placeholder="Search for a place..."
+              className="w-full rounded-xl border border-border bg-background py-2.5 pl-10 pr-10 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+            />
+            {searching && <Loader2 className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-muted-foreground" />}
+            {selectedPlace && !searching && <MapPin className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-accent" />}
+          </div>
 
-        {/* Coordinates */}
-        <div className="flex flex-col gap-2">
-          <div className="flex items-center justify-between">
-            <label className="text-sm font-medium text-foreground">Coordinates *</label>
-            <button
-              type="button"
-              onClick={useCurrentLocation}
-              className="flex items-center gap-1.5 rounded-lg bg-accent/15 px-3 py-1 text-xs font-medium text-accent-foreground hover:bg-accent/25 transition-colors"
-            >
-              <MapPin className="h-3 w-3" />
-              Use current location
-            </button>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <input
-              type="number"
-              step="any"
-              value={latitude}
-              onChange={(e) => setLatitude(e.target.value)}
-              placeholder="Latitude"
-              className="rounded-xl border border-border bg-background px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-              required
-            />
-            <input
-              type="number"
-              step="any"
-              value={longitude}
-              onChange={(e) => setLongitude(e.target.value)}
-              placeholder="Longitude"
-              className="rounded-xl border border-border bg-background px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-              required
-            />
-          </div>
+          {showResults && locationResults.length > 0 && (
+            <div className="absolute left-0 right-0 top-full z-50 mt-1 max-h-56 overflow-y-auto rounded-xl border border-border bg-card shadow-lg">
+              {locationResults.map((place, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => selectPlace(place)}
+                  className="flex w-full items-start gap-2.5 px-4 py-3 text-left text-sm hover:bg-secondary/60 transition-colors border-b border-border last:border-b-0"
+                >
+                  <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                  <span className="text-foreground leading-snug">{place.display_name}</span>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {showResults && locationResults.length === 0 && locationQuery.length >= 3 && !searching && (
+            <div className="absolute left-0 right-0 top-full z-50 mt-1 rounded-xl border border-border bg-card p-4 text-center text-sm text-muted-foreground shadow-lg">
+              No places found
+            </div>
+          )}
         </div>
 
         {/* Date & time */}
@@ -226,7 +268,7 @@ export function AddEventForm({ tripId, onEventAdded }: AddEventFormProps) {
           <textarea
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
-            placeholder="Any details about this stop..."
+            placeholder="Any details about this activity..."
             rows={3}
             className="resize-none rounded-xl border border-border bg-background px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
           />
@@ -235,13 +277,13 @@ export function AddEventForm({ tripId, onEventAdded }: AddEventFormProps) {
         {/* Submit */}
         <button
           type="submit"
-          disabled={saving}
+          disabled={saving || !selectedPlace}
           className="flex items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors"
         >
           {saving ? "Saving..." : (
             <>
               {selectedType && <selectedType.icon className="h-4 w-4" />}
-              Add {selectedType?.label || "Event"}
+              Add {selectedType?.label || "Activity"}
             </>
           )}
         </button>
