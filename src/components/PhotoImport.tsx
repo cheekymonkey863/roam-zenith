@@ -33,6 +33,7 @@ interface HybridLocationResult {
 interface PhotoImportProps {
   tripId: string;
   onImportComplete: () => void;
+  onCancel?: () => void;
 }
 
 function getRepresentativeCoordinates(photos: PhotoExifData[]) {
@@ -69,7 +70,7 @@ async function inferLocationsWithVision(
   return new Map(results.filter((r: any): r is HybridLocationResult => typeof r?.key === "string").map((r: HybridLocationResult) => [r.key, r]));
 }
 
-export function PhotoImport({ tripId, onImportComplete }: PhotoImportProps) {
+export function PhotoImport({ tripId, onImportComplete, onCancel }: PhotoImportProps) {
   const { user } = useAuth();
   const [dragOver, setDragOver] = useState(false);
   const [processing, setProcessing] = useState(false);
@@ -194,22 +195,30 @@ export function PhotoImport({ tripId, onImportComplete }: PhotoImportProps) {
   return (
     <div className="flex flex-col gap-6">
       {suggestions.length === 0 && !processing && (
-        <label
-          onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
-          onDragLeave={() => setDragOver(false)}
-          onDrop={handleDrop}
-          className={`flex cursor-pointer flex-col items-center gap-4 rounded-2xl border-2 border-dashed p-12 transition-colors ${
-            dragOver ? "border-primary bg-primary/5" : "border-border hover:border-primary/50"
-          }`}
-        >
-          <Upload className="h-10 w-10 text-muted-foreground" />
-          <div className="text-center">
-            <p className="font-medium text-foreground">Drop photos & videos here</p>
-            <p className="text-sm text-muted-foreground">We'll combine GPS metadata and visual recognition to suggest trip stops</p>
-          </div>
-          <input type="file" multiple accept="image/*,video/*" onChange={handleFileSelect} className="hidden" />
-          <span className="rounded-xl bg-primary px-4 py-2 text-sm font-medium text-primary-foreground">Browse Files</span>
-        </label>
+        <div className="flex flex-col gap-3">
+          <label
+            onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={handleDrop}
+            className={`flex cursor-pointer flex-col items-center gap-4 rounded-2xl border-2 border-dashed p-12 transition-colors ${
+              dragOver ? "border-primary bg-primary/5" : "border-border hover:border-primary/50"
+            }`}
+          >
+            <Upload className="h-10 w-10 text-muted-foreground" />
+            <div className="text-center">
+              <p className="font-medium text-foreground">Drop photos & videos here</p>
+              <p className="text-sm text-muted-foreground">We'll combine GPS metadata and visual recognition to suggest trip stops</p>
+            </div>
+            <input type="file" multiple accept="image/*,video/*" onChange={handleFileSelect} className="hidden" />
+            <span className="rounded-xl bg-primary px-4 py-2 text-sm font-medium text-primary-foreground">Browse Files</span>
+          </label>
+          {onCancel && (
+            <button onClick={onCancel} className="self-end flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
+              <X className="h-4 w-4" />
+              Cancel
+            </button>
+          )}
+        </div>
       )}
 
       {processing && (
@@ -225,11 +234,19 @@ export function PhotoImport({ tripId, onImportComplete }: PhotoImportProps) {
             <h3 className="font-display text-lg font-semibold text-foreground">
               Detected Locations ({suggestions.filter((s) => s.selected).length}/{suggestions.length})
             </h3>
-            <button onClick={importSelected} disabled={importing || suggestions.filter((s) => s.selected).length === 0}
-              className="flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50">
-              {importing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-              {importing ? "Importing..." : "Import Selected"}
-            </button>
+            <div className="flex items-center gap-2">
+              {onCancel && (
+                <button onClick={onCancel} className="flex items-center gap-1.5 rounded-xl bg-secondary px-4 py-2 text-sm font-medium text-secondary-foreground hover:bg-secondary/80 transition-colors">
+                  <X className="h-4 w-4" />
+                  Cancel
+                </button>
+              )}
+              <button onClick={importSelected} disabled={importing || suggestions.filter((s) => s.selected).length === 0}
+                className="flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50">
+                {importing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                {importing ? "Importing..." : "Import Selected"}
+              </button>
+            </div>
           </div>
 
           {noGpsPhotos.length > 0 && (

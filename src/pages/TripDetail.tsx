@@ -99,15 +99,23 @@ const TripDetail = () => {
         <AddEventForm tripId={trip.id} onEventAdded={fetchData} />
         <button
           onClick={() => setShowPhotoImport(!showPhotoImport)}
-          className="flex items-center gap-2 rounded-xl bg-secondary px-4 py-2.5 text-sm font-medium text-secondary-foreground hover:bg-secondary/80 transition-colors"
+          className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition-colors ${
+            showPhotoImport
+              ? "bg-primary text-primary-foreground hover:bg-primary/90"
+              : "bg-secondary text-secondary-foreground hover:bg-secondary/80"
+          }`}
         >
           <ImageIcon className="h-4 w-4" />
-          {showPhotoImport ? "Hide Photo Import" : "Import Photos"}
+          Import Photos
         </button>
       </div>
 
       {showPhotoImport && (
-        <PhotoImport tripId={trip.id} onImportComplete={fetchData} />
+        <PhotoImport
+          tripId={trip.id}
+          onImportComplete={fetchData}
+          onCancel={() => setShowPhotoImport(false)}
+        />
       )}
 
       {steps.length > 0 && (
