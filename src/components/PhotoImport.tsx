@@ -1,4 +1,5 @@
 import { useState, useCallback } from "react";
+import type { Json } from "@/integrations/supabase/types";
 import { Upload, MapPin, Calendar, Check, Image as ImageIcon, Loader2 } from "lucide-react";
 import { extractExifFromFiles, groupPhotosByLocation, reverseGeocode, type PhotoExifData } from "@/lib/exif";
 import { supabase } from "@/integrations/supabase/client";
