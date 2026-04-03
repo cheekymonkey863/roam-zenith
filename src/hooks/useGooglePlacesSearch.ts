@@ -3,12 +3,6 @@ import { useState, useEffect, useRef, useCallback } from "react";
 
 const GOOGLE_MAPS_API_KEY = "AIzaSyCHXGKSMbpkEN5Amr0VRDF44cLcOg_JUD8";
 
-declare global {
-  interface Window {
-    google: any;
-  }
-}
-
 export interface PlaceResult {
   display_name: string;
   lat: string;
@@ -46,7 +40,7 @@ function ensureGoogleMapsLoaded(): Promise<void> {
     };
     script.onerror = () => {
       scriptLoading = false;
-      resolve(); // fail silently, search will just not work
+      resolve();
     };
     document.head.appendChild(script);
   });
@@ -60,18 +54,18 @@ export function useGooglePlacesSearch() {
   const [selectedPlace, setSelectedPlace] = useState<PlaceResult | null>(null);
   const resultsRef = useRef<HTMLDivElement>(null);
   const searchTimeout = useRef<ReturnType<typeof setTimeout>>();
-  const serviceRef = useRef<google.maps.places.AutocompleteService | null>(null);
-  const placesServiceRef = useRef<google.maps.places.PlacesService | null>(null);
+  const serviceRef = useRef<any>(null);
+  const placesServiceRef = useRef<any>(null);
   const dummyDiv = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     ensureGoogleMapsLoaded().then(() => {
       if (window.google?.maps?.places) {
-        serviceRef.current = new google.maps.places.AutocompleteService();
+        serviceRef.current = new window.google.maps.places.AutocompleteService();
         if (!dummyDiv.current) {
           dummyDiv.current = document.createElement("div");
         }
-        placesServiceRef.current = new google.maps.places.PlacesService(dummyDiv.current);
+        placesServiceRef.current = new window.google.maps.places.PlacesService(dummyDiv.current);
       }
     });
   }, []);
@@ -85,7 +79,7 @@ export function useGooglePlacesSearch() {
     if (searchTimeout.current) clearTimeout(searchTimeout.current);
     searchTimeout.current = setTimeout(async () => {
       if (!serviceRef.current || !placesServiceRef.current) {
-        // Fallback to Nominatim if Google not loaded
+        // Fallback to Nominatim
         setSearching(true);
         try {
           const res = await fetch(
@@ -110,8 +104,8 @@ export function useGooglePlacesSearch() {
       setSearching(true);
       serviceRef.current.getPlacePredictions(
         { input: query },
-        (predictions, status) => {
-          if (status !== google.maps.places.PlacesServiceStatus.OK || !predictions) {
+        (predictions: any[] | null, status: string) => {
+          if (status !== "OK" || !predictions) {
             setResults([]);
             setSearching(false);
             setShowResults(true);
@@ -120,16 +114,18 @@ export function useGooglePlacesSearch() {
 
           let completed = 0;
           const mapped: PlaceResult[] = [];
+          const toProcess = predictions.slice(0, 5);
 
-          predictions.slice(0, 5).forEach((prediction, i) => {
+          toProcess.forEach((prediction: any, i: number) => {
             placesServiceRef.current!.getDetails(
               { placeId: prediction.place_id, fields: ["geometry", "address_components", "formatted_address"] },
-              (place, detailStatus) => {
-                if (detailStatus === google.maps.places.PlacesServiceStatus.OK && place?.geometry?.location) {
-                  const countryComp = place.address_components?.find((c) => c.types.includes("country"));
-                  const cityComp = place.address_components?.find((c) => c.types.includes("locality"));
-                  const townComp = place.address_components?.find((c) => c.types.includes("administrative_area_level_2"));
-                  const stateComp = place.address_components?.find((c) => c.types.includes("administrative_area_level_1"));
+              (place: any, detailStatus: string) => {
+                if (detailStatus === "OK" && place?.geometry?.location) {
+                  const comps: any[] = place.address_components || [];
+                  const countryComp = comps.find((c: any) => c.types.includes("country"));
+                  const cityComp = comps.find((c: any) => c.types.includes("locality"));
+                  const townComp = comps.find((c: any) => c.types.includes("administrative_area_level_2"));
+                  const stateComp = comps.find((c: any) => c.types.includes("administrative_area_level_1"));
 
                   mapped[i] = {
                     display_name: place.formatted_address || prediction.description,
@@ -144,7 +140,7 @@ export function useGooglePlacesSearch() {
                   };
                 }
                 completed++;
-                if (completed === Math.min(predictions.length, 5)) {
+                if (completed === toProcess.length) {
                   setResults(mapped.filter(Boolean));
                   setShowResults(true);
                   setSearching(false);
