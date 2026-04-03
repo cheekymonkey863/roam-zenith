@@ -7,6 +7,9 @@ export interface PhotoExifData {
   takenAt: Date | null;
   thumbnail?: string;
   analysisImage?: string;
+  cameraMake?: string;
+  cameraModel?: string;
+  exifRaw?: Record<string, unknown>;
 }
 
 export async function extractExifFromFile(file: File): Promise<PhotoExifData> {
