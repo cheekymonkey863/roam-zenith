@@ -303,7 +303,7 @@ export function PhotoImport({ tripId, onImportComplete }: PhotoImportProps) {
             latitude: photo.latitude,
             longitude: photo.longitude,
             taken_at: photo.takenAt?.toISOString(),
-            exif_data: photo.exifRaw ?? null,
+            exif_data: (photo.exifRaw as Json) ?? null,
           });
         }
       }
