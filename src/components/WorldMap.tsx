@@ -30,8 +30,8 @@ export function WorldMap({ steps, singleTrip = false }: { steps: TripStep[]; sin
 
     const map = new mapboxgl.Map({
       container: containerRef.current,
-      // Polar Steps uses a clean light style — mapbox light-v11 is the closest match
-      style: "mapbox://styles/mapbox/light-v11",
+      // Colorful map with terrain detail — similar to Polar Steps
+      style: "mapbox://styles/mapbox/outdoors-v12",
       center: [0, 20],
       zoom: 1.8,
       projection: "mercator",
