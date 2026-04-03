@@ -33,6 +33,7 @@ interface HybridLocationResult {
 interface PhotoImportProps {
   tripId: string;
   onImportComplete: () => void;
+  onCancel?: () => void;
 }
 
 function getRepresentativeCoordinates(photos: PhotoExifData[]) {
