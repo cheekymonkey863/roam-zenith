@@ -133,6 +133,7 @@ export type Database = {
         Row: {
           country: string | null
           created_at: string
+          description: string | null
           event_type: string
           id: string
           is_confirmed: boolean
@@ -148,6 +149,7 @@ export type Database = {
         Insert: {
           country?: string | null
           created_at?: string
+          description?: string | null
           event_type?: string
           id?: string
           is_confirmed?: boolean
@@ -163,6 +165,7 @@ export type Database = {
         Update: {
           country?: string | null
           created_at?: string
+          description?: string | null
           event_type?: string
           id?: string
           is_confirmed?: boolean
