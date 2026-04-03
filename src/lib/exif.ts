@@ -6,9 +6,15 @@ export interface PhotoExifData {
   longitude: number | null;
   takenAt: Date | null;
   thumbnail?: string;
+  analysisImage?: string;
 }
 
 export async function extractExifFromFile(file: File): Promise<PhotoExifData> {
+  const [thumbnail, analysisImage] = await Promise.all([
+    createImagePreview(file, 120, 0.6),
+    createImagePreview(file, 768, 0.76),
+  ]);
+
   try {
     const exif = await exifr.parse(file, {
       gps: true,
@@ -20,10 +26,14 @@ export async function extractExifFromFile(file: File): Promise<PhotoExifData> {
     let takenAt: Date | null = null;
 
     if (exif) {
-      if (exif.latitude !== undefined && exif.longitude !== undefined) {
+      if (typeof exif.latitude === "number" && typeof exif.longitude === "number") {
         latitude = exif.latitude;
         longitude = exif.longitude;
+      } else if (typeof exif.GPSLatitude === "number" && typeof exif.GPSLongitude === "number") {
+        latitude = exif.GPSLatitude;
+        longitude = exif.GPSLongitude;
       }
+
       if (exif.DateTimeOriginal) {
         takenAt = new Date(exif.DateTimeOriginal);
       } else if (exif.CreateDate) {
@@ -31,37 +41,42 @@ export async function extractExifFromFile(file: File): Promise<PhotoExifData> {
       }
     }
 
-    // Create thumbnail
-    const thumbnail = await createThumbnail(file);
-
-    return { file, latitude, longitude, takenAt, thumbnail };
+    return { file, latitude, longitude, takenAt, thumbnail, analysisImage };
   } catch {
-    const thumbnail = await createThumbnail(file);
-    return { file, latitude: null, longitude: null, takenAt: null, thumbnail };
+    return { file, latitude: null, longitude: null, takenAt: null, thumbnail, analysisImage };
   }
 }
 
-function createThumbnail(file: File): Promise<string> {
+function createImagePreview(file: File, size: number, quality: number): Promise<string> {
   return new Promise((resolve) => {
     if (!file.type.startsWith("image/")) {
       resolve("");
       return;
     }
+
     const reader = new FileReader();
+    reader.onerror = () => resolve("");
     reader.onload = () => {
       const img = new Image();
+      img.onerror = () => resolve("");
       img.onload = () => {
+        const scale = Math.min(size / img.width, size / img.height, 1);
         const canvas = document.createElement("canvas");
-        const size = 120;
-        const scale = Math.min(size / img.width, size / img.height);
-        canvas.width = img.width * scale;
-        canvas.height = img.height * scale;
-        const ctx = canvas.getContext("2d")!;
+        canvas.width = Math.max(1, Math.round(img.width * scale));
+        canvas.height = Math.max(1, Math.round(img.height * scale));
+
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          resolve("");
+          return;
+        }
+
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-        resolve(canvas.toDataURL("image/jpeg", 0.6));
+        resolve(canvas.toDataURL("image/jpeg", quality));
       };
       img.src = reader.result as string;
     };
+
     reader.readAsDataURL(file);
   });
 }
@@ -70,24 +85,25 @@ export async function extractExifFromFiles(files: File[]): Promise<PhotoExifData
   return Promise.all(files.map(extractExifFromFile));
 }
 
-// Group photos by proximity (within ~50km)
-export function groupPhotosByLocation(photos: PhotoExifData[]): Map<string, PhotoExifData[]> {
-  const geoPhotos = photos.filter((p) => p.latitude !== null && p.longitude !== null);
+export function groupPhotosByLocation(photos: PhotoExifData[], radiusMeters = 10000): Map<string, PhotoExifData[]> {
+  const geoPhotos = photos.filter((photo) => photo.latitude !== null && photo.longitude !== null);
   const groups = new Map<string, PhotoExifData[]>();
 
   for (const photo of geoPhotos) {
     let foundGroup = false;
-    for (const [key, group] of groups) {
+
+    for (const [, group] of groups) {
       const ref = group[0];
       const dist = haversine(ref.latitude!, ref.longitude!, photo.latitude!, photo.longitude!);
-      if (dist < 50000) {
+      if (dist < radiusMeters) {
         group.push(photo);
         foundGroup = true;
         break;
       }
     }
+
     if (!foundGroup) {
-      const key = `${photo.latitude!.toFixed(2)},${photo.longitude!.toFixed(2)}`;
+      const key = `${photo.latitude!.toFixed(3)},${photo.longitude!.toFixed(3)}`;
       groups.set(key, [photo]);
     }
   }
@@ -105,12 +121,10 @@ function haversine(lat1: number, lng1: number, lat2: number, lng2: number): numb
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-// Reverse geocode using free Nominatim API
 export async function reverseGeocode(lat: number, lng: number): Promise<{ name: string; country: string }> {
   try {
     const res = await fetch(
-      `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=10&addressdetails=1`,
-      { headers: { "User-Agent": "Wanderlust-App" } }
+      `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=10&addressdetails=1`
     );
     const data = await res.json();
     const addr = data.address || {};
