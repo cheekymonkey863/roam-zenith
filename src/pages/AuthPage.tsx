@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { lovable } from "@/integrations/lovable/index";
 import { Globe, Mail, Lock, User } from "lucide-react";
 
 export default function AuthPage() {
