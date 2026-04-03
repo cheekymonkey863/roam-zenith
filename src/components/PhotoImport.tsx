@@ -22,6 +22,8 @@ interface HybridLocationResult {
   key: string;
   locationName: string;
   country: string;
+  latitude: number | null;
+  longitude: number | null;
   confidence: SuggestedStep["confidence"];
   summary: string;
 }
