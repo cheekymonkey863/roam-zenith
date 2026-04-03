@@ -1,6 +1,6 @@
 import { useParams, Link } from "react-router-dom";
 import { useEffect, useState } from "react";
-import { ArrowLeft, Calendar, MapPin, Route, Navigation, Image as ImageIcon, Plus } from "lucide-react";
+import { ArrowLeft, Calendar, MapPin, Route, Navigation, Image as ImageIcon } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { TripTimeline } from "@/components/TripTimeline";
@@ -8,6 +8,7 @@ import { TrackingControl } from "@/components/TrackingControl";
 import { PhotoImport } from "@/components/PhotoImport";
 import { WorldMap } from "@/components/WorldMap";
 import { AddEventForm } from "@/components/AddEventForm";
+import { EditTripDialog } from "@/components/EditTripDialog";
 import type { Tables } from "@/integrations/supabase/types";
 
 type Trip = Tables<"trips">;
@@ -65,9 +66,12 @@ const TripDetail = () => {
         <div className="rounded-2xl bg-gradient-to-br from-primary/15 via-accent/10 to-secondary p-8">
           <div className="flex items-start justify-between">
             <h1 className="font-display text-3xl font-semibold text-foreground md:text-4xl">{trip.title}</h1>
-            {trip.is_active && (
-              <span className="rounded-full bg-accent px-3 py-1 text-xs font-medium text-accent-foreground">Active</span>
-            )}
+            <div className="flex items-center gap-2">
+              {trip.is_active && (
+                <span className="rounded-full bg-accent px-3 py-1 text-xs font-medium text-accent-foreground">Active</span>
+              )}
+              <EditTripDialog trip={trip} onUpdated={fetchData} />
+            </div>
           </div>
 
           <div className="mt-4 flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
@@ -89,10 +93,8 @@ const TripDetail = () => {
         </div>
       </div>
 
-      {/* Tracking control */}
       {trip.is_active && <TrackingControl activeTripId={trip.id} />}
 
-      {/* Action buttons */}
       <div className="flex flex-wrap gap-3">
         <AddEventForm tripId={trip.id} onEventAdded={fetchData} />
         <button
@@ -104,12 +106,10 @@ const TripDetail = () => {
         </button>
       </div>
 
-      {/* Photo import */}
       {showPhotoImport && (
         <PhotoImport tripId={trip.id} onImportComplete={fetchData} />
       )}
 
-      {/* Map */}
       {steps.length > 0 && (
         <div className="flex flex-col gap-4">
           <h2 className="font-display text-2xl font-semibold text-foreground">Route Map</h2>
@@ -117,7 +117,6 @@ const TripDetail = () => {
         </div>
       )}
 
-      {/* Timeline */}
       <div className="flex flex-col gap-4">
         <h2 className="font-display text-2xl font-semibold text-foreground">Journey Timeline</h2>
         {steps.length === 0 ? (
@@ -126,7 +125,7 @@ const TripDetail = () => {
             <p className="text-muted-foreground">No steps yet. Start tracking or import photos to auto-detect locations.</p>
           </div>
         ) : (
-          <TripTimeline steps={steps} />
+          <TripTimeline steps={steps} onUpdated={fetchData} />
         )}
       </div>
     </div>
