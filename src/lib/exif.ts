@@ -24,6 +24,7 @@ export async function extractExifFromFile(file: File): Promise<PhotoExifData> {
       pick: [
         "DateTimeOriginal", "CreateDate",
         "GPSLatitude", "GPSLongitude",
+        "GPSLatitudeRef", "GPSLongitudeRef",
         "Make", "Model", "LensModel",
         "ExposureTime", "FNumber", "ISO",
         "ImageWidth", "ImageHeight",
@@ -39,12 +40,20 @@ export async function extractExifFromFile(file: File): Promise<PhotoExifData> {
     let exifRaw: Record<string, unknown> | undefined;
 
     if (exif) {
+      // exifr with gps:true provides signed lat/lng on the root
       if (typeof exif.latitude === "number" && typeof exif.longitude === "number") {
         latitude = exif.latitude;
         longitude = exif.longitude;
       } else if (typeof exif.GPSLatitude === "number" && typeof exif.GPSLongitude === "number") {
+        // Raw GPS values are unsigned — apply ref to get sign
         latitude = exif.GPSLatitude;
         longitude = exif.GPSLongitude;
+        if (exif.GPSLatitudeRef === "S" || exif.GPSLatitudeRef === "s") {
+          latitude = -Math.abs(latitude);
+        }
+        if (exif.GPSLongitudeRef === "W" || exif.GPSLongitudeRef === "w") {
+          longitude = -Math.abs(longitude);
+        }
       }
 
       if (exif.DateTimeOriginal) {
