@@ -234,11 +234,19 @@ export function PhotoImport({ tripId, onImportComplete, onCancel }: PhotoImportP
             <h3 className="font-display text-lg font-semibold text-foreground">
               Detected Locations ({suggestions.filter((s) => s.selected).length}/{suggestions.length})
             </h3>
-            <button onClick={importSelected} disabled={importing || suggestions.filter((s) => s.selected).length === 0}
-              className="flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50">
-              {importing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-              {importing ? "Importing..." : "Import Selected"}
-            </button>
+            <div className="flex items-center gap-2">
+              {onCancel && (
+                <button onClick={onCancel} className="flex items-center gap-1.5 rounded-xl bg-secondary px-4 py-2 text-sm font-medium text-secondary-foreground hover:bg-secondary/80 transition-colors">
+                  <X className="h-4 w-4" />
+                  Cancel
+                </button>
+              )}
+              <button onClick={importSelected} disabled={importing || suggestions.filter((s) => s.selected).length === 0}
+                className="flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50">
+                {importing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                {importing ? "Importing..." : "Import Selected"}
+              </button>
+            </div>
           </div>
 
           {noGpsPhotos.length > 0 && (
