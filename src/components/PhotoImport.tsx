@@ -22,6 +22,8 @@ interface HybridLocationResult {
   key: string;
   locationName: string;
   country: string;
+  latitude: number | null;
+  longitude: number | null;
   confidence: SuggestedStep["confidence"];
   summary: string;
 }
@@ -49,33 +51,49 @@ function getRepresentativeCoordinates(photos: PhotoExifData[]) {
   };
 }
 
-async function inferLocationsWithVision(steps: SuggestedStep[]): Promise<Map<string, HybridLocationResult>> {
-  const groups = steps
-    .map((step) => ({
-      key: step.key,
-      exifLocation: {
-        latitude: step.latitude,
-        longitude: step.longitude,
-        name: step.locationName,
-        country: step.country,
-      },
-      photos: step.photos
-        .filter((photo) => Boolean(photo.analysisImage))
-        .slice(0, 3)
-        .map((photo) => ({
-          fileName: photo.file.name,
-          takenAt: photo.takenAt?.toISOString() ?? null,
-          analysisImage: photo.analysisImage ?? null,
-        })),
-    }))
-    .filter((group) => group.photos.length > 0);
+async function inferLocationsWithVision(
+  steps: SuggestedStep[],
+  noGpsPhotos: PhotoExifData[] = []
+): Promise<Map<string, HybridLocationResult>> {
+  const gpsGroups = steps.map((step) => ({
+    key: step.key,
+    exifLocation: {
+      latitude: step.latitude,
+      longitude: step.longitude,
+      name: step.locationName,
+      country: step.country,
+    },
+    photos: step.photos
+      .filter((photo) => Boolean(photo.analysisImage))
+      .slice(0, 3)
+      .map((photo) => ({
+        fileName: photo.file.name,
+        takenAt: photo.takenAt?.toISOString() ?? null,
+        analysisImage: photo.analysisImage ?? null,
+      })),
+  })).filter((group) => group.photos.length > 0);
 
-  if (groups.length === 0) {
+  // Create groups for no-GPS photos (each photo is its own group for visual inference)
+  const noGpsGroups = noGpsPhotos
+    .filter((photo) => Boolean(photo.analysisImage))
+    .map((photo, index) => ({
+      key: `no-gps-${index}`,
+      exifLocation: null,
+      photos: [{
+        fileName: photo.file.name,
+        takenAt: photo.takenAt?.toISOString() ?? null,
+        analysisImage: photo.analysisImage ?? null,
+      }],
+    }));
+
+  const allGroups = [...gpsGroups, ...noGpsGroups];
+
+  if (allGroups.length === 0) {
     return new Map();
   }
 
   const { data, error } = await supabase.functions.invoke("photo-location-inference", {
-    body: { groups },
+    body: { groups: allGroups },
   });
 
   if (error) {
@@ -120,11 +138,6 @@ export function PhotoImport({ tripId, onImportComplete }: PhotoImportProps) {
       const noGps = exifResults.filter((photo) => photo.latitude === null || photo.longitude === null);
       setNoGpsPhotos(noGps);
 
-      if (groups.size === 0) {
-        toast.warning("No GPS data was found, so these files couldn't be placed on the map automatically.");
-        return;
-      }
-
       const baseSteps = await Promise.all(
         Array.from(groups.entries()).map(async ([key, photos]) => {
           const { latitude, longitude } = getRepresentativeCoordinates(photos);
@@ -150,37 +163,63 @@ export function PhotoImport({ tripId, onImportComplete }: PhotoImportProps) {
       let inferredLocations = new Map<string, HybridLocationResult>();
 
       try {
-        inferredLocations = await inferLocationsWithVision(baseSteps);
+        inferredLocations = await inferLocationsWithVision(baseSteps, noGps);
       } catch (visionError) {
         console.error("Visual location inference error:", visionError);
         toast.warning("Visual recognition was unavailable, so locations are based on EXIF metadata only.");
       }
 
-      const steps = baseSteps
-        .map((step) => {
-          const inferred = inferredLocations.get(step.key);
+      // Merge inference results into GPS-based steps
+      const steps = baseSteps.map((step) => {
+        const inferred = inferredLocations.get(step.key);
+        if (!inferred) return step;
+        return {
+          ...step,
+          locationName: inferred.locationName || step.locationName,
+          country: inferred.country || step.country,
+          confidence: inferred.confidence,
+          summary: inferred.summary || step.summary,
+        };
+      });
 
-          if (!inferred) {
-            return step;
-          }
-
-          return {
-            ...step,
-            locationName: inferred.locationName || step.locationName,
-            country: inferred.country || step.country,
+      // Create steps from no-GPS photos that got visual inference results
+      for (const [index, photo] of noGps.entries()) {
+        const key = `no-gps-${index}`;
+        const inferred = inferredLocations.get(key);
+        if (inferred && inferred.latitude !== null && inferred.longitude !== null) {
+          steps.push({
+            key,
+            locationName: inferred.locationName || "Visually Identified Location",
+            country: inferred.country || "Unknown",
+            latitude: inferred.latitude,
+            longitude: inferred.longitude,
+            photos: [photo],
+            earliestDate: photo.takenAt,
+            selected: true,
             confidence: inferred.confidence,
-            summary: inferred.summary || step.summary,
-          };
-        })
-        .sort((a, b) => {
-          const aTime = a.earliestDate?.getTime() ?? Number.MAX_SAFE_INTEGER;
-          const bTime = b.earliestDate?.getTime() ?? Number.MAX_SAFE_INTEGER;
-          return aTime - bTime;
-        });
+            summary: inferred.summary || "Location identified from photo contents.",
+          });
+        }
+      }
+
+      steps.sort((a, b) => {
+        const aTime = a.earliestDate?.getTime() ?? Number.MAX_SAFE_INTEGER;
+        const bTime = b.earliestDate?.getTime() ?? Number.MAX_SAFE_INTEGER;
+        return aTime - bTime;
+      });
 
       setSuggestions(steps);
+
+      const visuallyInferredCount = noGps.filter((_, i) => {
+        const r = inferredLocations.get(`no-gps-${i}`);
+        return r && r.latitude !== null;
+      }).length;
+
+      const remainingNoGps = noGps.length - visuallyInferredCount;
+
       toast.success(
-        `Found ${steps.length} location(s)${inferredLocations.size > 0 ? " using EXIF + visual recognition" : " from GPS metadata"}`
+        `Found ${steps.length} location(s) using EXIF + visual recognition` +
+        (remainingNoGps > 0 ? `. ${remainingNoGps} photo(s) couldn't be located.` : "")
       );
     } catch (err) {
       console.error("Photo processing error:", err);

@@ -13,7 +13,7 @@ interface LocationGroupInput {
     longitude: number;
     name: string;
     country: string;
-  };
+  } | null;
   photos: Array<{
     fileName: string;
     takenAt: string | null;
@@ -25,6 +25,8 @@ interface InferenceResult {
   key: string;
   locationName: string;
   country: string;
+  latitude: number | null;
+  longitude: number | null;
   confidence: Confidence;
   summary: string;
 }
@@ -32,10 +34,7 @@ interface InferenceResult {
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: {
-      ...corsHeaders,
-      "Content-Type": "application/json",
-    },
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
 }
 
@@ -51,7 +50,6 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
-
   if (req.method !== "POST") {
     return jsonResponse({ error: "Method not allowed" }, 405);
   }
@@ -64,16 +62,22 @@ Deno.serve(async (req) => {
 
     const payload = await req.json();
     const groups: LocationGroupInput[] = Array.isArray(payload?.groups)
-      ? payload.groups
-          .slice(0, 12)
-          .map((group: any) => ({
+      ? payload.groups.slice(0, 12).map((group: any) => {
+          const hasExif =
+            group?.exifLocation &&
+            Number.isFinite(Number(group.exifLocation.latitude)) &&
+            Number.isFinite(Number(group.exifLocation.longitude));
+
+          return {
             key: normalizeString(group?.key, crypto.randomUUID()),
-            exifLocation: {
-              latitude: Number(group?.exifLocation?.latitude ?? 0),
-              longitude: Number(group?.exifLocation?.longitude ?? 0),
-              name: normalizeString(group?.exifLocation?.name, "Unknown"),
-              country: normalizeString(group?.exifLocation?.country, "Unknown"),
-            },
+            exifLocation: hasExif
+              ? {
+                  latitude: Number(group.exifLocation.latitude),
+                  longitude: Number(group.exifLocation.longitude),
+                  name: normalizeString(group.exifLocation.name, "Unknown"),
+                  country: normalizeString(group.exifLocation.country, "Unknown"),
+                }
+              : null,
             photos: Array.isArray(group?.photos)
               ? group.photos
                   .slice(0, 3)
@@ -87,57 +91,76 @@ Deno.serve(async (req) => {
                   }))
                   .filter((photo: { analysisImage: string | null }) => Boolean(photo.analysisImage))
               : [],
-          }))
-          .filter(
-            (group) =>
-              Number.isFinite(group.exifLocation.latitude) &&
-              Number.isFinite(group.exifLocation.longitude) &&
-              group.photos.length > 0
-          )
+          };
+        }).filter((group: LocationGroupInput) => group.photos.length > 0)
       : [];
 
     if (groups.length === 0) {
       return jsonResponse({ results: [] });
     }
 
+    // Separate groups with and without EXIF
+    const exifGroups = groups.filter((g) => g.exifLocation !== null);
+    const noExifGroups = groups.filter((g) => g.exifLocation === null);
+
     const fallbackResults = new Map<string, InferenceResult>(
-      groups.map((group) => [
+      exifGroups.map((group) => [
         group.key,
         {
           key: group.key,
-          locationName: group.exifLocation.name,
-          country: group.exifLocation.country,
-          confidence: "low",
+          locationName: group.exifLocation!.name,
+          country: group.exifLocation!.country,
+          latitude: group.exifLocation!.latitude,
+          longitude: group.exifLocation!.longitude,
+          confidence: "low" as Confidence,
           summary: "Used GPS metadata because the visuals were inconclusive.",
         },
       ])
     );
 
+    // Also add placeholder entries for no-EXIF groups
+    for (const group of noExifGroups) {
+      fallbackResults.set(group.key, {
+        key: group.key,
+        locationName: "Unknown Location",
+        country: "Unknown",
+        latitude: null,
+        longitude: null,
+        confidence: "low",
+        summary: "No GPS data; visual recognition was inconclusive.",
+      });
+    }
+
+    // Build the prompt content
     const content: Array<Record<string, unknown>> = [
       {
         type: "text",
-        text:
-          "Infer a user-facing travel stop name for each EXIF-based photo group. Treat the EXIF coordinates and reverse-geocoded country as the geographic source of truth. Use the photo contents only to refine the human-readable location/activity name when the visuals clearly support it. Do not invent a different country or a precise venue if the images are ambiguous. Keep the summary under 18 words.",
+        text: `You analyze travel photos. For each group:
+- If EXIF coordinates are provided, they are the geographic source of truth. Use visuals to refine the human-readable location/activity name.
+- If NO EXIF coordinates are provided, use the photo contents to identify the location. Return your best estimate of the city/landmark/country and approximate latitude/longitude.
+Keep summaries under 18 words.`,
       },
     ];
 
     for (const group of groups) {
-      content.push({
-        type: "text",
-        text: `Group ${group.key}\nEXIF center: ${group.exifLocation.latitude}, ${group.exifLocation.longitude}\nReverse geocode: ${group.exifLocation.name}, ${group.exifLocation.country}\nGoal: return the best display name for this stop, like a landmark, park, neighborhood, or activity, but stay consistent with the EXIF geography.`,
-      });
+      if (group.exifLocation) {
+        content.push({
+          type: "text",
+          text: `Group ${group.key} (HAS GPS)\nEXIF center: ${group.exifLocation.latitude}, ${group.exifLocation.longitude}\nReverse geocode: ${group.exifLocation.name}, ${group.exifLocation.country}\nGoal: return the best display name for this stop.`,
+        });
+      } else {
+        content.push({
+          type: "text",
+          text: `Group ${group.key} (NO GPS)\nNo EXIF coordinates available. Identify the location from the photo contents. Return the city/landmark name, country, and your best estimate of latitude and longitude.`,
+        });
+      }
 
       for (const photo of group.photos) {
         content.push({
           type: "text",
           text: `Photo file: ${photo.fileName}${photo.takenAt ? `, taken at ${photo.takenAt}` : ""}`,
         });
-        content.push({
-          type: "image_url",
-          image_url: {
-            url: photo.analysisImage,
-          },
-        });
+        content.push({ type: "image_url", image_url: { url: photo.analysisImage } });
       }
     }
 
@@ -152,20 +175,16 @@ Deno.serve(async (req) => {
         messages: [
           {
             role: "system",
-            content:
-              "You analyze travel photos. EXIF coordinates are the primary source of truth. Use visuals to refine the stop name, not to override the geography.",
+            content: "You analyze travel photos to identify locations. For groups with GPS data, refine the name. For groups without GPS, identify the location from visual clues like landmarks, signs, architecture, and landscape.",
           },
-          {
-            role: "user",
-            content,
-          },
+          { role: "user", content },
         ],
         tools: [
           {
             type: "function",
             function: {
               name: "return_group_locations",
-              description: "Return the best display name for each EXIF-based photo group.",
+              description: "Return the best display name and coordinates for each photo group.",
               parameters: {
                 type: "object",
                 properties: {
@@ -177,10 +196,9 @@ Deno.serve(async (req) => {
                         key: { type: "string" },
                         locationName: { type: "string" },
                         country: { type: "string" },
-                        confidence: {
-                          type: "string",
-                          enum: ["high", "medium", "low"],
-                        },
+                        latitude: { type: "number", description: "Latitude. Required for no-GPS groups, optional for GPS groups." },
+                        longitude: { type: "number", description: "Longitude. Required for no-GPS groups, optional for GPS groups." },
+                        confidence: { type: "string", enum: ["high", "medium", "low"] },
                         summary: { type: "string" },
                       },
                       required: ["key", "locationName", "country", "confidence", "summary"],
@@ -194,27 +212,19 @@ Deno.serve(async (req) => {
             },
           },
         ],
-        tool_choice: {
-          type: "function",
-          function: {
-            name: "return_group_locations",
-          },
-        },
+        tool_choice: { type: "function", function: { name: "return_group_locations" } },
       }),
     });
 
     if (!aiResponse.ok) {
       const errorText = await aiResponse.text();
       console.error("AI gateway error:", aiResponse.status, errorText);
-
       if (aiResponse.status === 429) {
         return jsonResponse({ error: "Rate limits exceeded, please try again later." }, 429);
       }
-
       if (aiResponse.status === 402) {
         return jsonResponse({ error: "Payment required, please add funds to your Lovable AI workspace." }, 402);
       }
-
       return jsonResponse({ error: "AI gateway error" }, 500);
     }
 
@@ -232,29 +242,24 @@ Deno.serve(async (req) => {
     for (const result of results) {
       const key = normalizeString(result?.key, "");
       const fallback = fallbackResults.get(key);
+      if (!fallback) continue;
 
-      if (!fallback) {
-        continue;
-      }
+      const isNoExif = fallback.latitude === null;
 
       fallbackResults.set(key, {
         key,
         locationName: normalizeString(result?.locationName, fallback.locationName),
-        country:
-          fallback.country !== "Unknown"
-            ? fallback.country
-            : normalizeString(result?.country, fallback.country),
+        country: fallback.country !== "Unknown" ? fallback.country : normalizeString(result?.country, fallback.country),
+        latitude: isNoExif && typeof result?.latitude === "number" ? result.latitude : fallback.latitude,
+        longitude: isNoExif && typeof result?.longitude === "number" ? result.longitude : fallback.longitude,
         confidence: normalizeConfidence(result?.confidence),
-        summary: normalizeString(result?.summary, "Refined with EXIF and photo recognition."),
+        summary: normalizeString(result?.summary, fallback.summary),
       });
     }
 
     return jsonResponse({ results: Array.from(fallbackResults.values()) });
   } catch (error) {
     console.error("photo-location-inference error:", error);
-    return jsonResponse(
-      { error: error instanceof Error ? error.message : "Unknown error" },
-      500
-    );
+    return jsonResponse({ error: error instanceof Error ? error.message : "Unknown error" }, 500);
   }
 });
