@@ -1,6 +1,6 @@
 import { useParams, Link } from "react-router-dom";
 import { useEffect, useState } from "react";
-import { ArrowLeft, Calendar, MapPin, Route, Navigation, Image as ImageIcon } from "lucide-react";
+import { ArrowLeft, Calendar, MapPin, Route, Navigation, Image as ImageIcon, Plus } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { TripTimeline } from "@/components/TripTimeline";
