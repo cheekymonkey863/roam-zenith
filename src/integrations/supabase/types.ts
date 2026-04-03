@@ -133,6 +133,7 @@ export type Database = {
         Row: {
           country: string | null
           created_at: string
+          event_type: string
           id: string
           is_confirmed: boolean
           latitude: number
@@ -147,6 +148,7 @@ export type Database = {
         Insert: {
           country?: string | null
           created_at?: string
+          event_type?: string
           id?: string
           is_confirmed?: boolean
           latitude: number
@@ -161,6 +163,7 @@ export type Database = {
         Update: {
           country?: string | null
           created_at?: string
+          event_type?: string
           id?: string
           is_confirmed?: boolean
           latitude?: number
@@ -223,7 +226,16 @@ export type Database = {
       [_ in never]: never
     }
     Enums: {
-      [_ in never]: never
+      step_event_type:
+        | "arrival"
+        | "departure"
+        | "accommodation"
+        | "transport"
+        | "activity"
+        | "food"
+        | "sightseeing"
+        | "border_crossing"
+        | "other"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -350,6 +362,18 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      step_event_type: [
+        "arrival",
+        "departure",
+        "accommodation",
+        "transport",
+        "activity",
+        "food",
+        "sightseeing",
+        "border_crossing",
+        "other",
+      ],
+    },
   },
 } as const
