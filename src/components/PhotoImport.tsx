@@ -33,37 +33,57 @@ export function PhotoImport({ tripId, onImportComplete }: PhotoImportProps) {
     setProcessing(true);
     const imageFiles = files.filter((f) => f.type.startsWith("image/") || f.type.startsWith("video/"));
 
-    const exifResults = await extractExifFromFiles(imageFiles);
-    const groups = groupPhotosByLocation(exifResults);
-    const noGps = exifResults.filter((p) => p.latitude === null);
-    setNoGpsPhotos(noGps);
-
-    const steps: SuggestedStep[] = [];
-    for (const [key, photos] of groups) {
-      const avgLat = photos.reduce((s, p) => s + p.latitude!, 0) / photos.length;
-      const avgLng = photos.reduce((s, p) => s + p.longitude!, 0) / photos.length;
-      const geo = await reverseGeocode(avgLat, avgLng);
-      const dates = photos.map((p) => p.takenAt).filter(Boolean) as Date[];
-      const earliest = dates.length > 0 ? new Date(Math.min(...dates.map((d) => d.getTime()))) : null;
-
-      steps.push({
-        key,
-        locationName: geo.name,
-        country: geo.country,
-        latitude: avgLat,
-        longitude: avgLng,
-        photos,
-        earliestDate: earliest,
-        selected: true,
-      });
+    if (imageFiles.length === 0) {
+      toast.error("No image or video files found");
+      setProcessing(false);
+      return;
     }
 
-    steps.sort((a, b) => {
-      if (a.earliestDate && b.earliestDate) return a.earliestDate.getTime() - b.earliestDate.getTime();
-      return 0;
-    });
+    toast.info(`Processing ${imageFiles.length} file(s)...`);
 
-    setSuggestions(steps);
+    try {
+      const exifResults = await extractExifFromFiles(imageFiles);
+      const groups = groupPhotosByLocation(exifResults);
+      const noGps = exifResults.filter((p) => p.latitude === null);
+      setNoGpsPhotos(noGps);
+
+      if (groups.size === 0) {
+        toast.warning(`No GPS data found in ${imageFiles.length} file(s). Try photos taken with location services enabled.`);
+        setProcessing(false);
+        return;
+      }
+
+      const steps: SuggestedStep[] = [];
+      for (const [key, photos] of groups) {
+        const avgLat = photos.reduce((s, p) => s + p.latitude!, 0) / photos.length;
+        const avgLng = photos.reduce((s, p) => s + p.longitude!, 0) / photos.length;
+        const geo = await reverseGeocode(avgLat, avgLng);
+        const dates = photos.map((p) => p.takenAt).filter(Boolean) as Date[];
+        const earliest = dates.length > 0 ? new Date(Math.min(...dates.map((d) => d.getTime()))) : null;
+
+        steps.push({
+          key,
+          locationName: geo.name,
+          country: geo.country,
+          latitude: avgLat,
+          longitude: avgLng,
+          photos,
+          earliestDate: earliest,
+          selected: true,
+        });
+      }
+
+      steps.sort((a, b) => {
+        if (a.earliestDate && b.earliestDate) return a.earliestDate.getTime() - b.earliestDate.getTime();
+        return 0;
+      });
+
+      setSuggestions(steps);
+      toast.success(`Found ${steps.length} location(s) from ${exifResults.length - noGps.length} photo(s)`);
+    } catch (err) {
+      console.error("Photo processing error:", err);
+      toast.error("Failed to process photos. Please try again.");
+    }
     setProcessing(false);
   }, []);
 
