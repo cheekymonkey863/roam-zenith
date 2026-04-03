@@ -147,7 +147,50 @@ function haversine(lat1: number, lng1: number, lat2: number, lng2: number): numb
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
+const GOOGLE_MAPS_API_KEY = "AIzaSyCHXGKSMbpkEN5Amr0VRDF44cLcOg_JUD8";
+
 export async function reverseGeocode(lat: number, lng: number): Promise<{ name: string; country: string }> {
+  try {
+    // Try Google Maps first for better POI/landmark names
+    const gRes = await fetch(
+      `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=${GOOGLE_MAPS_API_KEY}&result_type=point_of_interest|natural_feature|park|tourist_attraction|establishment`
+    );
+    const gData = await gRes.json();
+
+    if (gData.status === "OK" && gData.results?.length > 0) {
+      const result = gData.results[0];
+      const comps: any[] = result.address_components || [];
+      const poiName = comps.find((c: any) => 
+        c.types.includes("point_of_interest") || c.types.includes("natural_feature") || 
+        c.types.includes("park") || c.types.includes("tourist_attraction") || c.types.includes("establishment")
+      )?.long_name;
+      const country = comps.find((c: any) => c.types.includes("country"))?.long_name || "Unknown";
+
+      // Use the first part of formatted_address (usually the POI name) or the POI component
+      const name = poiName || result.formatted_address?.split(",")[0] || "Unknown";
+      return { name, country };
+    }
+
+    // Fallback: broader Google geocode without result_type filter
+    const fallbackRes = await fetch(
+      `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=${GOOGLE_MAPS_API_KEY}`
+    );
+    const fallbackData = await fallbackRes.json();
+
+    if (fallbackData.status === "OK" && fallbackData.results?.length > 0) {
+      const result = fallbackData.results[0];
+      const comps: any[] = result.address_components || [];
+      const country = comps.find((c: any) => c.types.includes("country"))?.long_name || "Unknown";
+      const locality = comps.find((c: any) => c.types.includes("locality"))?.long_name;
+      const sublocality = comps.find((c: any) => c.types.includes("sublocality"))?.long_name;
+      const name = result.formatted_address?.split(",")[0] || locality || sublocality || "Unknown";
+      return { name, country };
+    }
+  } catch {
+    // Fall through to Nominatim
+  }
+
+  // Nominatim fallback
   try {
     const res = await fetch(
       `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=10&addressdetails=1`
