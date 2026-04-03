@@ -1,24 +1,23 @@
 import { useEffect, useRef } from "react";
-import L from "leaflet";
-import "leaflet/dist/leaflet.css";
+import mapboxgl from "mapbox-gl";
+import "mapbox-gl/dist/mapbox-gl.css";
 import type { Tables } from "@/integrations/supabase/types";
 
 type TripStep = Tables<"trip_steps">;
 
-const TILE_URL = "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png";
-const TILE_ATTR = '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/">CARTO</a>';
+mapboxgl.accessToken = "pk.eyJ1IjoicnNvdXNhMzE1IiwiYSI6ImNtbmo2Z3lsNDA4ajMyc3M0ZW40a2R5dG8ifQ.VO0pQrXPDmIQWzKbpB3lUg";
 
 const COLORS = [
-  "hsl(210, 60%, 55%)",
-  "hsl(165, 45%, 48%)",
-  "hsl(340, 65%, 55%)",
-  "hsl(45, 80%, 50%)",
-  "hsl(280, 50%, 55%)",
+  "#4A90D9",
+  "#3DAA8F",
+  "#D95B7A",
+  "#D4A843",
+  "#9B6DC9",
 ];
 
 export function WorldMap({ steps, singleTrip = false }: { steps: TripStep[]; singleTrip?: boolean }) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const mapRef = useRef<L.Map | null>(null);
+  const mapRef = useRef<mapboxgl.Map | null>(null);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -28,75 +27,94 @@ export function WorldMap({ steps, singleTrip = false }: { steps: TripStep[]; sin
       mapRef.current = null;
     }
 
-    const map = L.map(containerRef.current, {
-      zoomControl: false,
+    const map = new mapboxgl.Map({
+      container: containerRef.current,
+      style: "mapbox://styles/mapbox/outdoors-v12",
+      center: [0, 20],
+      zoom: 1.5,
       attributionControl: false,
-      scrollWheelZoom: true,
-    }).setView([20, 0], 2);
+    });
 
-    L.control.zoom({ position: "bottomright" }).addTo(map);
-    L.control.attribution({ position: "bottomleft" }).addTo(map);
-    L.tileLayer(TILE_URL, { attribution: TILE_ATTR, maxZoom: 18 }).addTo(map);
+    map.addControl(new mapboxgl.NavigationControl(), "bottom-right");
+    map.addControl(new mapboxgl.AttributionControl({ compact: true }), "bottom-left");
 
     mapRef.current = map;
 
-    if (steps.length === 0) return;
+    map.on("load", () => {
+      if (steps.length === 0) return;
 
-    // Group by trip
-    const byTrip = new Map<string, TripStep[]>();
-    steps.forEach((s) => {
-      const arr = byTrip.get(s.trip_id) || [];
-      arr.push(s);
-      byTrip.set(s.trip_id, arr);
-    });
-
-    const allLatLngs: L.LatLng[] = [];
-    let colorIdx = 0;
-
-    byTrip.forEach((tripSteps) => {
-      const color = COLORS[colorIdx % COLORS.length];
-      colorIdx++;
-
-      const latlngs = tripSteps.map((s) => L.latLng(s.latitude, s.longitude));
-      allLatLngs.push(...latlngs);
-
-      // Route line
-      L.polyline(latlngs, {
-        color,
-        weight: 3,
-        opacity: 0.8,
-        dashArray: singleTrip ? undefined : "8,6",
-        lineCap: "round",
-        lineJoin: "round",
-      }).addTo(map);
-
-      // Step markers
-      tripSteps.forEach((step, i) => {
-        const isEndpoint = i === 0 || i === tripSteps.length - 1;
-        const marker = L.circleMarker([step.latitude, step.longitude], {
-          radius: isEndpoint ? 7 : 5,
-          fillColor: color,
-          color: "white",
-          weight: 2,
-          fillOpacity: 0.9,
-        }).addTo(map);
-
-        const label = step.location_name || step.country || `Step ${i + 1}`;
-        marker.bindPopup(
-          `<div style="font-family:inherit;font-size:13px;">
-            <strong>${label}</strong><br/>
-            <span style="color:#888;">${new Date(step.recorded_at).toLocaleDateString()}</span>
-          </div>`
-        );
+      // Group by trip
+      const byTrip = new Map<string, TripStep[]>();
+      steps.forEach((s) => {
+        const arr = byTrip.get(s.trip_id) || [];
+        arr.push(s);
+        byTrip.set(s.trip_id, arr);
       });
-    });
 
-    // Fit bounds
-    if (allLatLngs.length > 1) {
-      map.fitBounds(L.latLngBounds(allLatLngs), { padding: [40, 40], maxZoom: 12 });
-    } else if (allLatLngs.length === 1) {
-      map.setView(allLatLngs[0], 10);
-    }
+      const bounds = new mapboxgl.LngLatBounds();
+      let colorIdx = 0;
+
+      byTrip.forEach((tripSteps, tripId) => {
+        const color = COLORS[colorIdx % COLORS.length];
+        colorIdx++;
+
+        const coordinates = tripSteps.map((s) => [s.longitude, s.latitude] as [number, number]);
+        coordinates.forEach((c) => bounds.extend(c));
+
+        // Route line
+        map.addSource(`route-${tripId}`, {
+          type: "geojson",
+          data: {
+            type: "Feature",
+            properties: {},
+            geometry: { type: "LineString", coordinates },
+          },
+        });
+        map.addLayer({
+          id: `route-line-${tripId}`,
+          type: "line",
+          source: `route-${tripId}`,
+          layout: { "line-join": "round", "line-cap": "round" },
+          paint: {
+            "line-color": color,
+            "line-width": singleTrip ? 4 : 3,
+            "line-opacity": 0.85,
+            ...(singleTrip ? {} : { "line-dasharray": [2, 1.5] }),
+          },
+        });
+
+        // Step markers
+        tripSteps.forEach((step, i) => {
+          const isEndpoint = i === 0 || i === tripSteps.length - 1;
+          const el = document.createElement("div");
+          el.style.width = isEndpoint ? "14px" : "10px";
+          el.style.height = isEndpoint ? "14px" : "10px";
+          el.style.borderRadius = "50%";
+          el.style.backgroundColor = color;
+          el.style.border = "2px solid white";
+          el.style.boxShadow = "0 2px 6px rgba(0,0,0,0.3)";
+          el.style.cursor = "pointer";
+
+          const label = step.location_name || step.country || `Step ${i + 1}`;
+          new mapboxgl.Marker({ element: el })
+            .setLngLat([step.longitude, step.latitude])
+            .setPopup(
+              new mapboxgl.Popup({ offset: 12, closeButton: false }).setHTML(
+                `<div style="font-family:inherit;font-size:13px;padding:2px 0;">
+                  <strong>${label}</strong><br/>
+                  <span style="color:#888;">${new Date(step.recorded_at).toLocaleDateString()}</span>
+                </div>`
+              )
+            )
+            .addTo(map);
+        });
+      });
+
+      // Fit bounds
+      if (!bounds.isEmpty()) {
+        map.fitBounds(bounds, { padding: 50, maxZoom: 12, duration: 1000 });
+      }
+    });
 
     return () => {
       map.remove();
