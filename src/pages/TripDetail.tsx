@@ -107,6 +107,14 @@ const TripDetail = () => {
         <PhotoImport tripId={trip.id} onImportComplete={fetchData} />
       )}
 
+      {/* Map */}
+      {steps.length > 0 && (
+        <div className="flex flex-col gap-4">
+          <h2 className="font-display text-2xl font-semibold text-foreground">Route Map</h2>
+          <WorldMap steps={steps} singleTrip />
+        </div>
+      )}
+
       {/* Timeline */}
       <div className="flex flex-col gap-4">
         <h2 className="font-display text-2xl font-semibold text-foreground">Journey Timeline</h2>
