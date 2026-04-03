@@ -6,6 +6,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { TripTimeline } from "@/components/TripTimeline";
 import { TrackingControl } from "@/components/TrackingControl";
 import { PhotoImport } from "@/components/PhotoImport";
+import { WorldMap } from "@/components/WorldMap";
 import type { Tables } from "@/integrations/supabase/types";
 
 type Trip = Tables<"trips">;
@@ -104,6 +105,14 @@ const TripDetail = () => {
       {/* Photo import */}
       {showPhotoImport && (
         <PhotoImport tripId={trip.id} onImportComplete={fetchData} />
+      )}
+
+      {/* Map */}
+      {steps.length > 0 && (
+        <div className="flex flex-col gap-4">
+          <h2 className="font-display text-2xl font-semibold text-foreground">Route Map</h2>
+          <WorldMap steps={steps} singleTrip />
+        </div>
       )}
 
       {/* Timeline */}
