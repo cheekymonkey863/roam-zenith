@@ -6,6 +6,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { TripTimeline } from "@/components/TripTimeline";
 import { TrackingControl } from "@/components/TrackingControl";
 import { PhotoImport } from "@/components/PhotoImport";
+import { WorldMap } from "@/components/WorldMap";
 import type { Tables } from "@/integrations/supabase/types";
 
 type Trip = Tables<"trips">;
