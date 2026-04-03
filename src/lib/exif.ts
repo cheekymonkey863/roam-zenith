@@ -7,6 +7,9 @@ export interface PhotoExifData {
   takenAt: Date | null;
   thumbnail?: string;
   analysisImage?: string;
+  cameraMake?: string;
+  cameraModel?: string;
+  exifRaw?: Record<string, unknown>;
 }
 
 export async function extractExifFromFile(file: File): Promise<PhotoExifData> {
@@ -18,12 +21,22 @@ export async function extractExifFromFile(file: File): Promise<PhotoExifData> {
   try {
     const exif = await exifr.parse(file, {
       gps: true,
-      pick: ["DateTimeOriginal", "CreateDate", "GPSLatitude", "GPSLongitude"],
+      pick: [
+        "DateTimeOriginal", "CreateDate",
+        "GPSLatitude", "GPSLongitude",
+        "Make", "Model", "LensModel",
+        "ExposureTime", "FNumber", "ISO",
+        "ImageWidth", "ImageHeight",
+        "GPSAltitude",
+      ],
     });
 
     let latitude: number | null = null;
     let longitude: number | null = null;
     let takenAt: Date | null = null;
+    let cameraMake: string | undefined;
+    let cameraModel: string | undefined;
+    let exifRaw: Record<string, unknown> | undefined;
 
     if (exif) {
       if (typeof exif.latitude === "number" && typeof exif.longitude === "number") {
@@ -39,9 +52,13 @@ export async function extractExifFromFile(file: File): Promise<PhotoExifData> {
       } else if (exif.CreateDate) {
         takenAt = new Date(exif.CreateDate);
       }
+
+      cameraMake = exif.Make || undefined;
+      cameraModel = exif.Model || undefined;
+      exifRaw = { ...exif };
     }
 
-    return { file, latitude, longitude, takenAt, thumbnail, analysisImage };
+    return { file, latitude, longitude, takenAt, thumbnail, analysisImage, cameraMake, cameraModel, exifRaw };
   } catch {
     return { file, latitude: null, longitude: null, takenAt: null, thumbnail, analysisImage };
   }

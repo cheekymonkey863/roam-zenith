@@ -1,4 +1,5 @@
 import { useState, useCallback } from "react";
+import type { Json } from "@/integrations/supabase/types";
 import { Upload, MapPin, Calendar, Check, Image as ImageIcon, Loader2 } from "lucide-react";
 import { extractExifFromFiles, groupPhotosByLocation, reverseGeocode, type PhotoExifData } from "@/lib/exif";
 import { supabase } from "@/integrations/supabase/client";
@@ -270,7 +271,9 @@ export function PhotoImport({ tripId, onImportComplete }: PhotoImportProps) {
           longitude: step.longitude,
           recorded_at: step.earliestDate?.toISOString() || new Date().toISOString(),
           source: "photo_import",
+          event_type: "activity",
           is_confirmed: true,
+          notes: step.summary,
         })
         .select()
         .single();
@@ -300,6 +303,7 @@ export function PhotoImport({ tripId, onImportComplete }: PhotoImportProps) {
             latitude: photo.latitude,
             longitude: photo.longitude,
             taken_at: photo.takenAt?.toISOString(),
+            exif_data: (photo.exifRaw as Json) ?? null,
           });
         }
       }
