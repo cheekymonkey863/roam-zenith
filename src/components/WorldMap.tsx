@@ -30,8 +30,7 @@ export function WorldMap({ steps, singleTrip = false }: { steps: TripStep[]; sin
 
     const map = new mapboxgl.Map({
       container: containerRef.current,
-      // Colorful map with terrain detail — similar to Polar Steps
-      style: "mapbox://styles/mapbox/outdoors-v12",
+      style: "mapbox://styles/mapbox/satellite-streets-v12",
       center: [0, 20],
       zoom: 1.8,
       projection: "mercator",
