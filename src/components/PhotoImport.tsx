@@ -3,6 +3,7 @@ import { Upload, MapPin, Calendar, Check, X, Image as ImageIcon, Loader2 } from 
 import { extractExifFromFiles, groupPhotosByLocation, reverseGeocode, type PhotoExifData } from "@/lib/exif";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { toast } from "sonner";
 
 interface SuggestedStep {
   key: string;
