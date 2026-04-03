@@ -134,7 +134,11 @@ export function PhotoImport({ tripId, onImportComplete }: PhotoImportProps) {
         .select()
         .single();
 
-      if (stepError || !stepData) continue;
+      if (stepError || !stepData) {
+        console.error("Step insert error:", stepError);
+        toast.error(`Failed to create step for ${step.locationName}`);
+        continue;
+      }
 
       // Upload photos for this step
       for (const photo of step.photos) {
@@ -145,7 +149,9 @@ export function PhotoImport({ tripId, onImportComplete }: PhotoImportProps) {
           .from("trip-photos")
           .upload(path, photo.file);
 
-        if (!uploadError) {
+        if (uploadError) {
+          console.error("Photo upload error:", uploadError);
+        } else {
           await supabase.from("step_photos").insert({
             step_id: stepData.id,
             user_id: user.id,
@@ -159,6 +165,7 @@ export function PhotoImport({ tripId, onImportComplete }: PhotoImportProps) {
       }
     }
 
+    toast.success(`Imported ${selected.length} location(s)!`);
     setImporting(false);
     setSuggestions([]);
     onImportComplete();
