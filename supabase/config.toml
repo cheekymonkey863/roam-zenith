@@ -1,4 +1,4 @@
 project_id = "ytrdufodnfxxlsmsemdj"
 
 [functions.photo-location-inference]
-verify_jwt = true
+verify_jwt = false
