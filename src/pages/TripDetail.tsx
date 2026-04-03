@@ -92,11 +92,12 @@ const TripDetail = () => {
       {/* Tracking control */}
       {trip.is_active && <TrackingControl activeTripId={trip.id} />}
 
-      {/* Photo import toggle */}
-      <div className="flex gap-3">
+      {/* Action buttons */}
+      <div className="flex flex-wrap gap-3">
+        <AddEventForm tripId={trip.id} onEventAdded={fetchData} />
         <button
           onClick={() => setShowPhotoImport(!showPhotoImport)}
-          className="flex items-center gap-2 rounded-xl bg-secondary px-4 py-2 text-sm font-medium text-secondary-foreground hover:bg-secondary/80 transition-colors"
+          className="flex items-center gap-2 rounded-xl bg-secondary px-4 py-2.5 text-sm font-medium text-secondary-foreground hover:bg-secondary/80 transition-colors"
         >
           <ImageIcon className="h-4 w-4" />
           {showPhotoImport ? "Hide Photo Import" : "Import Photos"}
