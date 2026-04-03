@@ -63,12 +63,13 @@ export function useGooglePlacesSearch() {
 
   useEffect(() => {
     ensureGoogleMapsLoaded().then(() => {
-      if (window.google?.maps?.places) {
-        serviceRef.current = new window.google.maps.places.AutocompleteService();
+      const g = getGoogle();
+      if (g?.maps?.places) {
+        serviceRef.current = new g.maps.places.AutocompleteService();
         if (!dummyDiv.current) {
           dummyDiv.current = document.createElement("div");
         }
-        placesServiceRef.current = new window.google.maps.places.PlacesService(dummyDiv.current);
+        placesServiceRef.current = new g.maps.places.PlacesService(dummyDiv.current);
       }
     });
   }, []);
