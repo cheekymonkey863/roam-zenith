@@ -20,8 +20,11 @@ let scriptLoaded = false;
 let scriptLoading = false;
 const loadCallbacks: (() => void)[] = [];
 
+function getGoogle(): any { return (window as any).google; }
+
 function ensureGoogleMapsLoaded(): Promise<void> {
-  if (scriptLoaded && window.google?.maps?.places) return Promise.resolve();
+  const g = getGoogle();
+  if (scriptLoaded && g?.maps?.places) return Promise.resolve();
   return new Promise((resolve) => {
     if (scriptLoading) {
       loadCallbacks.push(resolve);
