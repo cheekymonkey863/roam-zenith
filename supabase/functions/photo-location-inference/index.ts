@@ -113,7 +113,7 @@ Deno.serve(async (req) => {
           latitude: group.exifLocation!.latitude,
           longitude: group.exifLocation!.longitude,
           confidence: "low" as Confidence,
-          summary: "Used GPS metadata because the visuals were inconclusive.",
+          summary: "",
         },
       ])
     );
