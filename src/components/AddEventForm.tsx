@@ -1,9 +1,10 @@
-import { useState, useEffect, useRef } from "react";
+import { useState } from "react";
 import { Plus, Plane, Hotel, Utensils, Camera, MapPin, ArrowRightLeft, Flag, CircleDot, X, Search, Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 import { PendingPhotoUpload, type SelectedFile } from "@/components/ActivityPhotoUpload";
+import { useGooglePlacesSearch } from "@/hooks/useGooglePlacesSearch";
 
 const EVENT_TYPES = [
   { value: "arrival", label: "Arrival", icon: Plane },
@@ -17,19 +18,6 @@ const EVENT_TYPES = [
   { value: "other", label: "Other", icon: CircleDot },
 ] as const;
 
-interface PlaceResult {
-  display_name: string;
-  lat: string;
-  lon: string;
-  address?: {
-    country?: string;
-    city?: string;
-    town?: string;
-    village?: string;
-    state?: string;
-  };
-}
-
 interface AddEventFormProps {
   tripId: string;
   onEventAdded: () => void;
@@ -41,66 +29,21 @@ export function AddEventForm({ tripId, onEventAdded }: AddEventFormProps) {
   const [saving, setSaving] = useState(false);
   const [eventType, setEventType] = useState("activity");
   const [activityName, setActivityName] = useState("");
-  const [locationQuery, setLocationQuery] = useState("");
-  const [locationResults, setLocationResults] = useState<PlaceResult[]>([]);
-  const [selectedPlace, setSelectedPlace] = useState<PlaceResult | null>(null);
-  const [searching, setSearching] = useState(false);
-  const [showResults, setShowResults] = useState(false);
+  const [description, setDescription] = useState("");
   const [date, setDate] = useState(new Date().toISOString().slice(0, 16));
   const [notes, setNotes] = useState("");
   const [pendingPhotos, setPendingPhotos] = useState<SelectedFile[]>([]);
-  const searchTimeout = useRef<ReturnType<typeof setTimeout>>();
-  const resultsRef = useRef<HTMLDivElement>(null);
+  const places = useGooglePlacesSearch();
 
   const resetForm = () => {
     setEventType("activity");
     setActivityName("");
-    setLocationQuery("");
-    setLocationResults([]);
-    setSelectedPlace(null);
+    setDescription("");
     setDate(new Date().toISOString().slice(0, 16));
     setNotes("");
     pendingPhotos.forEach((f) => URL.revokeObjectURL(f.preview));
     setPendingPhotos([]);
-  };
-
-  useEffect(() => {
-    if (locationQuery.length < 3) {
-      setLocationResults([]);
-      setShowResults(false);
-      return;
-    }
-    if (searchTimeout.current) clearTimeout(searchTimeout.current);
-    searchTimeout.current = setTimeout(async () => {
-      setSearching(true);
-      try {
-        const res = await fetch(
-          `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=5&q=${encodeURIComponent(locationQuery)}`,
-          { headers: { "Accept-Language": "en" } }
-        );
-        const data: PlaceResult[] = await res.json();
-        setLocationResults(data);
-        setShowResults(true);
-      } catch {
-        setLocationResults([]);
-      }
-      setSearching(false);
-    }, 400);
-    return () => { if (searchTimeout.current) clearTimeout(searchTimeout.current); };
-  }, [locationQuery]);
-
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (resultsRef.current && !resultsRef.current.contains(e.target as Node)) setShowResults(false);
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, []);
-
-  const selectPlace = (place: PlaceResult) => {
-    setSelectedPlace(place);
-    setLocationQuery(place.display_name);
-    setShowResults(false);
+    places.reset();
   };
 
   const uploadPhotosForStep = async (stepId: string) => {
@@ -119,14 +62,15 @@ export function AddEventForm({ tripId, onEventAdded }: AddEventFormProps) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
-    if (!selectedPlace) { toast.error("Please search and select a location"); return; }
+    if (!places.selectedPlace) { toast.error("Please search and select a location"); return; }
     if (!activityName.trim()) { toast.error("Please enter an activity name"); return; }
 
     setSaving(true);
     const { data, error } = await supabase.from("trip_steps").insert({
       trip_id: tripId, user_id: user.id,
-      latitude: parseFloat(selectedPlace.lat), longitude: parseFloat(selectedPlace.lon),
-      location_name: activityName.trim(), country: selectedPlace.address?.country || null,
+      latitude: parseFloat(places.selectedPlace.lat), longitude: parseFloat(places.selectedPlace.lon),
+      location_name: activityName.trim(), country: places.selectedPlace.address?.country || null,
+      description: description.trim() || null,
       notes: notes.trim() || null, recorded_at: new Date(date).toISOString(),
       source: "manual", event_type: eventType,
     }).select().single();
@@ -191,23 +135,32 @@ export function AddEventForm({ tripId, onEventAdded }: AddEventFormProps) {
             className="rounded-xl border border-border bg-background px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary" required />
         </div>
 
+        {/* Description */}
+        <div className="flex flex-col gap-1.5">
+          <label className="text-sm font-medium text-foreground">Description</label>
+          <textarea value={description} onChange={(e) => setDescription(e.target.value)}
+            placeholder="A short description of this activity..."
+            rows={2}
+            className="resize-none rounded-xl border border-border bg-background px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary" />
+        </div>
+
         {/* Location search */}
-        <div className="relative flex flex-col gap-1.5" ref={resultsRef}>
+        <div className="relative flex flex-col gap-1.5" ref={places.resultsRef}>
           <label className="text-sm font-medium text-foreground">Location *</label>
           <div className="relative">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <input type="text" value={locationQuery}
-              onChange={(e) => { setLocationQuery(e.target.value); setSelectedPlace(null); }}
-              onFocus={() => locationResults.length > 0 && setShowResults(true)}
+            <input type="text" value={places.query}
+              onChange={(e) => { places.setQuery(e.target.value); places.setSelectedPlace(null); }}
+              onFocus={() => places.results.length > 0 && places.setShowResults(true)}
               placeholder="Search for a place..."
               className="w-full rounded-xl border border-border bg-background py-2.5 pl-10 pr-10 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary" />
-            {searching && <Loader2 className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-muted-foreground" />}
-            {selectedPlace && !searching && <MapPin className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-accent" />}
+            {places.searching && <Loader2 className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-muted-foreground" />}
+            {places.selectedPlace && !places.searching && <MapPin className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-accent" />}
           </div>
-          {showResults && locationResults.length > 0 && (
+          {places.showResults && places.results.length > 0 && (
             <div className="absolute left-0 right-0 top-full z-50 mt-1 max-h-56 overflow-y-auto rounded-xl border border-border bg-card shadow-lg">
-              {locationResults.map((place, i) => (
-                <button key={i} type="button" onClick={() => selectPlace(place)}
+              {places.results.map((place, i) => (
+                <button key={i} type="button" onClick={() => places.selectPlace(place)}
                   className="flex w-full items-start gap-2.5 px-4 py-3 text-left text-sm hover:bg-secondary/60 transition-colors border-b border-border last:border-b-0">
                   <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
                   <span className="text-foreground leading-snug">{place.display_name}</span>
@@ -215,7 +168,7 @@ export function AddEventForm({ tripId, onEventAdded }: AddEventFormProps) {
               ))}
             </div>
           )}
-          {showResults && locationResults.length === 0 && locationQuery.length >= 3 && !searching && (
+          {places.showResults && places.results.length === 0 && places.query.length >= 3 && !places.searching && (
             <div className="absolute left-0 right-0 top-full z-50 mt-1 rounded-xl border border-border bg-card p-4 text-center text-sm text-muted-foreground shadow-lg">
               No places found
             </div>
@@ -241,7 +194,7 @@ export function AddEventForm({ tripId, onEventAdded }: AddEventFormProps) {
         <PendingPhotoUpload files={pendingPhotos} onFilesChange={setPendingPhotos} />
 
         {/* Submit */}
-        <button type="submit" disabled={saving || !selectedPlace}
+        <button type="submit" disabled={saving || !places.selectedPlace}
           className="flex items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors">
           {saving ? "Saving..." : (
             <>{selectedType && <selectedType.icon className="h-4 w-4" />} Add {selectedType?.label || "Activity"}</>

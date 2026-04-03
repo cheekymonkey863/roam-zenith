@@ -1,0 +1,1 @@
+ALTER TABLE public.trip_steps ADD COLUMN description text;
