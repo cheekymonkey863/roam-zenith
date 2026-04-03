@@ -135,7 +135,7 @@ export function PhotoImport({ tripId, onImportComplete }: PhotoImportProps) {
 
     try {
       const exifResults = await extractExifFromFiles(imageFiles);
-      const groups = groupPhotosByLocation(exifResults, 10000);
+      const groups = groupPhotosByLocation(exifResults, 2000);
       const noGps = exifResults.filter((photo) => photo.latitude === null || photo.longitude === null);
       setNoGpsPhotos(noGps);
 
