@@ -51,33 +51,49 @@ function getRepresentativeCoordinates(photos: PhotoExifData[]) {
   };
 }
 
-async function inferLocationsWithVision(steps: SuggestedStep[]): Promise<Map<string, HybridLocationResult>> {
-  const groups = steps
-    .map((step) => ({
-      key: step.key,
-      exifLocation: {
-        latitude: step.latitude,
-        longitude: step.longitude,
-        name: step.locationName,
-        country: step.country,
-      },
-      photos: step.photos
-        .filter((photo) => Boolean(photo.analysisImage))
-        .slice(0, 3)
-        .map((photo) => ({
-          fileName: photo.file.name,
-          takenAt: photo.takenAt?.toISOString() ?? null,
-          analysisImage: photo.analysisImage ?? null,
-        })),
-    }))
-    .filter((group) => group.photos.length > 0);
+async function inferLocationsWithVision(
+  steps: SuggestedStep[],
+  noGpsPhotos: PhotoExifData[] = []
+): Promise<Map<string, HybridLocationResult>> {
+  const gpsGroups = steps.map((step) => ({
+    key: step.key,
+    exifLocation: {
+      latitude: step.latitude,
+      longitude: step.longitude,
+      name: step.locationName,
+      country: step.country,
+    },
+    photos: step.photos
+      .filter((photo) => Boolean(photo.analysisImage))
+      .slice(0, 3)
+      .map((photo) => ({
+        fileName: photo.file.name,
+        takenAt: photo.takenAt?.toISOString() ?? null,
+        analysisImage: photo.analysisImage ?? null,
+      })),
+  })).filter((group) => group.photos.length > 0);
 
-  if (groups.length === 0) {
+  // Create groups for no-GPS photos (each photo is its own group for visual inference)
+  const noGpsGroups = noGpsPhotos
+    .filter((photo) => Boolean(photo.analysisImage))
+    .map((photo, index) => ({
+      key: `no-gps-${index}`,
+      exifLocation: null,
+      photos: [{
+        fileName: photo.file.name,
+        takenAt: photo.takenAt?.toISOString() ?? null,
+        analysisImage: photo.analysisImage ?? null,
+      }],
+    }));
+
+  const allGroups = [...gpsGroups, ...noGpsGroups];
+
+  if (allGroups.length === 0) {
     return new Map();
   }
 
   const { data, error } = await supabase.functions.invoke("photo-location-inference", {
-    body: { groups },
+    body: { groups: allGroups },
   });
 
   if (error) {
