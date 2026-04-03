@@ -177,7 +177,7 @@ Keep summaries under 18 words.`,
         messages: [
           {
             role: "system",
-            content: "You analyze travel photos to identify locations. For groups with GPS data, refine the name. For groups without GPS, identify the location from visual clues like landmarks, signs, architecture, and landscape.",
+            content: "You analyze travel photos to identify locations and describe scenes. For locationName, always use specific landmark/POI names (e.g. 'Boulders Beach', 'Table Mountain') not generic city names. For summary, always describe what is visible in the photos (scenery, wildlife, landmarks) — never mention people and never reference GPS metadata.",
           },
           { role: "user", content },
         ],
