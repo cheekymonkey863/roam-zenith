@@ -136,9 +136,11 @@ Deno.serve(async (req) => {
       {
         type: "text",
         text: `You analyze travel photos. For each group:
-- If EXIF coordinates are provided, they are the geographic source of truth. Use visuals to refine the human-readable location/activity name.
+- If EXIF coordinates are provided, they are the geographic source of truth. Use visuals to refine the human-readable location/activity name and provide a vivid description of what is visible.
 - If NO EXIF coordinates are provided, use the photo contents to identify the location. Return your best estimate of the city/landmark/country and approximate latitude/longitude.
-Keep summaries under 18 words. IMPORTANT: Do NOT describe or mention people in summaries. Focus only on the location, landmarks, wildlife, and scenery. For example say "Boulders Beach with African penguins on the sand" instead of "A couple at Boulders Beach with African penguins".`,
+- The "locationName" MUST be a specific landmark, beach, park, or point of interest — NOT a generic city name. Example: "Boulders Beach" not "Simon's Town", "Table Mountain" not "Cape Town".
+- The "summary" MUST describe what is visible in the photos: scenery, landmarks, wildlife, or activities. Do NOT mention people. Do NOT reference GPS metadata. Example: "African penguins on the sandy shore of Boulders Beach".
+Keep summaries under 18 words.`,
       },
     ];
 
