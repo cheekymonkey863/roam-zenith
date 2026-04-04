@@ -446,7 +446,7 @@ export async function processImportedMediaFiles(
       ...step,
       locationName,
       country,
-      photos: applyMediaInsights(step.photos, inferred?.photoCaptions, locationName, stepDetails.eventType),
+      photos: applyMediaInsights(step.photos, inferred?.photoCaptions, undefined, locationName, stepDetails.eventType),
       eventType: stepDetails.eventType,
       confidence: inferred?.confidence ? pickHigherConfidence(step.confidence, inferred.confidence) : step.confidence,
       summary: buildLocationSummary(locationName, country, stepDetails.eventType),
