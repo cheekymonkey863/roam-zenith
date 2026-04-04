@@ -1,11 +1,24 @@
 import { useEffect, useState } from "react";
-import { MapPin, Image as ImageIcon } from "lucide-react";
+import { MapPin, Image as ImageIcon, Trash2, Plane, Hotel, Utensils, Camera, ArrowRightLeft, Flag, CircleDot } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { EditStepDialog } from "@/components/EditStepDialog";
+import { toast } from "sonner";
 import type { Tables } from "@/integrations/supabase/types";
 
 type TripStep = Tables<"trip_steps">;
 type StepPhoto = Tables<"step_photos">;
+
+const EVENT_TYPE_ICONS: Record<string, React.ElementType> = {
+  arrival: Plane,
+  departure: Plane,
+  accommodation: Hotel,
+  transport: ArrowRightLeft,
+  activity: Flag,
+  food: Utensils,
+  sightseeing: Camera,
+  border_crossing: MapPin,
+  other: CircleDot,
+};
 
 function formatStepDate(dateStr: string) {
   return new Date(dateStr).toLocaleDateString("en-US", {
@@ -17,6 +30,7 @@ function formatStepDate(dateStr: string) {
 
 export function TripTimeline({ steps, onUpdated }: { steps: TripStep[]; onUpdated: () => void }) {
   const [photosByStep, setPhotosByStep] = useState<Record<string, StepPhoto[]>>({});
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   useEffect(() => {
     const stepIds = steps.map((s) => s.id);
@@ -43,16 +57,26 @@ export function TripTimeline({ steps, onUpdated }: { steps: TripStep[]; onUpdate
     return data.publicUrl;
   };
 
+  const handleDelete = async (stepId: string) => {
+    if (!confirm("Delete this activity? This cannot be undone.")) return;
+    setDeletingId(stepId);
+    const { error } = await supabase.from("trip_steps").delete().eq("id", stepId);
+    if (error) { toast.error("Failed to delete activity"); }
+    else { toast.success("Activity deleted"); onUpdated(); }
+    setDeletingId(null);
+  };
+
   return (
     <div className="relative">
       <div className="absolute left-5 top-0 h-full w-px bg-border" />
       <div className="flex flex-col gap-0">
         {steps.map((step, index) => {
           const photos = photosByStep[step.id] || [];
+          const StepIcon = EVENT_TYPE_ICONS[step.event_type] || MapPin;
           return (
             <div key={step.id} className="relative flex gap-5 pb-8 last:pb-0">
               <div className="relative z-10 flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-card shadow-card ring-4 ring-background">
-                <MapPin className="h-4 w-4 text-primary" />
+                <StepIcon className="h-4 w-4 text-primary" />
               </div>
               <div className="flex flex-1 flex-col gap-2 rounded-2xl bg-card p-5 shadow-card">
                 <div className="flex items-center justify-between gap-4">
@@ -67,8 +91,18 @@ export function TripTimeline({ steps, onUpdated }: { steps: TripStep[]; onUpdate
                       {formatStepDate(step.recorded_at)}
                     </span>
                     <EditStepDialog step={step} onUpdated={onUpdated} />
+                    <button
+                      onClick={() => handleDelete(step.id)}
+                      disabled={deletingId === step.id}
+                      className="rounded-lg p-1 text-muted-foreground hover:text-destructive transition-colors disabled:opacity-50"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
                   </div>
                 </div>
+                {step.description && (
+                  <p className="text-sm leading-relaxed text-foreground">{step.description}</p>
+                )}
                 {step.notes && (
                   <p className="text-sm leading-relaxed text-muted-foreground">{step.notes}</p>
                 )}
@@ -96,7 +130,7 @@ export function TripTimeline({ steps, onUpdated }: { steps: TripStep[]; onUpdate
                   <span>·</span>
                   <span>{step.latitude.toFixed(2)}°, {step.longitude.toFixed(2)}°</span>
                   <span>·</span>
-                  <span className="rounded bg-secondary px-1.5 py-0.5 text-[10px]">{step.source}</span>
+                  <span className="rounded bg-secondary px-1.5 py-0.5 text-[10px]">{step.event_type}</span>
                   {photos.length > 0 && (
                     <>
                       <span>·</span>

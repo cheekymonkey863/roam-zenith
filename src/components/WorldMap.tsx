@@ -104,20 +104,41 @@ export function WorldMap({ steps, singleTrip = false }: { steps: TripStep[]; sin
           });
         }
 
-        // Step markers — white circles with colored border, Polar Steps style
+        // Step markers — different icons for different event types
         tripSteps.forEach((step, i) => {
           const isEndpoint = i === 0 || i === tripSteps.length - 1;
+          const isAccommodation = step.event_type === "accommodation";
+          const isTransport = step.event_type === "transport" || step.event_type === "arrival" || step.event_type === "departure";
 
           const el = document.createElement("div");
-          const size = isEndpoint ? 16 : 10;
-          el.style.width = `${size}px`;
-          el.style.height = `${size}px`;
-          el.style.borderRadius = "50%";
-          el.style.backgroundColor = "#FFFFFF";
-          el.style.border = `${isEndpoint ? 3 : 2}px solid ${color}`;
-          el.style.boxShadow = "0 1px 4px rgba(0,0,0,0.2)";
-          el.style.cursor = "pointer";
-          el.style.transition = "transform 0.15s ease";
+
+          if (isAccommodation || isTransport) {
+            const size = 24;
+            el.style.width = `${size}px`;
+            el.style.height = `${size}px`;
+            el.style.borderRadius = "6px";
+            el.style.backgroundColor = isAccommodation ? "#8B5CF6" : "#3B82F6";
+            el.style.display = "flex";
+            el.style.alignItems = "center";
+            el.style.justifyContent = "center";
+            el.style.boxShadow = "0 2px 6px rgba(0,0,0,0.3)";
+            el.style.cursor = "pointer";
+            el.style.transition = "transform 0.15s ease";
+            el.innerHTML = isAccommodation
+              ? `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2Z"/><path d="m9 16 .348-.24c1.465-1.013 3.84-1.013 5.304 0L15 16"/><path d="M8 7h.01"/><path d="M16 7h.01"/><path d="M12 7h.01"/><path d="M12 11h.01"/><path d="M16 11h.01"/><path d="M8 11h.01"/></svg>`
+              : `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2Z"/></svg>`;
+          } else {
+            const size = isEndpoint ? 16 : 10;
+            el.style.width = `${size}px`;
+            el.style.height = `${size}px`;
+            el.style.borderRadius = "50%";
+            el.style.backgroundColor = "#FFFFFF";
+            el.style.border = `${isEndpoint ? 3 : 2}px solid ${color}`;
+            el.style.boxShadow = "0 1px 4px rgba(0,0,0,0.2)";
+            el.style.cursor = "pointer";
+            el.style.transition = "transform 0.15s ease";
+          }
+
           el.addEventListener("mouseenter", () => { el.style.transform = "scale(1.3)"; });
           el.addEventListener("mouseleave", () => { el.style.transform = "scale(1)"; });
 
@@ -127,6 +148,7 @@ export function WorldMap({ steps, singleTrip = false }: { steps: TripStep[]; sin
             day: "numeric",
             year: "numeric",
           });
+          const typeLabel = step.event_type.replace("_", " ");
 
           new mapboxgl.Marker({ element: el, anchor: "center" })
             .setLngLat([step.longitude, step.latitude])
@@ -139,6 +161,7 @@ export function WorldMap({ steps, singleTrip = false }: { steps: TripStep[]; sin
                 `<div style="font-family:system-ui,-apple-system,sans-serif;padding:4px 2px;">
                   <div style="font-weight:600;font-size:14px;color:#1a1a2e;margin-bottom:2px;">${label}</div>
                   <div style="font-size:12px;color:#888;">${dateStr}</div>
+                  <div style="font-size:11px;color:#aaa;text-transform:capitalize;margin-top:2px;">${typeLabel}</div>
                 </div>`
               )
             )
