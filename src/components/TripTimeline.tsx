@@ -6,6 +6,7 @@ import { StepMediaGallery } from "@/components/StepMediaGallery";
 import { toast } from "sonner";
 import { inferStepVisualType, type StepVisualType } from "@/lib/stepVisuals";
 import { getEventType } from "@/lib/eventTypes";
+import { getStoredEssence } from "@/lib/mediaMetadata";
 import {
   Plane, TrainFront, Bus, Ship, Car, Footprints, Bike, Sailboat, Anchor,
   Hotel, Building, Home, Castle, Trees, Mountain, Tent, Palmtree, Snowflake,
@@ -389,6 +390,17 @@ export function TripTimeline({
 
                 {step.description && <p className="text-sm leading-relaxed text-foreground">{step.description}</p>}
                 {step.notes && <p className="text-sm leading-relaxed text-muted-foreground">{step.notes}</p>}
+
+                {/* AI-generated essence description from media analysis */}
+                {(() => {
+                  const essences = photos
+                    .map((p) => getStoredEssence(p.exif_data))
+                    .filter((e): e is string => e !== null);
+                  const essence = essences[0];
+                  return essence && !step.description ? (
+                    <p className="text-sm leading-relaxed text-foreground/80 italic">{essence}</p>
+                  ) : null;
+                })()}
 
                 {photos.length > 0 && (
                   <div className="mt-2">
