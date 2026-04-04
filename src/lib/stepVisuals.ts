@@ -123,6 +123,8 @@ export function inferStepVisualType(step: StepVisualInput, googlePlaceTypes: str
   const isTrain = TRAIN_PATTERN.test(text) || googleType === "train";
   const isBus = BUS_PATTERN.test(text) || googleType === "bus";
   const isFerry = FERRY_PATTERN.test(text) || googleType === "ferry";
+  const isYacht = YACHT_PATTERN.test(text);
+  const isCruise = CRUISE_PATTERN.test(text);
   const isCar = CAR_PATTERN.test(text) || googleType === "car";
   const isSightseeing = SIGHTSEEING_PATTERN.test(text) || googleType === "sightseeing";
 
