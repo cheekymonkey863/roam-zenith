@@ -71,7 +71,7 @@ async function inferLocationsWithVision(
   return new Map(results.filter((r: any): r is HybridLocationResult => typeof r?.key === "string").map((r: HybridLocationResult) => [r.key, r]));
 }
 
-export function PhotoImport({ tripId, onImportComplete, onCancel }: PhotoImportProps) {
+export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps = [] }: PhotoImportProps) {
   const { user } = useAuth();
   const [dragOver, setDragOver] = useState(false);
   const [processing, setProcessing] = useState(false);
