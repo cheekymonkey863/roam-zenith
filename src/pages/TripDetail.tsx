@@ -100,7 +100,7 @@ const TripDetail = () => {
       <div className="flex flex-wrap gap-3">
         <AddEventForm tripId={trip.id} onEventAdded={fetchData} />
         <button
-          onClick={() => setShowPhotoImport(!showPhotoImport)}
+          onClick={() => { setShowPhotoImport(!showPhotoImport); if (!showPhotoImport) setShowItineraryImport(false); }}
           className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition-colors ${
             showPhotoImport
               ? "bg-primary text-primary-foreground hover:bg-primary/90"
@@ -110,6 +110,17 @@ const TripDetail = () => {
           <ImageIcon className="h-4 w-4" />
           Import Photos
         </button>
+        <button
+          onClick={() => { setShowItineraryImport(!showItineraryImport); if (!showItineraryImport) setShowPhotoImport(false); }}
+          className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition-colors ${
+            showItineraryImport
+              ? "bg-primary text-primary-foreground hover:bg-primary/90"
+              : "bg-secondary text-secondary-foreground hover:bg-secondary/80"
+          }`}
+        >
+          <FileText className="h-4 w-4" />
+          Import Itinerary
+        </button>
       </div>
 
       {showPhotoImport && (
@@ -117,6 +128,14 @@ const TripDetail = () => {
           tripId={trip.id}
           onImportComplete={fetchData}
           onCancel={() => setShowPhotoImport(false)}
+        />
+      )}
+
+      {showItineraryImport && (
+        <ItineraryImport
+          tripId={trip.id}
+          onImportComplete={fetchData}
+          onCancel={() => setShowItineraryImport(false)}
         />
       )}
 
