@@ -1,6 +1,3 @@
-import { FFmpeg } from "@ffmpeg/ffmpeg";
-import { fetchFile, toBlobURL } from "@ffmpeg/util";
-
 import { supabase } from "@/integrations/supabase/client";
 
 export type VideoPreviewSource = "html-video" | "ffmpeg" | "none";
