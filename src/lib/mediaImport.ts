@@ -1,4 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
+import { resumableUpload } from "@/lib/resumableUpload";
 import { dedupeTags } from "@/lib/mediaMetadata";
 import {
   extractExifFromFile,
@@ -460,18 +461,18 @@ export async function processImportedMediaFiles(
       }
 
       try {
-        // Upload raw video to Supabase Storage (temp analysis path)
+        // Upload raw video to Supabase Storage via TUS resumable protocol
         const ext = photo.file.name.split(".").pop()?.toLowerCase() || "mp4";
         const storagePath = `video-analysis/${crypto.randomUUID()}.${ext}`;
 
-        const { error: uploadError } = await supabase.storage
-          .from("trip-photos")
-          .upload(storagePath, photo.file, {
+        try {
+          await resumableUpload({
+            bucketName: "trip-photos",
+            objectName: storagePath,
+            file: photo.file,
             contentType: photo.file.type || "video/mp4",
-            upsert: false,
           });
-
-        if (uploadError) {
+        } catch (uploadError) {
           console.error(`Storage upload failed for ${photo.file.name}:`, uploadError);
           videoDone++;
           onProgress?.("Analyzing videos", videoDone, allVideoMedia.length);
