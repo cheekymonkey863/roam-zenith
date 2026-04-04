@@ -129,6 +129,47 @@ export type Database = {
           },
         ]
       }
+      trip_shares: {
+        Row: {
+          created_at: string
+          email: string
+          id: string
+          invited_by: string
+          share_token: string | null
+          status: string
+          trip_id: string
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          email: string
+          id?: string
+          invited_by: string
+          share_token?: string | null
+          status?: string
+          trip_id: string
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          email?: string
+          id?: string
+          invited_by?: string
+          share_token?: string | null
+          status?: string
+          trip_id?: string
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "trip_shares_trip_id_fkey"
+            columns: ["trip_id"]
+            isOneToOne: false
+            referencedRelation: "trips"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       trip_steps: {
         Row: {
           country: string | null
@@ -229,7 +270,14 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      is_trip_owner: {
+        Args: { _trip_id: string; _user_id: string }
+        Returns: boolean
+      }
+      is_trip_shared_with: {
+        Args: { _trip_id: string; _user_id: string }
+        Returns: boolean
+      }
     }
     Enums: {
       step_event_type:
