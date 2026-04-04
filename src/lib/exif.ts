@@ -920,6 +920,54 @@ import { ensureGoogleMapsLoaded, getGoogle, GOOGLE_MAPS_API_KEY } from "@/hooks/
 
 let _placesServiceHost: HTMLDivElement | null = null;
 
+const GOOGLE_JS_CALLBACK_TIMEOUT_MS = 1800;
+const GEOCODE_FETCH_TIMEOUT_MS = 5000;
+
+function withCallbackTimeout<T>(
+  run: (finish: (value: T) => void) => void,
+  fallback: T,
+  label: string,
+  timeoutMs = GOOGLE_JS_CALLBACK_TIMEOUT_MS,
+): Promise<T> {
+  return new Promise((resolve) => {
+    let settled = false;
+
+    const finish = (value: T) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timer);
+      resolve(value);
+    };
+
+    const timer = window.setTimeout(() => {
+      console.warn(`${label} timed out after ${timeoutMs}ms`);
+      finish(fallback);
+    }, timeoutMs);
+
+    try {
+      run(finish);
+    } catch (error) {
+      console.warn(`${label} failed`, error);
+      finish(fallback);
+    }
+  });
+}
+
+async function fetchJsonWithTimeout<T>(url: string, timeoutMs = GEOCODE_FETCH_TIMEOUT_MS): Promise<T | null> {
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(url, { signal: controller.signal });
+    if (!response.ok) return null;
+    return (await response.json()) as T;
+  } catch {
+    return null;
+  } finally {
+    window.clearTimeout(timer);
+  }
+}
+
 function getPlacesService(): any | null {
   const g = getGoogle();
   if (!g?.maps?.places) return null;
@@ -939,11 +987,23 @@ async function reverseGeocodeWithJsApi(lat: number, lng: number): Promise<{ name
 
     // Use Geocoder for country + locality
     const geocoder = new g.maps.Geocoder();
-    const geoResult = await new Promise<any>((resolve) => {
-      geocoder.geocode({ location }, (results: any[], status: string) => {
-        resolve(status === "OK" && results?.length > 0 ? results : null);
-      });
-    });
+    const geoResult = await withCallbackTimeout<any[] | null>(
+      (finish) => {
+        geocoder.geocode({ location }, (results: any[], status: string) => {
+          if (status !== "OK") {
+            if (status && status !== "ZERO_RESULTS") {
+              console.warn(`[reverse-geo] Geocoder status ${status} at ${lat},${lng}`);
+            }
+            finish(null);
+            return;
+          }
+
+          finish(results?.length > 0 ? results : null);
+        });
+      },
+      null,
+      `[reverse-geo] Geocoder at ${lat},${lng}`,
+    );
 
     let country = "Unknown";
     let locality = "Unknown";
@@ -968,42 +1028,48 @@ async function reverseGeocodeWithJsApi(lat: number, lng: number): Promise<{ name
     // Use PlacesService.nearbySearch for POI name
     const placesService = getPlacesService();
     if (placesService) {
-      const poiName = await new Promise<string | null>((resolve) => {
-        placesService.nearbySearch(
-          { location, radius: 250, type: "point_of_interest" },
-          (results: any[], status: string) => {
-            if (status !== "OK" || !results?.length) {
-              resolve(null);
-              return;
-            }
+      const poiName = await withCallbackTimeout<string | null>(
+        (finish) => {
+          placesService.nearbySearch(
+            { location, radius: 250, type: "point_of_interest" },
+            (results: any[], status: string) => {
+              if (status !== "OK" || !results?.length) {
+                if (status && status !== "ZERO_RESULTS") {
+                  console.warn(`[reverse-geo] Places status ${status} at ${lat},${lng}`);
+                }
+                finish(null);
+                return;
+              }
 
-            const POI_TYPES = new Set([
-              "tourist_attraction", "stadium", "museum", "park", "church",
-              "airport", "train_station", "transit_station", "amusement_park",
-              "zoo", "aquarium", "art_gallery", "campground", "university",
-              "lodging", "restaurant", "bar", "cafe", "shopping_mall",
-              "natural_feature", "point_of_interest", "establishment",
-            ]);
+              const POI_TYPES = new Set([
+                "tourist_attraction", "stadium", "museum", "park", "church",
+                "airport", "train_station", "transit_station", "amusement_park",
+                "zoo", "aquarium", "art_gallery", "campground", "university",
+                "lodging", "restaurant", "bar", "cafe", "shopping_mall",
+                "natural_feature", "point_of_interest", "establishment",
+              ]);
 
-            // Filter to POIs that have a geometry close to our coordinates
-            const nearby = results.filter((r: any) => {
-              if (!r.geometry?.location) return false;
-              const rLat = typeof r.geometry.location.lat === "function" ? r.geometry.location.lat() : r.geometry.location.lat;
-              const rLng = typeof r.geometry.location.lng === "function" ? r.geometry.location.lng() : r.geometry.location.lng;
-              const dLat = (rLat - lat) * 111320;
-              const dLng = (rLng - lng) * 111320 * Math.cos(lat * Math.PI / 180);
-              const dist = Math.sqrt(dLat * dLat + dLng * dLng);
-              return dist < 500;
-            });
+              const nearby = results.filter((r: any) => {
+                if (!r.geometry?.location) return false;
+                const rLat = typeof r.geometry.location.lat === "function" ? r.geometry.location.lat() : r.geometry.location.lat;
+                const rLng = typeof r.geometry.location.lng === "function" ? r.geometry.location.lng() : r.geometry.location.lng;
+                const dLat = (rLat - lat) * 111320;
+                const dLng = (rLng - lng) * 111320 * Math.cos(lat * Math.PI / 180);
+                const dist = Math.sqrt(dLat * dLat + dLng * dLng);
+                return dist < 500;
+              });
 
-            const poi = nearby.find((r: any) =>
-              r.types?.some((t: string) => POI_TYPES.has(t))
-            ) || nearby[0];
+              const poi = nearby.find((r: any) =>
+                r.types?.some((t: string) => POI_TYPES.has(t))
+              ) || nearby[0];
 
-            resolve(poi?.name || null);
-          },
-        );
-      });
+              finish(poi?.name || null);
+            },
+          );
+        },
+        null,
+        `[reverse-geo] Places lookup at ${lat},${lng}`,
+      );
 
       if (poiName) {
         console.log(`[reverse-geo] JS Places API found: "${poiName}" (${country}) at ${lat},${lng}`);
@@ -1036,10 +1102,12 @@ export async function reverseGeocode(lat: number, lng: number): Promise<{ name: 
 
   // Fallback: Nominatim
   try {
-    const res = await fetch(
-      `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=10&addressdetails=1`
+    const data = await fetchJsonWithTimeout<any>(
+      `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=10&addressdetails=1`,
     );
-    const data = await res.json();
+    if (!data) {
+      return { name: "Unknown", country: "Unknown" };
+    }
     const addr = data.address || {};
     const name = addr.city || addr.town || addr.village || addr.county || data.name || "Unknown";
     const country = addr.country || "Unknown";
