@@ -1,5 +1,3 @@
-// No external imports needed — uses direct fetch for Storage + Gemini APIs
-
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
@@ -27,50 +25,28 @@ function jsonResponse(body: unknown, status = 200) {
 const GEMINI_API_BASE = "https://generativelanguage.googleapis.com";
 const GEMINI_MODEL = "gemini-2.5-flash";
 
-// ── Gemini File API helpers ──────────────────────────────────
+// ── Stream-pipe upload to Gemini File API ────────────────────
+// Streams video bytes directly from Supabase Storage → Gemini
+// without buffering the entire file in memory.
 
-async function uploadToGeminiFileAPI(
+async function streamUploadToGemini(
   apiKey: string,
-  videoBytes: Uint8Array,
+  storageStream: ReadableStream<Uint8Array>,
   mimeType: string,
   displayName: string,
 ): Promise<string> {
-  // Step 1: Start resumable upload
-  const startRes = await fetch(
-    `${GEMINI_API_BASE}/upload/v1beta/files?key=${apiKey}`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Goog-Upload-Protocol": "resumable",
-        "X-Goog-Upload-Command": "start",
-        "X-Goog-Upload-Header-Content-Length": String(videoBytes.byteLength),
-        "X-Goog-Upload-Header-Content-Type": mimeType,
-      },
-      body: JSON.stringify({ file: { display_name: displayName } }),
-    },
-  );
+  // Use Gemini's raw media upload — streams the body directly
+  const uploadUrl = `${GEMINI_API_BASE}/upload/v1beta/files?uploadType=media&key=${apiKey}`;
 
-  if (!startRes.ok) {
-    const errText = await startRes.text();
-    throw new Error(`Gemini File API start failed [${startRes.status}]: ${errText}`);
-  }
-
-  const uploadUrl = startRes.headers.get("X-Goog-Upload-URL");
-  if (!uploadUrl) throw new Error("No upload URL returned from Gemini File API");
-
-  // Consume the body to avoid resource leak
-  await startRes.text();
-
-  // Step 2: Upload the bytes
   const uploadRes = await fetch(uploadUrl, {
-    method: "PUT",
+    method: "POST",
     headers: {
-      "Content-Length": String(videoBytes.byteLength),
-      "X-Goog-Upload-Offset": "0",
-      "X-Goog-Upload-Command": "upload, finalize",
+      "X-Goog-Upload-Protocol": "raw",
+      "Content-Type": mimeType,
     },
-    body: videoBytes,
+    body: storageStream,
+    // @ts-ignore — duplex is required in Deno for streaming request bodies
+    duplex: "half",
   });
 
   if (!uploadRes.ok) {
@@ -85,8 +61,9 @@ async function uploadToGeminiFileAPI(
   return fileUri;
 }
 
-async function waitForFileActive(apiKey: string, fileUri: string, maxWaitMs = 120_000): Promise<void> {
-  // Extract file name from URI: files/xxxx
+// ── Wait for Gemini file processing ─────────────────────────
+
+async function waitForFileActive(apiKey: string, fileUri: string, maxWaitMs = 180_000): Promise<void> {
   const fileName = fileUri.split("/").slice(-1)[0];
   const getUrl = `${GEMINI_API_BASE}/v1beta/files/${fileName}?key=${apiKey}`;
 
@@ -103,7 +80,6 @@ async function waitForFileActive(apiKey: string, fileUri: string, maxWaitMs = 12
     if (state === "ACTIVE") return;
     if (state === "FAILED") throw new Error(`Gemini file processing failed: ${JSON.stringify(data)}`);
 
-    // Wait 2 seconds before polling again
     await new Promise((r) => setTimeout(r, 2000));
   }
 
@@ -279,43 +255,35 @@ Deno.serve(async (req) => {
       mimeType = "video/mp4";
     }
 
-    // Download only the first ~10MB of the video to stay within edge function memory limits.
-    // Gemini can analyze content from a partial file — audio and key frames are typically
-    // in the first portion of MOV/MP4 files.
-    const MAX_DOWNLOAD_BYTES = 10 * 1024 * 1024; // 10MB
+    // Stream-pipe: fetch from Storage without buffering, pipe directly to Gemini
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-
-    console.log(`Downloading first ${MAX_DOWNLOAD_BYTES / 1024 / 1024}MB of "${fileName}" from storage: ${storagePath}...`);
-
-    // Use a direct HTTP request with Range header to avoid loading the full file
     const objectUrl = `${supabaseUrl}/storage/v1/object/trip-photos/${storagePath}`;
-    const downloadRes = await fetch(objectUrl, {
-      headers: {
-        Authorization: `Bearer ${supabaseServiceKey}`,
-        Range: `bytes=0-${MAX_DOWNLOAD_BYTES - 1}`,
-      },
+
+    console.log(`Streaming "${fileName}" from storage to Gemini File API...`);
+
+    const storageRes = await fetch(objectUrl, {
+      headers: { Authorization: `Bearer ${supabaseServiceKey}` },
     });
 
-    if (!downloadRes.ok && downloadRes.status !== 206) {
-      const errText = await downloadRes.text();
-      console.error("Storage download error:", downloadRes.status, errText);
-      return jsonResponse({ error: `Failed to download video: ${downloadRes.status} ${errText}` }, 500);
+    if (!storageRes.ok) {
+      const errText = await storageRes.text();
+      console.error("Storage download error:", storageRes.status, errText);
+      return jsonResponse({ error: `Failed to download video: ${storageRes.status}` }, 500);
     }
 
-    const videoBytes = new Uint8Array(await downloadRes.arrayBuffer());
-    const sizeMB = (videoBytes.byteLength / 1024 / 1024).toFixed(1);
-    console.log(`Downloaded ${sizeMB}MB. Uploading to Gemini File API...`);
+    const storageStream = storageRes.body;
+    if (!storageStream) {
+      return jsonResponse({ error: "No stream body from storage" }, 500);
+    }
 
-    // Upload to Gemini File API
-    const fileUri = await uploadToGeminiFileAPI(apiKey, videoBytes, mimeType, fileName);
-    console.log(`Uploaded to Gemini. fileUri: ${fileUri}. Waiting for ACTIVE...`);
+    // Pipe the stream directly to Gemini — near-zero memory footprint
+    const fileUri = await streamUploadToGemini(apiKey, storageStream, mimeType, fileName);
+    console.log(`Streamed to Gemini. fileUri: ${fileUri}. Waiting for ACTIVE...`);
 
-    // Wait for file to be processed
     await waitForFileActive(apiKey, fileUri);
     console.log(`File ACTIVE. Running analysis...`);
 
-    // Analyze with generateContent using fileUri
     const result = await analyzeVideoWithGemini(apiKey, fileUri, mimeType, {
       captionId,
       fileName,
