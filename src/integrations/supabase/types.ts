@@ -239,6 +239,13 @@ export type Database = {
         | "sightseeing"
         | "border_crossing"
         | "other"
+        | "flight"
+        | "train"
+        | "bus"
+        | "ferry"
+        | "car"
+        | "on_foot"
+        | "cycling"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -376,6 +383,13 @@ export const Constants = {
         "sightseeing",
         "border_crossing",
         "other",
+        "flight",
+        "train",
+        "bus",
+        "ferry",
+        "car",
+        "on_foot",
+        "cycling",
       ],
     },
   },
