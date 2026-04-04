@@ -11,6 +11,7 @@ import NewTrip from "./pages/NewTrip";
 import StatsPage from "./pages/StatsPage";
 import AuthPage from "./pages/AuthPage";
 import NotFound from "./pages/NotFound";
+import JoinTrip from "./pages/JoinTrip";
 
 const queryClient = new QueryClient();
 
