@@ -8,17 +8,18 @@ import type { Tables } from "@/integrations/supabase/types";
 type TripStep = Tables<"trip_steps">;
 type StepPhoto = Tables<"step_photos">;
 
-const EVENT_TYPE_ICONS: Record<string, React.ElementType> = {
-  arrival: Plane,
-  departure: Plane,
-  accommodation: Hotel,
-  transport: ArrowRightLeft,
-  activity: Flag,
-  food: Utensils,
-  sightseeing: Camera,
-  border_crossing: MapPin,
-  other: CircleDot,
+const EVENT_TYPE_CONFIG: Record<string, { icon: React.ElementType; bg: string; text: string }> = {
+  arrival: { icon: Plane, bg: "bg-blue-500", text: "text-white" },
+  departure: { icon: Plane, bg: "bg-blue-500", text: "text-white" },
+  accommodation: { icon: Hotel, bg: "bg-violet-500", text: "text-white" },
+  transport: { icon: ArrowRightLeft, bg: "bg-blue-500", text: "text-white" },
+  activity: { icon: Flag, bg: "bg-primary", text: "text-primary-foreground" },
+  food: { icon: Utensils, bg: "bg-orange-500", text: "text-white" },
+  sightseeing: { icon: Camera, bg: "bg-emerald-500", text: "text-white" },
+  border_crossing: { icon: MapPin, bg: "bg-amber-500", text: "text-white" },
+  other: { icon: CircleDot, bg: "bg-muted", text: "text-muted-foreground" },
 };
+const DEFAULT_CONFIG = { icon: MapPin, bg: "bg-card", text: "text-primary" };
 
 function formatStepDate(dateStr: string) {
   return new Date(dateStr).toLocaleDateString("en-US", {
@@ -72,11 +73,12 @@ export function TripTimeline({ steps, onUpdated }: { steps: TripStep[]; onUpdate
       <div className="flex flex-col gap-0">
         {steps.map((step, index) => {
           const photos = photosByStep[step.id] || [];
-          const StepIcon = EVENT_TYPE_ICONS[step.event_type] || MapPin;
+          const config = EVENT_TYPE_CONFIG[step.event_type] || DEFAULT_CONFIG;
+          const StepIcon = config.icon;
           return (
             <div key={step.id} className="relative flex gap-5 pb-8 last:pb-0">
-              <div className="relative z-10 flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-card shadow-card ring-4 ring-background">
-                <StepIcon className="h-4 w-4 text-primary" />
+              <div className={`relative z-10 flex h-10 w-10 shrink-0 items-center justify-center rounded-full shadow-card ring-4 ring-background ${config.bg}`}>
+                <StepIcon className={`h-4 w-4 ${config.text}`} />
               </div>
               <div className="flex flex-1 flex-col gap-2 rounded-2xl bg-card p-5 shadow-card">
                 <div className="flex items-center justify-between gap-4">
