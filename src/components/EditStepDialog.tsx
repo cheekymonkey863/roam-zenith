@@ -102,7 +102,7 @@ export function EditStepDialog({ step, onUpdated }: EditStepDialogProps) {
         <div className="flex flex-col gap-5 pt-2">
           {/* Event type selector */}
           <div className="flex flex-col gap-2">
-            <label className="text-sm font-medium text-foreground">Activity Type</label>
+            <label className="text-sm font-medium text-foreground">Event Type</label>
             <EventTypeSelect value={eventType} onValueChange={setEventType} />
           </div>
 
