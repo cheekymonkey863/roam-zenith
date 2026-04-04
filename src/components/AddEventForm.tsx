@@ -229,7 +229,7 @@ export function AddEventForm({ tripId, onEventAdded }: AddEventFormProps) {
         onClick={() => setOpen(true)}
         className="flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
       >
-        <Plus className="h-4 w-4" /> Add Travel Event
+        <Plus className="h-4 w-4" /> Add Trip Stop
       </button>
     );
   }
