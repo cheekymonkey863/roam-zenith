@@ -23,98 +23,10 @@ function jsonResponse(body: unknown, status = 200) {
 
 const GEMINI_API_BASE = "https://generativelanguage.googleapis.com";
 const GEMINI_MODEL = "gemini-2.5-flash";
-const MAX_POLL_ATTEMPTS = 30;
-const POLL_INTERVAL_MS = 2000;
-
-async function uploadToFileApi(
-  apiKey: string,
-  videoBase64: string,
-  mimeType: string,
-  displayName: string,
-): Promise<string> {
-  // Decode base64 to binary
-  const binaryString = atob(videoBase64);
-  const bytes = new Uint8Array(binaryString.length);
-  for (let i = 0; i < binaryString.length; i++) {
-    bytes[i] = binaryString.charCodeAt(i);
-  }
-
-  // Step 1: Initiate resumable upload
-  const initResponse = await fetch(
-    `${GEMINI_API_BASE}/upload/v1beta/files?key=${apiKey}`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Goog-Upload-Protocol": "resumable",
-        "X-Goog-Upload-Command": "start",
-        "X-Goog-Upload-Header-Content-Length": String(bytes.length),
-        "X-Goog-Upload-Header-Content-Type": mimeType,
-      },
-      body: JSON.stringify({ file: { display_name: displayName } }),
-    },
-  );
-
-  if (!initResponse.ok) {
-    const errText = await initResponse.text();
-    throw new Error(`File API init failed [${initResponse.status}]: ${errText}`);
-  }
-
-  const uploadUrl = initResponse.headers.get("X-Goog-Upload-URL");
-  if (!uploadUrl) throw new Error("No upload URL returned from File API");
-
-  // Step 2: Upload the bytes
-  const uploadResponse = await fetch(uploadUrl, {
-    method: "PUT",
-    headers: {
-      "Content-Length": String(bytes.length),
-      "X-Goog-Upload-Offset": "0",
-      "X-Goog-Upload-Command": "upload, finalize",
-    },
-    body: bytes,
-  });
-
-  if (!uploadResponse.ok) {
-    const errText = await uploadResponse.text();
-    throw new Error(`File upload failed [${uploadResponse.status}]: ${errText}`);
-  }
-
-  const uploadResult = await uploadResponse.json();
-  const fileUri = uploadResult?.file?.uri;
-  const fileName = uploadResult?.file?.name;
-
-  if (!fileUri || !fileName) {
-    throw new Error("File API returned no URI or name");
-  }
-
-  // Step 3: Poll until file state is ACTIVE
-  for (let attempt = 0; attempt < MAX_POLL_ATTEMPTS; attempt++) {
-    const statusResponse = await fetch(
-      `${GEMINI_API_BASE}/v1beta/${fileName}?key=${apiKey}`,
-    );
-    if (statusResponse.ok) {
-      const statusData = await statusResponse.json();
-      console.log(`File poll attempt ${attempt + 1}: state=${statusData.state}`);
-      if (statusData.state === "ACTIVE") {
-        return fileUri;
-      }
-      if (statusData.state === "FAILED") {
-        console.error("Gemini file processing failed:", JSON.stringify(statusData));
-        throw new Error(`File processing failed on Gemini side: ${statusData.error?.message || "unknown reason"}`);
-      }
-    } else {
-      const errText = await statusResponse.text();
-      console.error(`File poll failed [${statusResponse.status}]:`, errText);
-    }
-    await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
-  }
-
-  throw new Error("File processing timed out");
-}
 
 async function analyzeVideoWithGemini(
   apiKey: string,
-  fileUri: string,
+  videoBase64: string,
   mimeType: string,
   metadata: {
     captionId: string;
@@ -164,7 +76,7 @@ OUTPUT RULES:
         contents: [
           {
             parts: [
-              { fileData: { mimeType, fileUri } },
+              { inlineData: { mimeType, data: videoBase64 } },
               { text: prompt },
             ],
           },
@@ -190,13 +102,14 @@ OUTPUT RULES:
   if (!response.ok) {
     const errText = await response.text();
     console.error(`Gemini generateContent error [${response.status}]:`, errText);
-    throw new Error(`Gemini API error [${response.status}]`);
+    throw new Error(`Gemini API error [${response.status}]: ${errText}`);
   }
 
   const data = await response.json();
   const textContent = data?.candidates?.[0]?.content?.parts?.[0]?.text;
 
   if (!textContent) {
+    console.error("Gemini response had no text content:", JSON.stringify(data));
     throw new Error("No content in Gemini response");
   }
 
@@ -214,20 +127,6 @@ OUTPUT RULES:
       ? parsed.moodTags.filter((t: unknown): t is string => typeof t === "string").map((t: string) => t.trim().toLowerCase())
       : [],
   };
-}
-
-// Cleanup uploaded file after analysis
-async function deleteFile(apiKey: string, fileUri: string) {
-  try {
-    // Extract file name from URI like "https://generativelanguage.googleapis.com/v1beta/files/xxx"
-    const parts = fileUri.split("/");
-    const fileName = `files/${parts[parts.length - 1]}`;
-    await fetch(`${GEMINI_API_BASE}/v1beta/${fileName}?key=${apiKey}`, {
-      method: "DELETE",
-    });
-  } catch {
-    // Best-effort cleanup
-  }
 }
 
 Deno.serve(async (req) => {
@@ -269,11 +168,10 @@ Deno.serve(async (req) => {
       return jsonResponse({ error: "captionId is required" }, 400);
     }
 
-    console.log(`Uploading video "${fileName}" (${(videoBase64.length * 0.75 / 1024 / 1024).toFixed(1)}MB) to Gemini File API...`);
-    const fileUri = await uploadToFileApi(apiKey, videoBase64, mimeType, fileName);
-    console.log(`File ready: ${fileUri}`);
+    const sizeMB = (videoBase64.length * 0.75 / 1024 / 1024).toFixed(1);
+    console.log(`Analyzing video "${fileName}" (${sizeMB}MB, ${mimeType}) via inline data...`);
 
-    const result = await analyzeVideoWithGemini(apiKey, fileUri, mimeType, {
+    const result = await analyzeVideoWithGemini(apiKey, videoBase64, mimeType, {
       captionId,
       fileName,
       takenAt,
@@ -283,9 +181,7 @@ Deno.serve(async (req) => {
       country,
     });
 
-    // Cleanup
-    await deleteFile(apiKey, fileUri);
-
+    console.log(`Analysis complete for "${fileName}": ${result.caption}`);
     return jsonResponse({ result });
   } catch (error) {
     console.error("analyze-video error:", error);
