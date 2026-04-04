@@ -121,7 +121,7 @@ OUTPUT RULES:
 Respond with valid JSON matching the schema exactly.`;
 }
 
-// ── Gemini File API helpers ─────────────────────────────────────────
+// ── Gemini File API helpers (videos only) ───────────────────────────
 
 async function uploadToGeminiFileApi(
   apiKey: string,
@@ -144,6 +144,8 @@ async function uploadToGeminiFileApi(
       "Content-Type": mimeType,
     },
     body: videoResponse.body,
+    // @ts-ignore — Deno requires this to stream request bodies without buffering to RAM
+    duplex: "half",
   });
 
   if (!uploadRes.ok) {
@@ -191,12 +193,15 @@ async function deleteGeminiFile(apiKey: string, fileUri: string): Promise<void> 
   } catch { /* Gemini auto-deletes after 48h */ }
 }
 
-async function callGemini(apiKey: string, fileUri: string, mimeType: string, prompt: string) {
+// ── Gemini generate (accepts any media part) ────────────────────────
+
+// deno-lint-ignore no-explicit-any
+async function callGemini(apiKey: string, mediaPart: any, prompt: string) {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`;
   const body = {
     contents: [{
       parts: [
-        { fileData: { mimeType, fileUri } },
+        mediaPart,
         { text: prompt },
       ],
     }],
@@ -213,6 +218,7 @@ async function callGemini(apiKey: string, fileUri: string, mimeType: string, pro
     if (response.status === 429) {
       const errText = await response.text();
       if (attempt < RATE_LIMIT_RETRY_DELAYS_MS.length) {
+        console.warn(`Gemini rate limited, retrying in ${RATE_LIMIT_RETRY_DELAYS_MS[attempt]}ms`);
         await sleep(RATE_LIMIT_RETRY_DELAYS_MS[attempt]);
         continue;
       }
@@ -229,7 +235,7 @@ async function callGemini(apiKey: string, fileUri: string, mimeType: string, pro
 
 // ── Background processing ───────────────────────────────────────────
 
-async function processVideoInBackground(params: {
+async function processMediaInBackground(params: {
   jobId: string;
   storagePath: string;
   captionId: string;
@@ -248,15 +254,49 @@ async function processVideoInBackground(params: {
   let geminiFileUri: string | null = null;
 
   try {
-    const videoUrl = `${supabaseUrl}/storage/v1/object/public/trip-photos/${params.storagePath}`;
+    const mediaUrl = `${supabaseUrl}/storage/v1/object/public/trip-photos/${params.storagePath}`;
 
-    // 1. Stream to Gemini File API
-    geminiFileUri = await uploadToGeminiFileApi(geminiApiKey, videoUrl, params.mimeType, params.fileName);
+    // deno-lint-ignore no-explicit-any
+    let geminiMediaPart: any;
 
-    // 2. Wait for file to be ready
-    await waitForFileActive(geminiApiKey, geminiFileUri);
+    // ── Route based on media type ──
+    if (params.mimeType.startsWith("video/")) {
+      console.log(`Analyzing VIDEO "${params.fileName}" via Gemini File API.`);
 
-    // 3. Generate analysis
+      geminiFileUri = await uploadToGeminiFileApi(geminiApiKey, mediaUrl, params.mimeType, params.fileName);
+      await waitForFileActive(geminiApiKey, geminiFileUri);
+
+      geminiMediaPart = {
+        fileData: {
+          mimeType: params.mimeType,
+          fileUri: geminiFileUri,
+        },
+      };
+    } else if (params.mimeType.startsWith("image/")) {
+      console.log(`Analyzing IMAGE "${params.fileName}" via Inline Data.`);
+
+      const imageResponse = await fetch(mediaUrl);
+      if (!imageResponse.ok) throw new Error("Failed to fetch image from storage.");
+
+      const arrayBuffer = await imageResponse.arrayBuffer();
+      const bytes = new Uint8Array(arrayBuffer);
+      let binary = "";
+      for (let i = 0; i < bytes.length; i++) {
+        binary += String.fromCharCode(bytes[i]);
+      }
+      const base64Data = btoa(binary);
+
+      geminiMediaPart = {
+        inlineData: {
+          mimeType: params.mimeType,
+          data: base64Data,
+        },
+      };
+    } else {
+      throw new Error(`Unsupported file type: ${params.mimeType}`);
+    }
+
+    // Generate analysis
     const prompt = buildPrompt({
       takenAt: params.takenAt,
       latitude: params.latitude,
@@ -265,7 +305,7 @@ async function processVideoInBackground(params: {
       country: params.country,
       itinerarySteps: params.itinerarySteps,
     });
-    const data = await callGemini(geminiApiKey, geminiFileUri, params.mimeType, prompt);
+    const data = await callGemini(geminiApiKey, geminiMediaPart, prompt);
 
     const textContent = data?.candidates?.[0]?.content?.parts?.[0]?.text;
     if (!textContent) throw new Error("No content in Gemini response");
@@ -287,7 +327,6 @@ async function processVideoInBackground(params: {
 
     console.log(`Analysis complete for "${params.fileName}": ${result.caption}`);
 
-    // Update job with results
     await supabase
       .from("video_analysis_jobs")
       .update({ status: "complete", result, updated_at: new Date().toISOString() })
@@ -322,7 +361,6 @@ Deno.serve(async (req) => {
     const geminiApiKey = Deno.env.get("GOOGLE_AI_STUDIO_KEY");
     if (!geminiApiKey) throw new Error("GOOGLE_AI_STUDIO_KEY is not configured");
 
-    // Extract user from auth header
     const authHeader = req.headers.get("authorization") ?? "";
     const supabase = getServiceClient();
     const token = authHeader.replace("Bearer ", "");
@@ -361,7 +399,6 @@ Deno.serve(async (req) => {
       mimeType = "video/mp4";
     }
 
-    // Create job record
     const { data: job, error: jobError } = await supabase
       .from("video_analysis_jobs")
       .insert({ caption_id: captionId, user_id: user.id, status: "processing" })
@@ -373,11 +410,10 @@ Deno.serve(async (req) => {
       return jsonResponse({ error: "Failed to create analysis job" }, 500);
     }
 
-    console.log(`Job ${job.id} created for "${fileName}". Starting background analysis...`);
+    console.log(`Job ${job.id} created for "${fileName}" (${mimeType}). Starting background analysis...`);
 
-    // Start background processing — function returns immediately
     EdgeRuntime.waitUntil(
-      processVideoInBackground({
+      processMediaInBackground({
         jobId: job.id,
         storagePath,
         captionId,
