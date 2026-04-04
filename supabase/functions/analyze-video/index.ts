@@ -198,6 +198,7 @@ Deno.serve(async (req) => {
       longitude = null,
       locationName = null,
       country = null,
+      itinerarySteps = [],
     } = body;
 
     if (!storagePath || typeof storagePath !== "string") {
