@@ -22,9 +22,10 @@ const Dashboard = () => {
   useEffect(() => {
     if (!user) return;
     const fetchData = async () => {
+      // Fetch own trips
       const [tripsRes, stepsRes] = await Promise.all([
-        supabase.from("trips").select("*").eq("user_id", user.id).order("start_date", { ascending: true, nullsFirst: false }),
-        supabase.from("trip_steps").select("*").eq("user_id", user.id).order("recorded_at", { ascending: true }),
+        supabase.from("trips").select("*").order("start_date", { ascending: true, nullsFirst: false }),
+        supabase.from("trip_steps").select("*").order("recorded_at", { ascending: true }),
       ]);
       setTrips(tripsRes.data || []);
       setSteps(stepsRes.data || []);
