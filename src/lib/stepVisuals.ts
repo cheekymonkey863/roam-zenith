@@ -7,8 +7,21 @@ export type StepVisualType =
   | "on_foot"
   | "cycling"
   | "hotel"
+  | "apartment_flat"
+  | "private_home"
+  | "villa"
+  | "safari_accommodation"
+  | "glamping"
+  | "camping"
   | "food"
   | "sightseeing"
+  | "tour"
+  | "dining"
+  | "meeting"
+  | "concert"
+  | "theatre"
+  | "live_show"
+  | "wellness"
   | "border"
   | "transport"
   | "activity"
@@ -37,7 +50,7 @@ function getGoogleVisualType(googlePlaceTypes: string[]): StepVisualType | null 
 
   if (types.has("airport")) return "flight";
   if (types.has("lodging")) return "hotel";
-  if (types.has("restaurant") || types.has("cafe") || types.has("bar") || types.has("meal_takeaway")) return "food";
+  if (types.has("restaurant") || types.has("cafe") || types.has("bar") || types.has("meal_takeaway")) return "dining";
   if (types.has("train_station") || types.has("light_rail_station") || types.has("subway_station")) return "train";
   if (types.has("bus_station")) return "bus";
   if (types.has("ferry_terminal")) return "ferry";
@@ -58,9 +71,37 @@ export function inferStepVisualType(step: StepVisualInput, googlePlaceTypes: str
   const text = buildStepContextText(step);
   const googleType = getGoogleVisualType(googlePlaceTypes);
 
+  // Direct mapping for specific event types
+  const directMap: Record<string, StepVisualType> = {
+    flight: "flight",
+    train: "train",
+    bus: "bus",
+    ferry: "ferry",
+    car: "car",
+    on_foot: "on_foot",
+    cycling: "cycling",
+    hotel: "hotel",
+    apartment_flat: "apartment_flat",
+    private_home: "private_home",
+    villa: "villa",
+    safari: "safari_accommodation",
+    glamping: "glamping",
+    camping: "camping",
+    tour: "tour",
+    sightseeing: "sightseeing",
+    dining: "dining",
+    meeting: "meeting",
+    concert: "concert",
+    theatre: "theatre",
+    live_show: "live_show",
+    wellness: "wellness",
+  };
+
+  if (directMap[step.event_type]) return directMap[step.event_type];
+
   const isFlight = FLIGHT_PATTERN.test(text) || googleType === "flight";
   const isHotel = HOTEL_PATTERN.test(text) || HOTEL_EVENT_PATTERN.test(text) || googleType === "hotel";
-  const isFood = FOOD_PATTERN.test(text) || googleType === "food";
+  const isFood = FOOD_PATTERN.test(text) || googleType === "dining";
   const isBorder = BORDER_PATTERN.test(text);
   const isTrain = TRAIN_PATTERN.test(text) || googleType === "train";
   const isBus = BUS_PATTERN.test(text) || googleType === "bus";
@@ -72,9 +113,7 @@ export function inferStepVisualType(step: StepVisualInput, googlePlaceTypes: str
     case "accommodation":
       return "hotel";
     case "food":
-      return "food";
-    case "sightseeing":
-      return "sightseeing";
+      return "dining";
     case "border_crossing":
       return "border";
     case "transport":
@@ -94,15 +133,8 @@ export function inferStepVisualType(step: StepVisualInput, googlePlaceTypes: str
       if (isCar) return "car";
       if (isHotel) return "hotel";
       return googleType || "flight";
-    case "flight": return "flight";
-    case "train": return "train";
-    case "bus": return "bus";
-    case "ferry": return "ferry";
-    case "car": return "car";
-    case "on_foot": return "on_foot";
-    case "cycling": return "cycling";
     case "activity":
-      if (isFood) return "food";
+      if (isFood) return "dining";
       if (isSightseeing) return "sightseeing";
       if (isHotel) return "hotel";
       if (isFlight) return "flight";
@@ -110,7 +142,7 @@ export function inferStepVisualType(step: StepVisualInput, googlePlaceTypes: str
     default:
       if (isFlight) return "flight";
       if (isHotel) return "hotel";
-      if (isFood) return "food";
+      if (isFood) return "dining";
       if (isBorder) return "border";
       if (isTrain) return "train";
       if (isFerry) return "ferry";
