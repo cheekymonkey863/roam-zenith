@@ -514,6 +514,7 @@ export async function processImportedMediaFiles(
               captionId: data.result.captionId,
               caption: data.result.caption,
               sceneDescription: data.result.sceneDescription,
+              essence: data.result.essence,
               richTags: data.result.richTags,
             });
             lastError = null;
