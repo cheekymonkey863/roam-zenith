@@ -24,41 +24,118 @@ function jsonResponse(body: unknown, status = 200) {
 
 const GEMINI_API_BASE = "https://generativelanguage.googleapis.com";
 const GEMINI_MODEL = "gemini-2.5-flash";
+const CHUNK_SIZE = 8 * 1024 * 1024; // 8 MB chunks for resumable upload
 
-// ── Stream-pipe upload to Gemini File API ────────────────────
-// Streams video bytes directly from Supabase Storage → Gemini
-// without buffering the entire file in memory.
+// ── Resumable upload to Gemini File API (chunked) ───────────
+// Reads from Storage in small chunks via Range requests and uploads
+// to Gemini using the resumable upload protocol.
+// Memory usage stays flat at ~CHUNK_SIZE regardless of video size.
 
-async function streamUploadToGemini(
+async function getFileSize(objectUrl: string, authHeader: string): Promise<number> {
+  const headRes = await fetch(objectUrl, {
+    method: "HEAD",
+    headers: { Authorization: authHeader },
+  });
+  if (!headRes.ok) {
+    throw new Error(`HEAD request failed [${headRes.status}]`);
+  }
+  const cl = headRes.headers.get("content-length");
+  if (!cl) throw new Error("No content-length from storage HEAD");
+  return parseInt(cl, 10);
+}
+
+async function initiateResumableUpload(
   apiKey: string,
-  storageStream: ReadableStream<Uint8Array>,
   mimeType: string,
   displayName: string,
+  totalSize: number,
 ): Promise<string> {
-  // Use Gemini's raw media upload — streams the body directly
-  const uploadUrl = `${GEMINI_API_BASE}/upload/v1beta/files?uploadType=media&key=${apiKey}`;
+  const initUrl = `${GEMINI_API_BASE}/upload/v1beta/files?uploadType=resumable&key=${apiKey}`;
 
-  const uploadRes = await fetch(uploadUrl, {
+  const res = await fetch(initUrl, {
     method: "POST",
     headers: {
-      "X-Goog-Upload-Protocol": "raw",
-      "Content-Type": mimeType,
+      "X-Goog-Upload-Protocol": "resumable",
+      "X-Goog-Upload-Command": "start",
+      "X-Goog-Upload-Header-Content-Length": String(totalSize),
+      "X-Goog-Upload-Header-Content-Type": mimeType,
+      "Content-Type": "application/json",
     },
-    body: storageStream,
-    // @ts-ignore — duplex is required in Deno for streaming request bodies
-    duplex: "half",
+    body: JSON.stringify({
+      file: { displayName },
+    }),
   });
 
-  if (!uploadRes.ok) {
-    const errText = await uploadRes.text();
-    throw new Error(`Gemini File API upload failed [${uploadRes.status}]: ${errText}`);
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`Resumable upload init failed [${res.status}]: ${errText}`);
   }
 
-  const uploadData = await uploadRes.json();
-  const fileUri = uploadData?.file?.uri;
-  if (!fileUri) throw new Error("No fileUri in Gemini upload response");
+  const uploadUrl = res.headers.get("X-Goog-Upload-URL");
+  if (!uploadUrl) throw new Error("No X-Goog-Upload-URL in init response");
+  // Consume body to avoid resource leak
+  await res.text();
+  return uploadUrl;
+}
 
-  return fileUri;
+async function uploadChunked(
+  uploadUrl: string,
+  objectUrl: string,
+  authHeader: string,
+  totalSize: number,
+): Promise<string> {
+  let offset = 0;
+
+  while (offset < totalSize) {
+    const end = Math.min(offset + CHUNK_SIZE, totalSize);
+    const isLast = end >= totalSize;
+    const chunkSize = end - offset;
+
+    // Fetch chunk from Storage using Range header
+    const rangeRes = await fetch(objectUrl, {
+      headers: {
+        Authorization: authHeader,
+        Range: `bytes=${offset}-${end - 1}`,
+      },
+    });
+
+    if (!rangeRes.ok && rangeRes.status !== 206) {
+      const errText = await rangeRes.text();
+      throw new Error(`Storage range fetch failed [${rangeRes.status}]: ${errText}`);
+    }
+
+    const chunkData = new Uint8Array(await rangeRes.arrayBuffer());
+
+    // Upload chunk to Gemini
+    const command = isLast ? "upload, finalize" : "upload";
+    const uploadRes = await fetch(uploadUrl, {
+      method: "POST",
+      headers: {
+        "Content-Length": String(chunkSize),
+        "X-Goog-Upload-Offset": String(offset),
+        "X-Goog-Upload-Command": command,
+      },
+      body: chunkData,
+    });
+
+    if (!uploadRes.ok) {
+      const errText = await uploadRes.text();
+      throw new Error(`Chunk upload failed at offset ${offset} [${uploadRes.status}]: ${errText}`);
+    }
+
+    if (isLast) {
+      const data = await uploadRes.json();
+      const fileUri = data?.file?.uri;
+      if (!fileUri) throw new Error("No fileUri in final upload response");
+      return fileUri;
+    }
+
+    // Consume body
+    await uploadRes.text();
+    offset = end;
+  }
+
+  throw new Error("Upload loop ended without finalization");
 }
 
 // ── Wait for Gemini file processing ─────────────────────────
@@ -102,7 +179,6 @@ async function analyzeVideoWithGemini(
     country: string | null;
   },
 ): Promise<VideoAnalysisResult> {
-  // Build the Context Sandwich — ground-truth metadata injected alongside the video
   const metadataParts: string[] = [];
   if (metadata.takenAt) {
     const d = new Date(metadata.takenAt);
@@ -255,35 +331,31 @@ Deno.serve(async (req) => {
       mimeType = "video/mp4";
     }
 
-    // Stream-pipe: fetch from Storage without buffering, pipe directly to Gemini
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const objectUrl = `${supabaseUrl}/storage/v1/object/trip-photos/${storagePath}`;
+    const authHeader = `Bearer ${supabaseServiceKey}`;
 
-    console.log(`Streaming "${fileName}" from storage to Gemini File API...`);
+    // 1. Get file size without downloading
+    console.log(`Getting file size for "${fileName}"...`);
+    const totalSize = await getFileSize(objectUrl, authHeader);
+    console.log(`File size: ${(totalSize / 1024 / 1024).toFixed(1)} MB`);
 
-    const storageRes = await fetch(objectUrl, {
-      headers: { Authorization: `Bearer ${supabaseServiceKey}` },
-    });
+    // 2. Initiate Gemini resumable upload
+    console.log(`Initiating resumable upload to Gemini...`);
+    const uploadUrl = await initiateResumableUpload(apiKey, mimeType, fileName, totalSize);
 
-    if (!storageRes.ok) {
-      const errText = await storageRes.text();
-      console.error("Storage download error:", storageRes.status, errText);
-      return jsonResponse({ error: `Failed to download video: ${storageRes.status}` }, 500);
-    }
+    // 3. Upload in chunks — read 8MB from Storage, push to Gemini, repeat
+    // Memory stays flat at ~8MB regardless of video size
+    console.log(`Uploading in ${Math.ceil(totalSize / CHUNK_SIZE)} chunks...`);
+    const fileUri = await uploadChunked(uploadUrl, objectUrl, authHeader, totalSize);
+    console.log(`Upload complete. fileUri: ${fileUri}. Waiting for ACTIVE...`);
 
-    const storageStream = storageRes.body;
-    if (!storageStream) {
-      return jsonResponse({ error: "No stream body from storage" }, 500);
-    }
-
-    // Pipe the stream directly to Gemini — near-zero memory footprint
-    const fileUri = await streamUploadToGemini(apiKey, storageStream, mimeType, fileName);
-    console.log(`Streamed to Gemini. fileUri: ${fileUri}. Waiting for ACTIVE...`);
-
+    // 4. Wait for Gemini to process the file
     await waitForFileActive(apiKey, fileUri);
     console.log(`File ACTIVE. Running analysis...`);
 
+    // 5. Analyze
     const result = await analyzeVideoWithGemini(apiKey, fileUri, mimeType, {
       captionId,
       fileName,
