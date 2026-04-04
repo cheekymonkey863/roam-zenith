@@ -265,64 +265,93 @@ import { ImportPreview } from "@/components/ImportPreview";
          return;
        }
  
-        // Calculate total items for progress
-        const totalItems = pendingPhotoSteps.reduce((n, s) => n + s.photos.length, 0) + pendingPhotoSteps.length;
-        let completed = 0;
-        setImportProgress({ current: 0, total: totalItems });
+         // Calculate total items for progress
+         const totalItems = pendingPhotoSteps.reduce((n, s) => n + s.photos.length, 0) + pendingPhotoSteps.length;
+         let completed = 0;
+         let stepsCreated = 0;
+         let mediaUploaded = 0;
+         let stepErrors = 0;
+         let uploadErrors = 0;
+         setImportProgress({ current: 0, total: totalItems });
 
-        // Create photo steps + upload media
-        for (const step of pendingPhotoSteps) {
-          const { data: stepData } = await supabase
-            .from("trip_steps")
-            .insert({
-              trip_id: trip.id,
-              user_id: user.id,
-              location_name: step.locationName,
-              country: step.country,
-              latitude: step.latitude,
-              longitude: step.longitude,
-              recorded_at: step.earliestDate?.toISOString() || new Date().toISOString(),
-              source: "photo_import",
-              event_type: step.eventType,
-              description: step.description,
-              is_confirmed: true,
-            })
-            .select()
-            .single();
+         console.log(`[Import] Saving ${pendingPhotoSteps.length} steps with ${totalItems - pendingPhotoSteps.length} media files`);
 
-          completed++;
-          setImportProgress({ current: completed, total: totalItems });
+         // Create photo steps + upload media
+         for (const step of pendingPhotoSteps) {
+           console.log(`[Import] Creating step: ${step.locationName} (${step.photos.length} media, coords: ${step.latitude},${step.longitude})`);
+           const { data: stepData, error: stepError } = await supabase
+             .from("trip_steps")
+             .insert({
+               trip_id: trip.id,
+               user_id: user.id,
+               location_name: step.locationName,
+               country: step.country,
+               latitude: step.latitude,
+               longitude: step.longitude,
+               recorded_at: step.earliestDate?.toISOString() || new Date().toISOString(),
+               source: "photo_import",
+               event_type: step.eventType,
+               description: step.description,
+               is_confirmed: true,
+             })
+             .select()
+             .single();
 
-          if (!stepData) continue;
+           completed++;
+           setImportProgress({ current: completed, total: totalItems });
 
-          for (const photo of step.photos) {
-            const uploadFile = photo.uploadFile ?? photo.file;
-            const ext = uploadFile.name.split(".").pop() || (uploadFile.type.startsWith("video/") ? "mp4" : "jpg");
-            const path = `${user.id}/${trip.id}/${stepData.id}/${crypto.randomUUID()}.${ext}`;
-            const { error: uploadError } = await supabase.storage
-              .from("trip-photos")
-              .upload(path, uploadFile, { contentType: uploadFile.type || undefined });
+           if (stepError || !stepData) {
+             console.error(`[Import] Failed to create step "${step.locationName}":`, stepError);
+             stepErrors++;
+             // Skip photos for this step but still count them for progress
+             completed += step.photos.length;
+             setImportProgress({ current: completed, total: totalItems });
+             continue;
+           }
+           stepsCreated++;
 
-            if (!uploadError) {
-              await supabase.from("step_photos").insert({
-                step_id: stepData.id,
-                user_id: user.id,
-                storage_path: path,
-                file_name: uploadFile.name,
-                latitude: photo.latitude,
-                longitude: photo.longitude,
-                taken_at: photo.takenAt?.toISOString(),
-                 exif_data: buildStoredMediaMetadata(photo, {
-                   locationName: step.locationName,
-                   country: step.country,
-                 }),
-              });
-            }
+           for (const photo of step.photos) {
+             const uploadFile = photo.uploadFile ?? photo.file;
+             const ext = uploadFile.name.split(".").pop() || (uploadFile.type.startsWith("video/") ? "mp4" : "jpg");
+             const path = `${user.id}/${trip.id}/${stepData.id}/${crypto.randomUUID()}.${ext}`;
+             const { error: uploadError } = await supabase.storage
+               .from("trip-photos")
+               .upload(path, uploadFile, { contentType: uploadFile.type || undefined });
 
-            completed++;
-            setImportProgress({ current: completed, total: totalItems });
-          }
-        }
+             if (uploadError) {
+               console.error(`[Import] Upload failed for ${uploadFile.name} (${(uploadFile.size / 1024 / 1024).toFixed(1)}MB):`, uploadError);
+               uploadErrors++;
+             } else {
+               const { error: photoInsertError } = await supabase.from("step_photos").insert({
+                 step_id: stepData.id,
+                 user_id: user.id,
+                 storage_path: path,
+                 file_name: uploadFile.name,
+                 latitude: photo.latitude,
+                 longitude: photo.longitude,
+                 taken_at: photo.takenAt?.toISOString(),
+                  exif_data: buildStoredMediaMetadata(photo, {
+                    locationName: step.locationName,
+                    country: step.country,
+                  }),
+               });
+               if (photoInsertError) {
+                 console.error(`[Import] Photo record insert failed for ${uploadFile.name}:`, photoInsertError);
+                 uploadErrors++;
+               } else {
+                 mediaUploaded++;
+               }
+             }
+
+             completed++;
+             setImportProgress({ current: completed, total: totalItems });
+           }
+         }
+
+         console.log(`[Import] Complete: ${stepsCreated}/${pendingPhotoSteps.length} steps, ${mediaUploaded} media uploaded, ${stepErrors} step errors, ${uploadErrors} upload errors`);
+         if (stepErrors > 0 || uploadErrors > 0) {
+           toast.warning(`Imported ${stepsCreated} stops & ${mediaUploaded} files. ${stepErrors + uploadErrors} item(s) failed — check console for details.`);
+         }
  
        // Create itinerary steps
        if (pendingActivities.length > 0) {
