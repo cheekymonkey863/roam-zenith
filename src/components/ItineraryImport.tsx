@@ -4,17 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 
-const EVENT_TYPES = [
-  { value: "arrival", label: "Arrival" },
-  { value: "departure", label: "Departure" },
-  { value: "accommodation", label: "Accommodation" },
-  { value: "transport", label: "Transport" },
-  { value: "activity", label: "Activity" },
-  { value: "food", label: "Food & Drink" },
-  { value: "sightseeing", label: "Sightseeing" },
-  { value: "border_crossing", label: "Border Crossing" },
-  { value: "other", label: "Other" },
-] as const;
+import { ALL_EVENT_TYPES } from "@/lib/eventTypes";
 
 interface ParsedActivity {
   locationName: string;

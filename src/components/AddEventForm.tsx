@@ -1,26 +1,12 @@
 import { useState } from "react";
-import { Plus, Plane, Hotel, Utensils, Camera, MapPin, Flag, CircleDot, X, Search, Loader2, TrainFront, Bus, Ship, Car, Footprints, Bike } from "lucide-react";
+import { Plus, X, Search, Loader2, MapPin } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 import { PendingPhotoUpload, type SelectedFile } from "@/components/ActivityPhotoUpload";
 import { useGooglePlacesSearch } from "@/hooks/useGooglePlacesSearch";
-
-const EVENT_TYPES = [
-  { value: "flight", label: "Flight", icon: Plane },
-  { value: "train", label: "Train", icon: TrainFront },
-  { value: "bus", label: "Bus", icon: Bus },
-  { value: "ferry", label: "Ferry", icon: Ship },
-  { value: "car", label: "Car", icon: Car },
-  { value: "on_foot", label: "On Foot", icon: Footprints },
-  { value: "cycling", label: "Cycling", icon: Bike },
-  { value: "accommodation", label: "Accommodation", icon: Hotel },
-  { value: "activity", label: "Activity", icon: Flag },
-  { value: "food", label: "Food & Drink", icon: Utensils },
-  { value: "sightseeing", label: "Sightseeing", icon: Camera },
-  { value: "border_crossing", label: "Border Crossing", icon: MapPin },
-  { value: "other", label: "Other", icon: CircleDot },
-] as const;
+import { EventTypeSelect } from "@/components/EventTypeSelect";
+import { getEventType } from "@/lib/eventTypes";
 
 interface AddEventFormProps {
   tripId: string;
@@ -31,7 +17,7 @@ export function AddEventForm({ tripId, onEventAdded }: AddEventFormProps) {
   const { user } = useAuth();
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [eventType, setEventType] = useState("activity");
+  const [eventType, setEventType] = useState("tour");
   const [activityName, setActivityName] = useState("");
   const [description, setDescription] = useState("");
   const [date, setDate] = useState(new Date().toISOString().slice(0, 16));
@@ -40,7 +26,7 @@ export function AddEventForm({ tripId, onEventAdded }: AddEventFormProps) {
   const places = useGooglePlacesSearch();
 
   const resetForm = () => {
-    setEventType("activity");
+    setEventType("tour");
     setActivityName("");
     setDescription("");
     setDate(new Date().toISOString().slice(0, 16));
@@ -100,7 +86,7 @@ export function AddEventForm({ tripId, onEventAdded }: AddEventFormProps) {
     );
   }
 
-  const selectedType = EVENT_TYPES.find((t) => t.value === eventType);
+  const selectedType = getEventType(eventType);
 
   return (
     <div className="rounded-2xl bg-card p-6 shadow-card">
@@ -115,20 +101,7 @@ export function AddEventForm({ tripId, onEventAdded }: AddEventFormProps) {
         {/* Event type selector */}
         <div className="flex flex-col gap-2">
           <label className="text-sm font-medium text-foreground">Activity Type</label>
-          <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
-            {EVENT_TYPES.map((type) => {
-              const Icon = type.icon;
-              const isSelected = eventType === type.value;
-              return (
-                <button key={type.value} type="button" onClick={() => setEventType(type.value)}
-                  className={`flex flex-col items-center gap-1.5 rounded-xl border-2 px-2 py-3 text-xs font-medium transition-all ${
-                    isSelected ? "border-primary bg-primary/10 text-primary" : "border-border bg-background text-muted-foreground hover:border-primary/30 hover:bg-secondary"
-                  }`}>
-                  <Icon className="h-4 w-4" /> {type.label}
-                </button>
-              );
-            })}
-          </div>
+          <EventTypeSelect value={eventType} onValueChange={setEventType} />
         </div>
 
         {/* Activity name */}

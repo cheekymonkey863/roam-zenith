@@ -103,20 +103,7 @@ export function EditStepDialog({ step, onUpdated }: EditStepDialogProps) {
           {/* Event type selector */}
           <div className="flex flex-col gap-2">
             <label className="text-sm font-medium text-foreground">Activity Type</label>
-            <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
-              {EVENT_TYPES.map((type) => {
-                const Icon = type.icon;
-                const isSelected = eventType === type.value;
-                return (
-                  <button key={type.value} type="button" onClick={() => setEventType(type.value)}
-                    className={`flex flex-col items-center gap-1.5 rounded-xl border-2 px-2 py-3 text-xs font-medium transition-all ${
-                      isSelected ? "border-primary bg-primary/10 text-primary" : "border-border bg-background text-muted-foreground hover:border-primary/30 hover:bg-secondary"
-                    }`}>
-                    <Icon className="h-4 w-4" /> {type.label}
-                  </button>
-                );
-              })}
-            </div>
+            <EventTypeSelect value={eventType} onValueChange={setEventType} />
           </div>
 
           {/* Activity name */}
