@@ -25,6 +25,7 @@ function MediaLightbox({ src, onClose }: { src: string; onClose: () => void }) {
       onClick={onClose}
     >
       <button
+        type="button"
         onClick={onClose}
         className="absolute right-4 top-4 rounded-full bg-black/50 p-2 text-white hover:bg-black/70"
       >
@@ -91,36 +92,33 @@ export function ImportPreview({ steps, onClear }: ImportPreviewProps) {
 
   return (
     <div className="rounded-xl border border-primary/20 bg-primary/5 overflow-hidden">
-      {/* Summary header - always visible */}
-      <button
-        type="button"
-        onClick={() => setExpanded(!expanded)}
-        className="flex w-full items-center justify-between px-4 py-2.5"
-      >
-        <div className="flex items-center gap-2 text-sm">
-          <Check className="h-4 w-4 text-primary" />
-          <span className="text-foreground font-medium">
-            {steps.length} location{steps.length !== 1 ? "s" : ""}, {totalMedia} media file{totalMedia !== 1 ? "s" : ""} ready
-          </span>
-        </div>
-        <div className="flex items-center gap-1.5">
+      <div className="flex items-center gap-2 px-4 py-2.5">
+        <button
+          type="button"
+          onClick={() => setExpanded(!expanded)}
+          className="flex flex-1 items-center justify-between gap-3 text-left"
+        >
+          <div className="flex items-center gap-2 text-sm">
+            <Check className="h-4 w-4 text-primary" />
+            <span className="text-foreground font-medium">
+              {steps.length} location{steps.length !== 1 ? "s" : ""}, {totalMedia} media file{totalMedia !== 1 ? "s" : ""} ready
+            </span>
+          </div>
           {expanded ? (
             <ChevronUp className="h-4 w-4 text-muted-foreground" />
           ) : (
             <ChevronDown className="h-4 w-4 text-muted-foreground" />
           )}
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onClear();
-            }}
-            className="text-muted-foreground hover:text-foreground ml-1"
-          >
-            <X className="h-3.5 w-3.5" />
-          </button>
-        </div>
-      </button>
+        </button>
+
+        <button
+          type="button"
+          onClick={onClear}
+          className="ml-1 text-muted-foreground hover:text-foreground"
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
+      </div>
 
       {/* Expanded location list */}
       {expanded && (
