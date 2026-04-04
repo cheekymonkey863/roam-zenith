@@ -452,21 +452,23 @@ export async function processImportedMediaFiles(
 
     await mapWithConcurrency(allVideoMedia, 2, async ({ photo, step }) => {
       try {
-        // Read full video file (Gemini needs a valid container)
-        const MAX_VIDEO_BYTES = 20 * 1024 * 1024; // 20MB cap
-        const videoFile = photo.file.size > MAX_VIDEO_BYTES
-          ? photo.file.slice(0, MAX_VIDEO_BYTES)
-          : photo.file;
-        const buffer = await videoFile.arrayBuffer();
+        // Send full video file — Gemini needs a valid container
+        const buffer = await photo.file.arrayBuffer();
         const bytes = new Uint8Array(buffer);
 
-        // Convert to base64
+        // Convert to base64 in chunks to avoid stack overflow
         let binary = "";
         const chunkSize = 8192;
         for (let i = 0; i < bytes.length; i += chunkSize) {
           binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
         }
         const videoBase64 = btoa(binary);
+
+        // Map MIME types — Gemini doesn't accept video/quicktime, use video/mov
+        let mimeType = photo.file.type || "video/mp4";
+        if (mimeType === "video/quicktime") {
+          mimeType = "video/mov";
+        }
 
         const { data, error } = await supabase.functions.invoke("analyze-video", {
           body: {
