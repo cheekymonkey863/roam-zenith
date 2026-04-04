@@ -85,6 +85,8 @@ export function inferStepVisualType(step: StepVisualInput, googlePlaceTypes: str
     train: "train",
     bus: "bus",
     ferry: "ferry",
+    yacht_boat: "yacht_boat",
+    cruise: "cruise",
     car: "car",
     on_foot: "on_foot",
     cycling: "cycling",
