@@ -27,6 +27,7 @@ const TripDetail = () => {
   const [steps, setSteps] = useState<TripStep[]>([]);
   const [loading, setLoading] = useState(true);
   const [showPhotoImport, setShowPhotoImport] = useState(false);
+  const [showItineraryImport, setShowItineraryImport] = useState(false);
 
   const fetchData = async () => {
     if (!user || !id) return;
