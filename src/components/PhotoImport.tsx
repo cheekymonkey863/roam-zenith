@@ -743,6 +743,7 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
           </div>
         </div>
       )}
+      {lightboxSrc && <MediaLightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />}
     </div>
   );
 }
