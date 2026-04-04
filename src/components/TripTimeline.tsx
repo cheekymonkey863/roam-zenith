@@ -41,6 +41,40 @@ export function TripTimeline({
 }) {
   const [photosByStep, setPhotosByStep] = useState<Record<string, StepPhoto[]>>({});
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const stepRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+
+  // IntersectionObserver to detect which step is in view
+  useEffect(() => {
+    if (!onStepInView || steps.length === 0) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        let bestEntry: IntersectionObserverEntry | null = null;
+        for (const entry of entries) {
+          if (entry.isIntersecting) {
+            if (!bestEntry || entry.intersectionRatio > bestEntry.intersectionRatio) {
+              bestEntry = entry;
+            }
+          }
+        }
+        if (bestEntry) {
+          const stepId = (bestEntry.target as HTMLElement).dataset.stepId;
+          if (stepId) onStepInView(stepId);
+        }
+      },
+      { threshold: [0.3, 0.5, 0.7], rootMargin: "-20% 0px -40% 0px" }
+    );
+
+    // Observe after a brief delay to ensure refs are set
+    const timer = setTimeout(() => {
+      stepRefs.current.forEach((el) => observer.observe(el));
+    }, 100);
+
+    return () => {
+      clearTimeout(timer);
+      observer.disconnect();
+    };
+  }, [steps, onStepInView]);
 
   useEffect(() => {
     const stepIds = steps.map((s) => s.id);
