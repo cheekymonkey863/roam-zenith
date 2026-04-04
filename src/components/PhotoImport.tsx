@@ -34,6 +34,7 @@ interface PhotoImportProps {
   tripId: string;
   onImportComplete: () => void;
   onCancel?: () => void;
+  existingSteps?: Array<{ id: string; latitude: number; longitude: number; location_name: string | null }>;
 }
 
 function getRepresentativeCoordinates(photos: PhotoExifData[]) {
