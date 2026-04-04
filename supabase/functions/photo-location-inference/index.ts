@@ -215,45 +215,74 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Build the prompt content
+    // Build the prompt content using "Context Sandwich" approach:
+    // Feed metadata (GPS, timestamp, reverse-geocoded location) alongside visuals
     const content: Array<Record<string, unknown>> = [
       {
         type: "text",
-        text: `You analyze travel photos and video frames. Your job is to describe ONLY what is literally visible in each image or frame. Do NOT speculate, infer narratives, or make up activities that are not clearly shown.
+        text: `You are a world-class travel writer and expert metadata tagger.
+You are provided with groups of travel media (photos and video frames), each with extracted metadata.
 
-RULES:
-- If EXIF coordinates are provided, they are the geographic source of truth. Use visuals ONLY to refine the venue/landmark name.
-- If NO EXIF coordinates, identify the location from photo contents. Return city/landmark/country and approximate lat/lng.
-- "locationName" MUST be a specific venue, landmark, beach, park, or POI — NOT a generic city name. Example: "Ibrox Stadium" not "Glasgow".
-- "summary": describe ONLY what is consistently, literally visible across the group (e.g. "Football match at a stadium", "Band performing on stage"). Max 18 words. No speculation.
-- "eventDescription": one factual sentence about the stop based on what the media literally shows. No narratives.
-- "photoCaptions" MUST include one entry per media item using the exact "captionId".
-- For each caption:
-  - "caption": describe ONLY what is literally visible in that specific frame. Max 14 words. Example: "Band performing on stage with crowd" NOT "Navigating through the city at night".
-  - "sceneDescription": one sentence describing what is literally visible. NO speculation about what happened before/after.
-  - "richTags": 3-8 lowercase tags about what is visible (place, activity, scenery, objects, weather, architecture).
-- For video frames: describe the literal frame content. If multiple videos show the same scene (e.g. a band performing), say so consistently — do NOT invent different descriptions for each.
-- NEVER mention GPS metadata or people's identities.`,
+YOUR APPROACH:
+1. Analyze the visual elements in each image/frame (lighting, scenery, objects, movement, signage, architecture).
+2. Synthesize the provided metadata (coordinates, timestamps, reverse-geocoded location) with visual evidence to identify the EXACT venue or landmark.
+3. Describe ONLY what is literally, visually present. NEVER speculate or invent narratives.
+
+RULES FOR EACH GROUP:
+- "locationName": Be as specific as possible. Use the venue/landmark/POI name visible in signage or identifiable from architecture + coordinates. Example: "Ibrox Stadium" not "Glasgow", "Pizza Paradise" not "restaurant".
+- "summary": What is consistently, literally visible across the group. Max 18 words. Example: "Football match at Ibrox Stadium" or "Band performing live on stage at a music venue".
+- "eventDescription": One factual sentence synthesizing the location metadata and visual evidence. No narratives.
+- "photoCaptions": One entry per media item using the exact "captionId".
+
+CAPTION RULES:
+- "caption": Describe ONLY what is literally visible in that specific frame. Max 14 words.
+- "sceneDescription": One sentence of what is literally visible. No before/after speculation.
+- "richTags": 3-8 lowercase tags about visible content (place, activity, scenery, objects, weather, architecture).
+- If multiple videos/frames show the same scene (e.g. a band performing), use CONSISTENT descriptions — do NOT invent different activities for each.
+- For video frames without an image: caption based on filename, timestamp context, and the other media in the group.
+
+QUALITY EXAMPLES:
+Good caption: "Band performing on stage with blue lighting and crowd watching"
+Bad caption: "Navigating through the city of Glasgow at night"
+Good eventDescription: "Live music performance at King Tut's Wah Wah Hut"
+Bad eventDescription: "An evening of cultural exploration in Scotland's largest city"
+
+NEVER mention GPS metadata or coordinates in outputs. NEVER identify people by name.`,
       },
     ];
 
     for (const group of groups) {
+      // Context sandwich: provide metadata block BEFORE the images
       if (group.exifLocation) {
         content.push({
           type: "text",
-          text: `Group ${group.key} (HAS GPS)\nEXIF center: ${group.exifLocation.latitude}, ${group.exifLocation.longitude}\nReverse geocode: ${group.exifLocation.name}, ${group.exifLocation.country}\nGoal: return the best display name for this stop, one location-level summary, one travel-event description for the whole stop, and one caption per media item.`,
+          text: `--- GROUP: ${group.key} ---
+METADATA:
+- Coordinates: ${group.exifLocation.latitude.toFixed(6)}, ${group.exifLocation.longitude.toFixed(6)}
+- Reverse-geocoded location: ${group.exifLocation.name}, ${group.exifLocation.country}
+- Media count: ${group.photos.length} item(s)
+${group.photos.filter(p => p.takenAt).map(p => `- Timestamp: ${p.takenAt}`).join("\n")}
+
+TASK: Using the coordinates and reverse-geocoded name as ground truth, analyze the visuals to determine the most specific venue/landmark name. Return the best display name, one summary, one eventDescription, and one caption per media item.`,
         });
       } else {
         content.push({
           type: "text",
-          text: `Group ${group.key} (NO GPS)\nNo EXIF coordinates available. Identify the location from the photo contents. Return the city/landmark name, country, your best estimate of latitude and longitude, one travel-event description for the whole stop, and one caption per media item.`,
+          text: `--- GROUP: ${group.key} (NO GPS) ---
+METADATA:
+- No coordinates available
+- Media count: ${group.photos.length} item(s)
+${group.photos.filter(p => p.takenAt).map(p => `- Timestamp: ${p.takenAt}`).join("\n")}
+
+TASK: Identify the location purely from visual evidence (signage, architecture, landmarks, language on signs). Return city/landmark name, country, estimated lat/lng, one summary, one eventDescription, and one caption per media item.`,
         });
       }
 
       for (const photo of group.photos) {
+        const isVideo = !photo.analysisImage;
         content.push({
           type: "text",
-          text: `Media item ${photo.captionId}: ${photo.fileName}${photo.takenAt ? `, taken at ${photo.takenAt}` : ""}${!photo.analysisImage ? " (video — no preview frame available, caption based on filename and context)" : ""}`,
+          text: `Media ${photo.captionId}: "${photo.fileName}"${photo.takenAt ? ` | ${photo.takenAt}` : ""}${isVideo ? " | VIDEO (no frame available — describe based on filename, timestamps, and context from other media in this group)" : ""}`,
         });
         if (photo.analysisImage) {
           content.push({ type: "image_url", image_url: { url: photo.analysisImage } });
@@ -268,11 +297,11 @@ RULES:
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "google/gemini-3-flash-preview",
+        model: "google/gemini-2.5-flash",
         messages: [
           {
             role: "system",
-            content: "You analyze travel photos and video frames. Describe ONLY what is literally, visually present in each image or frame. Never speculate, never invent narratives, never describe things not shown. For locationName, use specific venue/landmark/POI names. For summary, state only what is consistently visible. For eventDescription, one factual sentence. For photoCaptions, describe the literal visual content of each frame. If multiple videos show the same scene (e.g. a band on stage), use consistent descriptions. Never mention GPS metadata or people's identities.",
+            content: "You are a world-class travel writer and expert metadata tagger. You synthesize GPS metadata, timestamps, and visual evidence to identify exact venues and describe travel moments factually. You NEVER speculate or invent narratives. You describe ONLY what is literally visible. When multiple media items show the same scene, you use consistent descriptions. You never mention coordinates or GPS data in your outputs.",
           },
           { role: "user", content },
         ],
