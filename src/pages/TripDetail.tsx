@@ -1,6 +1,7 @@
 import { useParams, Link } from "react-router-dom";
 import { useEffect, useState, useRef, useCallback } from "react";
 import { ArrowLeft, Calendar, MapPin, Route, Navigation, Image as ImageIcon, FileText } from "lucide-react";
+import { getTripStatus, getTripStatusLabel, getTripStatusStyle, formatTripDateRange } from "@/lib/tripStatus";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useStepVisualTypes } from "@/hooks/useStepVisualTypes";
