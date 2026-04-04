@@ -236,7 +236,10 @@ async function inferLocationsWithVision(
   );
 }
 
-export async function processImportedMediaFiles(files: File[]): Promise<ProcessedMediaImport> {
+export async function processImportedMediaFiles(
+  files: File[],
+  onProgress?: ImportProgressCallback,
+): Promise<ProcessedMediaImport> {
   const mediaFiles = files.filter((file) => file.type.startsWith("image/") || file.type.startsWith("video/"));
   if (mediaFiles.length === 0) {
     return {
@@ -250,7 +253,18 @@ export async function processImportedMediaFiles(files: File[]): Promise<Processe
     };
   }
 
-  const exifResults = await extractExifFromFiles(mediaFiles);
+  onProgress?.("Reading metadata", 0, mediaFiles.length);
+  let exifDone = 0;
+  const exifResults = await Promise.all(
+    mediaFiles.map(async (file) => {
+      const result = await extractExifFromFile(file);
+      exifDone++;
+      onProgress?.("Reading metadata", exifDone, mediaFiles.length);
+      return result;
+    }),
+  );
+
+  onProgress?.("Grouping locations", 0, 1);
   const allDates = exifResults.map((photo) => photo.takenAt).filter(Boolean) as Date[];
   const groups = groupPhotosByLocation(exifResults, LOCATION_GROUP_RADIUS_METERS, LOCATION_GROUP_MAX_GAP_HOURS);
 
