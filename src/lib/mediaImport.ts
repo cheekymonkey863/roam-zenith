@@ -152,6 +152,7 @@ function getClosestTimeDistanceMs(step: ImportedMediaStep, targetDate: Date) {
 
 function findStepForUngroupedMedia(media: PhotoExifData, steps: ImportedMediaStep[]) {
   if (!media.takenAt) return null;
+  if (media.file.type.startsWith("video/")) return null;
 
   const candidates = steps
     .filter((step) => step.photos.some((photo) => photo.takenAt && isSameCalendarDay(photo.takenAt, media.takenAt!)))

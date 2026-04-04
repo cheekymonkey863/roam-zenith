@@ -95,7 +95,7 @@ function buildMediaCaption(photo: PhotoExifData, locationName: string) {
     return `${mediaLabel} from this travel stop`;
   }
 
-  return `${mediaLabel} showing ${locationName}`;
+  return `${mediaLabel} taken at ${locationName}`;
 }
 
 function applyMediaCaptions(
