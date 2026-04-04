@@ -1,5 +1,6 @@
 import exifr from "exifr";
 import heic2any from "heic2any";
+import { supabase } from "@/integrations/supabase/client";
 
 export interface PhotoExifData {
   file: File;
