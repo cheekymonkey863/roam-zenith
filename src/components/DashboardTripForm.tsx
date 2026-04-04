@@ -20,6 +20,7 @@ import { buildStoredMediaMetadata } from "@/lib/mediaMetadata";
    latitude: number;
    longitude: number;
    earliestDate: Date | null;
+   eventType: string;
    description: string;
    photos: PhotoExifData[];
  }
@@ -145,6 +146,7 @@ import { buildStoredMediaMetadata } from "@/lib/mediaMetadata";
         latitude: step.latitude,
         longitude: step.longitude,
         earliestDate: step.earliestDate,
+        eventType: step.eventType,
         description: step.description,
         photos: step.photos,
       }));
@@ -271,7 +273,7 @@ import { buildStoredMediaMetadata } from "@/lib/mediaMetadata";
              longitude: step.longitude,
              recorded_at: step.earliestDate?.toISOString() || new Date().toISOString(),
              source: "photo_import",
-             event_type: "activity",
+             event_type: step.eventType,
              description: step.description,
              is_confirmed: true,
            })

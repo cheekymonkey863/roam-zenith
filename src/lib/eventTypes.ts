@@ -52,7 +52,7 @@ export const EVENT_TYPE_GROUPS = [
       { value: "theatre", label: "Theatre", icon: Theater },
       { value: "live_show", label: "Live Show", icon: Sparkles },
       { value: "wellness", label: "Wellness", icon: Heart },
-      { value: "sport", label: "Sport", icon: Trophy },
+      { value: "sport", label: "Sport Event", icon: Trophy },
     ],
   },
 ] as const;
