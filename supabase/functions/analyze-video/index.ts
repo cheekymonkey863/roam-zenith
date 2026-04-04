@@ -52,12 +52,23 @@ function getRetryDelayMs(retryAfterHeader: string | null, fallbackMs: number) {
   return fallbackMs;
 }
 
+interface ItineraryStop {
+  location_name: string | null;
+  country: string | null;
+  latitude: number;
+  longitude: number;
+  recorded_at: string;
+  event_type: string;
+  description: string | null;
+}
+
 function buildPrompt(metadata: {
   takenAt: string | null;
   latitude: number | null;
   longitude: number | null;
   locationName: string | null;
   country: string | null;
+  itinerarySteps?: ItineraryStop[];
 }): string {
   const metadataParts: string[] = [];
   if (metadata.takenAt) {
