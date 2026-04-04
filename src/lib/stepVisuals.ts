@@ -4,6 +4,8 @@ export type StepVisualType =
   | "bus"
   | "ferry"
   | "car"
+  | "on_foot"
+  | "cycling"
   | "hotel"
   | "food"
   | "sightseeing"
