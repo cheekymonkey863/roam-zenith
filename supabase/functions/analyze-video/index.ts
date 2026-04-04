@@ -1,4 +1,4 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
+// No external imports needed — uses direct fetch for Storage + Gemini APIs
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
