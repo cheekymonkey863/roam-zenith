@@ -141,7 +141,9 @@ import { ImportPreview } from "@/components/ImportPreview";
     toast.info(`Processing ${mediaFiles.length} file(s) with metadata + visual recognition…`);
 
     try {
-      const result = await processImportedMediaFiles(mediaFiles);
+      const result = await processImportedMediaFiles(mediaFiles, (phase, current, total) => {
+        setProcessingStatus({ phase, current, total });
+      });
       const steps: PendingPhotoStep[] = result.steps.map((step) => ({
         key: step.key,
         locationName: step.locationName,
