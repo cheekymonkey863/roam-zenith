@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { MapPin, Image as ImageIcon, Trash2, Plane, Hotel, Utensils, Camera, ArrowRightLeft, Flag, CircleDot } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { EditStepDialog } from "@/components/EditStepDialog";
