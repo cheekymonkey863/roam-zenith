@@ -286,20 +286,7 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
       );
 
       const ungroupedNoGps = exifResults.filter((photo) => photo.latitude === null || photo.longitude === null);
-      const unresolvedNoGpsMedia: PhotoExifData[] = [];
-
-      for (const media of ungroupedNoGps) {
-        const matchedStep = findStepForUngroupedMedia(media, baseSteps);
-        if (matchedStep) {
-          matchedStep.photos.push(media);
-          if (media.takenAt && (!matchedStep.earliestDate || media.takenAt < matchedStep.earliestDate)) {
-            matchedStep.earliestDate = media.takenAt;
-          }
-          continue;
-        }
-
-        unresolvedNoGpsMedia.push(media);
-      }
+      const unresolvedNoGpsMedia: PhotoExifData[] = [...ungroupedNoGps];
 
       const noGpsGroups = Array.from(groupMediaByTime(unresolvedNoGpsMedia, 6).values()).map((photos, index) => ({
         key: `no-gps-${index}`,
