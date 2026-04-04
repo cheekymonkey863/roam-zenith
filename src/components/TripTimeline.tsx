@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from "react";
-import { MapPin, Image as ImageIcon, Trash2 } from "lucide-react";
+import { useEffect, useRef, useState, useCallback } from "react";
+import { MapPin, Image as ImageIcon, Trash2, GripVertical, CheckSquare, Square, X } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { EditStepDialog } from "@/components/EditStepDialog";
 import { toast } from "sonner";
@@ -69,7 +69,16 @@ export function TripTimeline({
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const stepRefs = useRef<Map<string, HTMLDivElement>>(new Map());
 
-  // Scroll-based detection: find the step closest to viewport center
+  // Multi-select state
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+
+  // Drag state
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [overIndex, setOverIndex] = useState<number | null>(null);
+
+  // Scroll-based detection
   useEffect(() => {
     if (!onStepInView || steps.length === 0) return;
 
@@ -77,7 +86,7 @@ export function TripTimeline({
     let ticking = false;
 
     const findCenterStep = () => {
-      const centerY = window.innerHeight * 0.35; // focus point in upper-third
+      const centerY = window.innerHeight * 0.35;
       let closestId = "";
       let closestDist = Infinity;
 
@@ -106,7 +115,6 @@ export function TripTimeline({
     };
 
     window.addEventListener("scroll", onScroll, { passive: true });
-    // Initial check
     const timer = setTimeout(findCenterStep, 200);
 
     return () => {
@@ -153,8 +161,133 @@ export function TripTimeline({
     setDeletingId(null);
   };
 
+  // Multi-select helpers
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const exitSelectMode = () => {
+    setSelectMode(false);
+    setSelectedIds(new Set());
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedIds.size === 0) return;
+    if (!confirm(`Delete ${selectedIds.size} activit${selectedIds.size === 1 ? "y" : "ies"}? This cannot be undone.`)) return;
+    setBulkDeleting(true);
+    const ids = Array.from(selectedIds);
+    const { error } = await supabase.from("trip_steps").delete().in("id", ids);
+    if (error) {
+      toast.error("Failed to delete activities");
+    } else {
+      toast.success(`${ids.length} activit${ids.length === 1 ? "y" : "ies"} deleted`);
+      exitSelectMode();
+      onUpdated();
+    }
+    setBulkDeleting(false);
+  };
+
+  // Drag and drop handlers
+  const handleDragStart = (e: React.DragEvent, index: number) => {
+    setDragIndex(index);
+    e.dataTransfer.effectAllowed = "move";
+    // Make drag image semi-transparent
+    if (e.currentTarget instanceof HTMLElement) {
+      e.dataTransfer.setDragImage(e.currentTarget, 0, 0);
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent, index: number) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    setOverIndex(index);
+  };
+
+  const handleDragEnd = async () => {
+    if (dragIndex === null || overIndex === null || dragIndex === overIndex) {
+      setDragIndex(null);
+      setOverIndex(null);
+      return;
+    }
+
+    // Reorder the steps array
+    const reordered = [...steps];
+    const [moved] = reordered.splice(dragIndex, 1);
+    reordered.splice(overIndex, 0, moved);
+
+    // Update sort_order in DB
+    const updates = reordered.map((step, i) => ({
+      id: step.id,
+      sort_order: i + 1,
+    }));
+
+    setDragIndex(null);
+    setOverIndex(null);
+
+    // Batch update
+    const promises = updates.map((u) =>
+      supabase.from("trip_steps").update({ sort_order: u.sort_order }).eq("id", u.id)
+    );
+    const results = await Promise.all(promises);
+    const hasError = results.some((r) => r.error);
+
+    if (hasError) {
+      toast.error("Failed to reorder");
+    } else {
+      toast.success("Reordered");
+    }
+    onUpdated();
+  };
+
   return (
     <div className="relative">
+      {/* Select mode toolbar */}
+      {steps.length > 1 && (
+        <div className="mb-4 flex items-center gap-2">
+          {!selectMode ? (
+            <button
+              onClick={() => setSelectMode(true)}
+              className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium text-muted-foreground hover:bg-secondary transition-colors"
+            >
+              <CheckSquare className="h-3.5 w-3.5" /> Select
+            </button>
+          ) : (
+            <>
+              <button
+                onClick={exitSelectMode}
+                className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium text-muted-foreground hover:bg-secondary transition-colors"
+              >
+                <X className="h-3.5 w-3.5" /> Cancel
+              </button>
+              <button
+                onClick={() => {
+                  if (selectedIds.size === steps.length) setSelectedIds(new Set());
+                  else setSelectedIds(new Set(steps.map((s) => s.id)));
+                }}
+                className="rounded-lg px-3 py-1.5 text-xs font-medium text-muted-foreground hover:bg-secondary transition-colors"
+              >
+                {selectedIds.size === steps.length ? "Deselect All" : "Select All"}
+              </button>
+              {selectedIds.size > 0 && (
+                <button
+                  onClick={handleBulkDelete}
+                  disabled={bulkDeleting}
+                  className="flex items-center gap-1.5 rounded-lg bg-destructive px-3 py-1.5 text-xs font-medium text-destructive-foreground hover:bg-destructive/90 disabled:opacity-50 transition-colors"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  Delete {selectedIds.size}
+                </button>
+              )}
+            </>
+          )}
+        </div>
+      )}
+
       <div className="absolute left-5 top-0 h-full w-px bg-border" />
       <div className="flex flex-col gap-0">
         {steps.map((step, index) => {
@@ -162,18 +295,56 @@ export function TripTimeline({
           const visualType = visualTypes[step.id] || inferStepVisualType(step);
           const config = VISUAL_CONFIG[visualType] || VISUAL_CONFIG.other;
           const StepIcon = config.icon;
+          const isSelected = selectedIds.has(step.id);
+          const isDragOver = overIndex === index && dragIndex !== null && dragIndex !== index;
 
           return (
             <div
               key={step.id}
               data-step-id={step.id}
               ref={(el) => { if (el) stepRefs.current.set(step.id, el); }}
-              className="relative flex gap-5 pb-8 last:pb-0"
+              draggable={!selectMode}
+              onDragStart={(e) => handleDragStart(e, index)}
+              onDragOver={(e) => handleDragOver(e, index)}
+              onDragEnd={handleDragEnd}
+              onDragLeave={() => setOverIndex(null)}
+              className={`relative flex gap-5 pb-8 last:pb-0 transition-all ${
+                dragIndex === index ? "opacity-40" : ""
+              } ${isDragOver ? "translate-y-1" : ""}`}
             >
-              <div className={`relative z-10 flex h-10 w-10 shrink-0 items-center justify-center rounded-full shadow-card ring-4 ring-background ${config.bg}`}>
-                <StepIcon className={`h-4 w-4 ${config.text}`} />
+              {/* Drop indicator line */}
+              {isDragOver && (
+                <div className="absolute -top-1 left-0 right-0 h-0.5 rounded-full bg-primary z-20" />
+              )}
+
+              {/* Drag handle + select checkbox area */}
+              <div className="relative z-10 flex flex-col items-center gap-1">
+                {selectMode ? (
+                  <button
+                    onClick={() => toggleSelect(step.id)}
+                    className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ring-4 ring-background transition-colors ${
+                      isSelected ? "bg-primary" : "bg-card border-2 border-border"
+                    }`}
+                  >
+                    {isSelected ? (
+                      <CheckSquare className="h-4 w-4 text-primary-foreground" />
+                    ) : (
+                      <Square className="h-4 w-4 text-muted-foreground" />
+                    )}
+                  </button>
+                ) : (
+                  <div className={`group relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full shadow-card ring-4 ring-background ${config.bg} cursor-grab active:cursor-grabbing`}>
+                    <StepIcon className={`h-4 w-4 ${config.text} group-hover:hidden`} />
+                    <GripVertical className={`h-4 w-4 ${config.text} hidden group-hover:block`} />
+                  </div>
+                )}
               </div>
-              <div className="flex flex-1 flex-col gap-2 rounded-2xl bg-card p-5 shadow-card">
+
+              <div className={`flex flex-1 flex-col gap-2 rounded-2xl bg-card p-5 shadow-card transition-all ${
+                isSelected ? "ring-2 ring-primary" : ""
+              } ${selectMode ? "cursor-pointer" : ""}`}
+                onClick={selectMode ? () => toggleSelect(step.id) : undefined}
+              >
                 <div className="flex items-center justify-between gap-4">
                   <div>
                     <h4 className="font-display text-lg font-semibold text-foreground">
@@ -181,19 +352,26 @@ export function TripTimeline({
                     </h4>
                     {step.country && <p className="text-sm text-muted-foreground">{step.country}</p>}
                   </div>
-                  <div className="flex items-center gap-2">
+                  {!selectMode && (
+                    <div className="flex items-center gap-2">
+                      <span className="shrink-0 rounded-full bg-secondary px-3 py-1 text-xs font-medium text-secondary-foreground">
+                        {formatStepDate(step.recorded_at)}
+                      </span>
+                      <EditStepDialog step={step} onUpdated={onUpdated} />
+                      <button
+                        onClick={() => handleDelete(step.id)}
+                        disabled={deletingId === step.id}
+                        className="rounded-lg p-1 text-muted-foreground transition-colors hover:text-destructive disabled:opacity-50"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  )}
+                  {selectMode && (
                     <span className="shrink-0 rounded-full bg-secondary px-3 py-1 text-xs font-medium text-secondary-foreground">
                       {formatStepDate(step.recorded_at)}
                     </span>
-                    <EditStepDialog step={step} onUpdated={onUpdated} />
-                    <button
-                      onClick={() => handleDelete(step.id)}
-                      disabled={deletingId === step.id}
-                      className="rounded-lg p-1 text-muted-foreground transition-colors hover:text-destructive disabled:opacity-50"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
+                  )}
                 </div>
 
                 {step.description && <p className="text-sm leading-relaxed text-foreground">{step.description}</p>}

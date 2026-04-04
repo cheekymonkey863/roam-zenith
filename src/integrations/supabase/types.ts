@@ -142,6 +142,7 @@ export type Database = {
           longitude: number
           notes: string | null
           recorded_at: string
+          sort_order: number | null
           source: string
           trip_id: string
           user_id: string
@@ -158,6 +159,7 @@ export type Database = {
           longitude: number
           notes?: string | null
           recorded_at?: string
+          sort_order?: number | null
           source?: string
           trip_id: string
           user_id: string
@@ -174,6 +176,7 @@ export type Database = {
           longitude?: number
           notes?: string | null
           recorded_at?: string
+          sort_order?: number | null
           source?: string
           trip_id?: string
           user_id?: string
