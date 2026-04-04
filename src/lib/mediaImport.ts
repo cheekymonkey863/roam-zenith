@@ -136,6 +136,7 @@ function buildMediaCaption(photo: PhotoExifData, locationName: string, eventType
 function applyMediaInsights(
   photos: PhotoExifData[],
   photoCaptions: MediaInsightResult[] | undefined,
+  videoInsights: Map<string, MediaInsightResult> | undefined,
   locationName: string,
   eventType = "activity",
 ): PhotoExifData[] {
@@ -146,15 +147,26 @@ function applyMediaInsights(
   );
 
   return sortMediaByCapturedTime(photos).map((photo) => {
-    const insight = captionMap.get(photo.captionId);
     const isVideo = photo.file.type.startsWith("video/");
+    const videoInsight = isVideo ? videoInsights?.get(photo.captionId) : undefined;
+    const photoInsight = captionMap.get(photo.captionId);
     const fallbackCaption = buildMediaCaption(photo, locationName, eventType);
+
+    // Video insights from native Gemini analysis take priority
+    if (isVideo && videoInsight) {
+      return {
+        ...photo,
+        caption: videoInsight.caption?.trim() || photo.caption || fallbackCaption,
+        sceneDescription: videoInsight.sceneDescription?.trim() || photo.sceneDescription,
+        aiTags: dedupeTags([...(photo.aiTags ?? []), ...((videoInsight.richTags ?? []).map((tag) => tag.trim()))]),
+      };
+    }
 
     return {
       ...photo,
-      caption: isVideo ? photo.caption || fallbackCaption : insight?.caption?.trim() || photo.caption || fallbackCaption,
-      sceneDescription: isVideo ? undefined : insight?.sceneDescription?.trim() || photo.sceneDescription,
-      aiTags: dedupeTags([...(photo.aiTags ?? []), ...((insight?.richTags ?? []).map((tag) => tag.trim()))]),
+      caption: isVideo ? photo.caption || fallbackCaption : photoInsight?.caption?.trim() || photo.caption || fallbackCaption,
+      sceneDescription: isVideo ? undefined : photoInsight?.sceneDescription?.trim() || photo.sceneDescription,
+      aiTags: dedupeTags([...(photo.aiTags ?? []), ...((photoInsight?.richTags ?? []).map((tag) => tag.trim()))]),
     };
   });
 }
