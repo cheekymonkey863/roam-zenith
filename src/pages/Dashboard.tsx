@@ -29,7 +29,7 @@ const Dashboard = () => {
     if (!user) return;
     const fetchData = async () => {
       const [tripsRes, stepsRes] = await Promise.all([
-        supabase.from("trips").select("*").eq("user_id", user.id).order("created_at", { ascending: false }),
+        supabase.from("trips").select("*").eq("user_id", user.id).order("start_date", { ascending: true, nullsFirst: false }),
         supabase.from("trip_steps").select("*").eq("user_id", user.id).order("recorded_at", { ascending: true }),
       ]);
       setTrips(tripsRes.data || []);
