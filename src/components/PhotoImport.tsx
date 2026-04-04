@@ -47,7 +47,7 @@ interface PhotoImportProps {
   tripId: string;
   onImportComplete: () => void;
   onCancel?: () => void;
-  existingSteps?: Array<{ id: string; latitude: number; longitude: number; location_name: string | null }>;
+  existingSteps?: Array<{ id: string; latitude: number; longitude: number; location_name: string | null; country: string | null; recorded_at: string; event_type: string; description: string | null }>;
 }
 
 const LOCATION_GROUP_RADIUS_METERS = 500;
