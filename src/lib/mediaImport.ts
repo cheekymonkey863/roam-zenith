@@ -1,7 +1,7 @@
 import { supabase } from "@/integrations/supabase/client";
 import { dedupeTags } from "@/lib/mediaMetadata";
 import {
-  extractExifFromFiles,
+  extractExifFromFile,
   geocodeLocationName,
   groupMediaByTime,
   groupPhotosByLocation,
