@@ -47,6 +47,7 @@ const QUICKTIME_LOCATION_KEY = "com.apple.quicktime.location.ISO6709";
 const QUICKTIME_CREATIONDATE_KEY = "com.apple.quicktime.creationdate";
 const QUICKTIME_SCAN_CHUNK_SIZE = 1024 * 1024;
 const QUICKTIME_SCAN_OVERLAP = 4096;
+const EXIF_EXTRACTION_CONCURRENCY = 4;
 
 interface QuickTimeTextMetadata {
   latitude: number | null;
@@ -263,6 +264,34 @@ function mergeQuickTimeTextMetadata(target: QuickTimeTextMetadata, source: Quick
   if (target.altitude === null && source.altitude !== null) target.altitude = source.altitude;
   if (target.creationDate === null && source.creationDate !== null) target.creationDate = source.creationDate;
   return target;
+}
+
+async function mapWithConcurrencyLimit<TInput, TOutput>(
+  items: TInput[],
+  concurrency: number,
+  mapper: (item: TInput, index: number) => Promise<TOutput>,
+): Promise<TOutput[]> {
+  if (items.length === 0) return [];
+
+  const results = new Array<TOutput>(items.length);
+  let nextIndex = 0;
+
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+      while (true) {
+        const currentIndex = nextIndex;
+        nextIndex += 1;
+
+        if (currentIndex >= items.length) {
+          return;
+        }
+
+        results[currentIndex] = await mapper(items[currentIndex], currentIndex);
+      }
+    }),
+  );
+
+  return results;
 }
 
 function extractQuickTimeTextMetadataFromChunk(text: string): QuickTimeTextMetadata {
@@ -638,7 +667,7 @@ export async function extractExifFromFile(file: File): Promise<PhotoExifData> {
         metadataSources.add("video_quicktime_text_time");
       }
 
-      if (latitude === null || longitude === null || !takenAt || duration === null || !cameraMake || !cameraModel) {
+      if (latitude === null || longitude === null || !takenAt) {
         const serverMeta = await extractVideoMetadataServerSide(file);
         if (serverMeta) {
           applyServerVideoMetadata(serverMeta);
@@ -664,9 +693,9 @@ export async function extractExifFromFile(file: File): Promise<PhotoExifData> {
         }
       }
 
-      if (latitude === null || longitude === null || !takenAt || duration === null || !cameraMake || !cameraModel) {
-      const serverMeta = await extractVideoMetadataServerSide(file);
-      if (serverMeta) {
+      if (latitude === null || longitude === null || !takenAt) {
+        const serverMeta = await extractVideoMetadataServerSide(file);
+        if (serverMeta) {
           applyServerVideoMetadata(serverMeta);
         }
       }
@@ -833,7 +862,7 @@ function createImagePreview(file: File, size: number, quality: number): Promise<
 }
 
 export async function extractExifFromFiles(files: File[]): Promise<PhotoExifData[]> {
-  return Promise.all(files.map(extractExifFromFile));
+  return mapWithConcurrencyLimit(files, EXIF_EXTRACTION_CONCURRENCY, (file) => extractExifFromFile(file));
 }
 
 const DEFAULT_LOCATION_GROUP_MAX_GAP_HOURS = 6;
