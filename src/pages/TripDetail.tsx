@@ -40,12 +40,12 @@ const TripDetail = () => {
 
   const fetchData = async () => {
     if (!user || !id) return;
-    const [tripRes, stepsRes] = await Promise.all([
-      supabase.from("trips").select("*").eq("id", id).eq("user_id", user.id).single(),
-      supabase.from("trip_steps").select("*").eq("trip_id", id).eq("user_id", user.id).order("sort_order", { ascending: true }).order("recorded_at", { ascending: true }),
-    ]);
+    // Fetch trip (RLS allows both owner and shared users)
+    const tripRes = await supabase.from("trips").select("*").eq("id", id).single();
+    const stepsRes = await supabase.from("trip_steps").select("*").eq("trip_id", id).order("sort_order", { ascending: true }).order("recorded_at", { ascending: true });
     setTrip(tripRes.data);
     setSteps(stepsRes.data || []);
+    setIsOwner(tripRes.data?.user_id === user.id);
     setLoading(false);
   };
 
