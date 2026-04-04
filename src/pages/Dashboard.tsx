@@ -1,12 +1,15 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Globe, MapPin, Compass, Plus, ChevronDown, ChevronUp, Calendar } from "lucide-react";
+import { Globe, MapPin, Compass, Plus, ChevronDown, ChevronUp, Calendar, Pencil, Trash2 } from "lucide-react";
 import { getTripStatus, getTripStatusLabel, getTripStatusStyle, formatTripDateRange } from "@/lib/tripStatus";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { WorldMap } from "@/components/WorldMap";
 import { StatCard } from "@/components/StatCard";
 import { DashboardTripForm } from "@/components/DashboardTripForm";
+import { Button } from "@/components/ui/button";
+import { EditTripDialog } from "@/components/EditTripDialog";
+import { DeleteTripDialog } from "@/components/DeleteTripDialog";
 import type { Tables } from "@/integrations/supabase/types";
 
 type Trip = Tables<"trips">;
@@ -19,20 +22,32 @@ const Dashboard = () => {
   const [loading, setLoading] = useState(true);
   const [showAddTrip, setShowAddTrip] = useState(false);
 
-  useEffect(() => {
-    if (!user) return;
-    const fetchData = async () => {
-      // Fetch own trips
-      const [tripsRes, stepsRes] = await Promise.all([
-        supabase.from("trips").select("*").order("start_date", { ascending: true, nullsFirst: false }),
-        supabase.from("trip_steps").select("*").order("recorded_at", { ascending: true }),
-      ]);
-      setTrips(tripsRes.data || []);
-      setSteps(stepsRes.data || []);
+  const fetchData = useCallback(async () => {
+    if (!user) {
+      setTrips([]);
+      setSteps([]);
       setLoading(false);
-    };
-    fetchData();
+      return;
+    }
+
+    setLoading(true);
+
+    const [tripsRes, stepsRes] = await Promise.all([
+      supabase.from("trips").select("*").order("start_date", { ascending: true, nullsFirst: false }),
+      supabase.from("trip_steps").select("*").order("recorded_at", { ascending: true }),
+    ]);
+
+    if (tripsRes.error) console.error(tripsRes.error);
+    if (stepsRes.error) console.error(stepsRes.error);
+
+    setTrips(tripsRes.data || []);
+    setSteps(stepsRes.data || []);
+    setLoading(false);
   }, [user]);
+
+  useEffect(() => {
+    void fetchData();
+  }, [fetchData]);
 
   const countries = [...new Set(steps.map((s) => s.country).filter(Boolean))];
   const cities = [...new Set(steps.map((s) => s.location_name).filter(Boolean))];
@@ -98,16 +113,40 @@ const Dashboard = () => {
               const tripSteps = steps.filter((s) => s.trip_id === trip.id);
               const tripCountries = [...new Set(tripSteps.map((s) => s.country).filter(Boolean))];
               const status = getTripStatus(trip.start_date, trip.end_date);
+              const isOwner = trip.user_id === user?.id;
 
               return (
-                <Link
+                <div
                   key={trip.id}
-                  to={`/trips/${trip.id}`}
                   className="group flex flex-col overflow-hidden rounded-2xl bg-card shadow-card transition-all duration-300 hover:shadow-card-hover hover:-translate-y-1"
                 >
                   <div className="relative h-32 bg-gradient-to-br from-primary/20 via-accent/10 to-secondary">
-                    <div className="absolute right-3 top-3 flex items-center gap-1.5">
-                      {trip.user_id !== user?.id && (
+                    {isOwner && (
+                      <div className="absolute left-3 top-3 z-10 flex items-center gap-2">
+                        <EditTripDialog
+                          trip={trip}
+                          tripCountries={tripCountries}
+                          onUpdated={fetchData}
+                          trigger={
+                            <Button type="button" variant="secondary" size="icon" className="h-8 w-8 rounded-full shadow-sm">
+                              <Pencil className="h-4 w-4" />
+                            </Button>
+                          }
+                        />
+                        <DeleteTripDialog
+                          tripId={trip.id}
+                          tripTitle={trip.title}
+                          onDeleted={fetchData}
+                          trigger={
+                            <Button type="button" variant="secondary" size="icon" className="h-8 w-8 rounded-full shadow-sm">
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          }
+                        />
+                      </div>
+                    )}
+                    <div className="absolute right-3 top-3 z-10 flex items-center gap-1.5">
+                      {!isOwner && (
                         <span className="rounded-full bg-accent/80 px-2.5 py-0.5 text-xs font-medium text-accent-foreground">
                           Shared
                         </span>
@@ -116,11 +155,11 @@ const Dashboard = () => {
                         {getTripStatusLabel(status)}
                       </span>
                     </div>
-                    <div className="absolute inset-0 flex items-end p-5">
+                    <Link to={`/trips/${trip.id}`} className="absolute inset-0 flex items-end p-5">
                       <h3 className="font-display text-xl font-semibold text-foreground">{trip.title}</h3>
-                    </div>
+                    </Link>
                   </div>
-                  <div className="flex flex-col gap-2 p-5">
+                  <Link to={`/trips/${trip.id}`} className="flex flex-col gap-2 p-5">
                     <div className="flex items-center gap-2 text-sm text-muted-foreground">
                       <Calendar className="h-3.5 w-3.5" />
                       <span>{formatTripDateRange(trip.start_date, trip.end_date)}</span>
@@ -129,8 +168,8 @@ const Dashboard = () => {
                       <MapPin className="h-3.5 w-3.5" />
                       <span>{tripCountries.length > 0 ? tripCountries.join(", ") : "No locations yet"}</span>
                     </div>
-                  </div>
-                </Link>
+                  </Link>
+                </div>
               );
             })}
           </div>

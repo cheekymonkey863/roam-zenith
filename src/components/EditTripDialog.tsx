@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Pencil, CalendarIcon } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -11,20 +11,31 @@ import { toast } from "sonner";
 import { format, parse, differenceInDays, addDays } from "date-fns";
 import { cn } from "@/lib/utils";
 import type { Tables } from "@/integrations/supabase/types";
+import { parseTripCountriesInput, syncTripCountries } from "@/lib/tripManagement";
 
 type Trip = Tables<"trips">;
 
 interface EditTripDialogProps {
   trip: Trip;
-  onUpdated: () => void;
+  tripCountries?: string[];
+  onUpdated: () => void | Promise<void>;
+  trigger?: ReactNode;
 }
 
-export function EditTripDialog({ trip, onUpdated }: EditTripDialogProps) {
+export function EditTripDialog({ trip, tripCountries = [], onUpdated, trigger }: EditTripDialogProps) {
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [title, setTitle] = useState(trip.title);
   const [startDate, setStartDate] = useState(trip.start_date || "");
   const [endDate, setEndDate] = useState(trip.end_date || "");
+  const [countriesText, setCountriesText] = useState(tripCountries.join(", "));
+
+  const resetForm = () => {
+    setTitle(trip.title);
+    setStartDate(trip.start_date || "");
+    setEndDate(trip.end_date || "");
+    setCountriesText(tripCountries.join(", "));
+  };
 
   const computeTripDurationDays = () => {
     if (!startDate || !endDate) return null;
@@ -56,7 +67,22 @@ export function EditTripDialog({ trip, onUpdated }: EditTripDialogProps) {
       toast.error("Title is required");
       return;
     }
+
+    if (startDate && endDate) {
+      const parsedStart = parse(startDate, "yyyy-MM-dd", new Date());
+      const parsedEnd = parse(endDate, "yyyy-MM-dd", new Date());
+
+      if (differenceInDays(parsedEnd, parsedStart) <= 0) {
+        toast.error("End date must be after start date");
+        return;
+      }
+    }
+
     setSaving(true);
+
+    const currentCountries = parseTripCountriesInput(tripCountries.join(", "));
+    const nextCountries = parseTripCountriesInput(countriesText);
+
     const { error } = await supabase
       .from("trips")
       .update({
@@ -70,19 +96,44 @@ export function EditTripDialog({ trip, onUpdated }: EditTripDialogProps) {
       toast.error("Failed to update trip");
       console.error(error);
     } else {
+      if (currentCountries.join("|") !== nextCountries.join("|")) {
+        try {
+          await syncTripCountries({
+            tripId: trip.id,
+            currentCountries,
+            nextCountries,
+          });
+        } catch (syncError) {
+          toast.error(syncError instanceof Error ? syncError.message : "Failed to update countries");
+          console.error(syncError);
+          setSaving(false);
+          await onUpdated();
+          return;
+        }
+      }
+
       toast.success("Trip updated");
       setOpen(false);
-      onUpdated();
+      await onUpdated();
     }
+
     setSaving(false);
   };
 
   return (
-    <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (v) { setTitle(trip.title); setStartDate(trip.start_date || ""); setEndDate(trip.end_date || ""); } }}>
+    <Dialog
+      open={open}
+      onOpenChange={(nextOpen) => {
+        setOpen(nextOpen);
+        if (nextOpen) resetForm();
+      }}
+    >
       <DialogTrigger asChild>
-        <button className="rounded-xl bg-secondary p-2 text-secondary-foreground hover:bg-secondary/80 transition-colors">
-          <Pencil className="h-4 w-4" />
-        </button>
+        {trigger ?? (
+          <Button type="button" variant="secondary" size="icon" className="rounded-xl">
+            <Pencil className="h-4 w-4" />
+          </Button>
+        )}
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
@@ -149,6 +200,18 @@ export function EditTripDialog({ trip, onUpdated }: EditTripDialogProps) {
                 </PopoverContent>
               </Popover>
             </div>
+          </div>
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="trip-countries">Countries</Label>
+            <Input
+              id="trip-countries"
+              value={countriesText}
+              onChange={(e) => setCountriesText(e.target.value)}
+              placeholder="e.g. France, Italy"
+            />
+            <p className="text-xs text-muted-foreground">
+              Rename or merge the countries already attached to this trip&apos;s steps.
+            </p>
           </div>
           <Button onClick={handleSave} disabled={saving}>
             {saving ? "Saving..." : "Save Changes"}
