@@ -332,12 +332,14 @@ export async function processImportedMediaFiles(
     }),
   );
 
+  onProgress?.("Visual recognition", 0, 1);
   let inferredLocations = new Map<string, HybridLocationResult>();
   try {
     inferredLocations = await inferLocationsWithVision(baseSteps, noGpsGroups);
   } catch (error) {
     console.error("Visual location inference error:", error);
   }
+  onProgress?.("Visual recognition", 1, 1);
 
   const steps = baseSteps.map((step) => {
     const inferred = inferredLocations.get(step.key);
