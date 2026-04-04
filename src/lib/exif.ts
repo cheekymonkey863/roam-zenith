@@ -1003,6 +1003,7 @@ let _placesServiceHost: HTMLDivElement | null = null;
 export interface ReverseGeocodeResult {
   name: string;
   country: string;
+  locality: string;
   placeTypes: string[];
 }
 
@@ -1173,6 +1174,7 @@ function pickExactGoogleGeocodeMatch(
   return {
     name: exactMatches[0].label,
     country,
+    locality,
     placeTypes: exactMatches[0].placeTypes,
   };
 }
@@ -1360,6 +1362,7 @@ async function reverseGeocodeWithJsApi(lat: number, lng: number): Promise<Revers
               finish({
                 name: nearby[0].name,
                 country,
+                locality,
                 placeTypes: nearby[0].placeTypes,
               });
             },
@@ -1377,12 +1380,12 @@ async function reverseGeocodeWithJsApi(lat: number, lng: number): Promise<Revers
 
     if (locality !== "Unknown") {
       console.log(`[reverse-geo] Geocoder locality: "${locality}" (${country}) at ${lat},${lng}`);
-      return { name: locality, country, placeTypes: ["locality"] };
+      return { name: locality, country, locality, placeTypes: ["locality"] };
     }
 
     if (geoResult?.[0]?.formatted_address) {
       const name = geoResult[0].formatted_address.split(",")[0].trim();
-      return { name, country, placeTypes: getGoogleResultTypes(geoResult[0]) };
+      return { name, country, locality, placeTypes: getGoogleResultTypes(geoResult[0]) };
     }
 
     return null;
@@ -1401,11 +1404,12 @@ export async function reverseGeocode(lat: number, lng: number): Promise<ReverseG
       `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1&extratags=1&namedetails=1`,
     );
     if (!data) {
-      return { name: "Unknown", country: "Unknown", placeTypes: [] };
+      return { name: "Unknown", country: "Unknown", locality: "Unknown", placeTypes: [] };
     }
 
     const addr = data.address || {};
     const country = addr.country || "Unknown";
+    const nomLocality = addr.city || addr.town || addr.village || addr.hamlet || "Unknown";
     const reverseLat = Number(data.lat);
     const reverseLng = Number(data.lon);
     const exactDistance = Number.isFinite(reverseLat) && Number.isFinite(reverseLng)
@@ -1433,12 +1437,12 @@ export async function reverseGeocode(lat: number, lng: number): Promise<ReverseG
     const exactName = pickExactAddressLabel(addr, typeof data.name === "string" ? data.name.trim() : null);
 
     if (exactName && exactDistance <= EXACT_PLACE_DISTANCE_METERS) {
-      return { name: exactName, country, placeTypes };
+      return { name: exactName, country, locality: nomLocality, placeTypes };
     }
 
-    return { name: "Unknown", country, placeTypes };
+    return { name: "Unknown", country, locality: nomLocality, placeTypes };
   } catch {
-    return { name: "Unknown", country: "Unknown", placeTypes: [] };
+    return { name: "Unknown", country: "Unknown", locality: "Unknown", placeTypes: [] };
   }
 }
 

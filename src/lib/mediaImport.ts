@@ -257,8 +257,11 @@ export async function processImportedMediaFiles(files: File[]): Promise<Processe
       const sortedPhotos = sortMediaByCapturedTime(photos);
       const { latitude, longitude } = getRepresentativeCoordinates(sortedPhotos);
       const geo = await reverseGeocode(latitude, longitude);
+      const displayName = geo.locality && geo.locality !== "Unknown" && geo.name !== geo.locality && geo.name !== "Unknown"
+        ? `${geo.name}, ${geo.locality}`
+        : geo.name;
       const stepDetails = buildImportedStepDetails({
-        locationName: geo.name,
+        locationName: displayName,
         country: geo.country,
         placeTypes: geo.placeTypes,
       });
@@ -267,18 +270,18 @@ export async function processImportedMediaFiles(files: File[]): Promise<Processe
 
       return {
         key,
-        locationName: geo.name,
+        locationName: displayName,
         country: geo.country,
         latitude,
         longitude,
-        photos: applyMediaInsights(sortedPhotos, undefined, geo.name),
+        photos: applyMediaInsights(sortedPhotos, undefined, displayName),
         earliestDate,
         selected: true,
         eventType: stepDetails.eventType,
         confidence: "low" as const,
         placeTypes: geo.placeTypes,
-        summary: buildLocationSummary(geo.name, geo.country, stepDetails.eventType),
-        description: buildEventDescription(geo.name, geo.country, stepDetails.eventType),
+        summary: buildLocationSummary(displayName, geo.country, stepDetails.eventType),
+        description: buildEventDescription(displayName, geo.country, stepDetails.eventType),
       };
     }),
   );
