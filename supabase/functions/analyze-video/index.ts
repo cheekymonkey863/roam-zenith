@@ -15,6 +15,8 @@ interface VideoAnalysisResult {
   moodTags: string[];
 }
 
+type HttpError = Error & { status?: number };
+
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
@@ -24,8 +26,31 @@ function jsonResponse(body: unknown, status = 200) {
 
 const LOVABLE_AI_URL = "https://ai.gateway.lovable.dev/v1/chat/completions";
 const MODEL = "google/gemini-2.5-flash";
+const RATE_LIMIT_RETRY_DELAYS_MS = [2000, 4000, 8000];
 
-// ── Build the analysis prompt with Context Sandwich ──────────
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+function createHttpError(status: number, message: string): HttpError {
+  const error = new Error(message) as HttpError;
+  error.status = status;
+  return error;
+}
+
+function getRetryDelayMs(retryAfterHeader: string | null, fallbackMs: number) {
+  if (!retryAfterHeader) return fallbackMs;
+
+  const retryAfterSeconds = Number(retryAfterHeader);
+  if (Number.isFinite(retryAfterSeconds) && retryAfterSeconds >= 0) {
+    return retryAfterSeconds * 1000;
+  }
+
+  const retryAt = new Date(retryAfterHeader).getTime();
+  if (Number.isFinite(retryAt)) {
+    return Math.max(retryAt - Date.now(), fallbackMs);
+  }
+
+  return fallbackMs;
+}
 
 function buildPrompt(metadata: {
   takenAt: string | null;
@@ -85,7 +110,47 @@ OUTPUT RULES:
 Respond with valid JSON matching the schema exactly.`;
 }
 
-// ── Request handler ──────────────────────────────────────────
+async function callLovableAiWithRetries(lovableApiKey: string, requestBody: unknown) {
+  for (let attempt = 0; attempt <= RATE_LIMIT_RETRY_DELAYS_MS.length; attempt++) {
+    const response = await fetch(LOVABLE_AI_URL, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${lovableApiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(requestBody),
+    });
+
+    if (response.status === 429) {
+      const errText = await response.text();
+      if (attempt < RATE_LIMIT_RETRY_DELAYS_MS.length) {
+        const delayMs = getRetryDelayMs(response.headers.get("retry-after"), RATE_LIMIT_RETRY_DELAYS_MS[attempt]);
+        console.warn(
+          `[analyze-video] Lovable AI rate limited, retrying in ${delayMs}ms (attempt ${attempt + 1}/${RATE_LIMIT_RETRY_DELAYS_MS.length + 1})`,
+        );
+        await sleep(delayMs);
+        continue;
+      }
+
+      throw createHttpError(429, errText || "Rate limited, please try again later.");
+    }
+
+    if (response.status === 402) {
+      const errText = await response.text();
+      throw createHttpError(402, errText || "AI credits exhausted. Please add funds in Settings > Workspace > Usage.");
+    }
+
+    if (!response.ok) {
+      const errText = await response.text();
+      console.error(`Lovable AI error [${response.status}]:`, errText);
+      throw createHttpError(response.status, `AI gateway error [${response.status}]: ${errText}`);
+    }
+
+    return await response.json();
+  }
+
+  throw createHttpError(429, "Rate limited, please try again later.");
+}
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -119,72 +184,44 @@ Deno.serve(async (req) => {
       return jsonResponse({ error: "captionId is required" }, 400);
     }
 
-    // Normalize MIME type
     let mimeType = rawMimeType || "video/mp4";
     if (mimeType === "video/quicktime" || mimeType === "video/mov") {
       mimeType = "video/mp4";
     }
 
-    // Build a public URL for the video in Storage (bucket is public)
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const videoUrl = `${supabaseUrl}/storage/v1/object/public/trip-photos/${storagePath}`;
 
     console.log(`Analyzing "${fileName}" via Lovable AI. Video URL: ${videoUrl}`);
 
     const prompt = buildPrompt({ takenAt, latitude, longitude, locationName, country });
-
-    // Call Lovable AI gateway with video URL as multimodal content
-    const response = await fetch(LOVABLE_AI_URL, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${lovableApiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: MODEL,
-        messages: [
-          {
-            role: "user",
-            content: [
-              {
-                type: "image_url",
-                image_url: { url: videoUrl },
-              },
-              {
-                type: "text",
-                text: prompt,
-              },
-            ],
-          },
-        ],
-        response_format: { type: "json_object" },
-      }),
+    const data = await callLovableAiWithRetries(lovableApiKey, {
+      model: MODEL,
+      messages: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "image_url",
+              image_url: { url: videoUrl },
+            },
+            {
+              type: "text",
+              text: prompt,
+            },
+          ],
+        },
+      ],
+      response_format: { type: "json_object" },
     });
 
-    if (!response.ok) {
-      const errText = await response.text();
-      console.error(`Lovable AI error [${response.status}]:`, errText);
-
-      if (response.status === 429) {
-        return jsonResponse({ error: "Rate limited, please try again later." }, 429);
-      }
-      if (response.status === 402) {
-        return jsonResponse({ error: "AI credits exhausted. Please add funds in Settings > Workspace > Usage." }, 402);
-      }
-
-      throw new Error(`AI gateway error [${response.status}]: ${errText}`);
-    }
-
-    const data = await response.json();
     const textContent = data?.choices?.[0]?.message?.content;
-
     if (!textContent) {
       console.error("AI response had no content:", JSON.stringify(data));
       throw new Error("No content in AI response");
     }
 
     const parsed = JSON.parse(textContent);
-
     const result: VideoAnalysisResult = {
       captionId,
       caption: typeof parsed.caption === "string" ? parsed.caption.trim() : "Video clip",
@@ -204,8 +241,15 @@ Deno.serve(async (req) => {
   } catch (error) {
     console.error("analyze-video error:", error);
     const message = error instanceof Error ? error.message : "Unknown error";
+    const status = typeof error === "object" && error !== null && "status" in error && typeof (error as HttpError).status === "number"
+      ? (error as HttpError).status!
+      : null;
 
-    if (message.includes("429") || message.includes("RESOURCE_EXHAUSTED")) {
+    if (status === 402 || message.includes("402")) {
+      return jsonResponse({ error: "AI credits exhausted. Please add funds in Settings > Workspace > Usage." }, 402);
+    }
+
+    if (status === 429 || message.includes("429") || message.includes("RESOURCE_EXHAUSTED")) {
       return jsonResponse({ error: "Rate limited, please try again later." }, 429);
     }
 
