@@ -506,22 +506,25 @@ import { ImportPreview } from "@/components/ImportPreview";
          </div>
        )}
  
-       {/* Pending import summary */}
-       {hasPendingImport && (
-         <div className="flex items-center justify-between rounded-xl border border-primary/20 bg-primary/5 px-4 py-2.5">
-           <div className="flex items-center gap-2 text-sm">
-             <Check className="h-4 w-4 text-primary" />
-             <span className="text-foreground">
-               {pendingPhotoSteps.length > 0
-                 ? `${pendingPhotoSteps.length} location(s), ${pendingPhotoSteps.reduce((n, s) => n + s.photos.length, 0)} media file(s) ready`
-                 : `${pendingActivities.length} activit${pendingActivities.length === 1 ? "y" : "ies"} ready`}
-             </span>
-           </div>
-           <button type="button" onClick={clearImport} className="text-muted-foreground hover:text-foreground">
-             <X className="h-3.5 w-3.5" />
-           </button>
-         </div>
-       )}
+        {/* Pending import preview */}
+        {pendingPhotoSteps.length > 0 && (
+          <ImportPreview steps={pendingPhotoSteps} onClear={clearImport} />
+        )}
+
+        {/* Pending itinerary summary */}
+        {pendingActivities.length > 0 && (
+          <div className="flex items-center justify-between rounded-xl border border-primary/20 bg-primary/5 px-4 py-2.5">
+            <div className="flex items-center gap-2 text-sm">
+              <Check className="h-4 w-4 text-primary" />
+              <span className="text-foreground">
+                {pendingActivities.length} activit{pendingActivities.length === 1 ? "y" : "ies"} ready
+              </span>
+            </div>
+            <button type="button" onClick={clearImport} className="text-muted-foreground hover:text-foreground">
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        )}
  
        {/* Trip Name */}
        <div className="flex flex-col gap-1.5">
