@@ -116,7 +116,7 @@ const TripDetail = () => {
         </div>
       </div>
 
-      {trip.is_active && <TrackingControl activeTripId={trip.id} />}
+      
 
       <div className="flex flex-wrap gap-3">
         <AddEventForm tripId={trip.id} onEventAdded={fetchData} />
