@@ -90,6 +90,8 @@ export function inferStepVisualType(step: StepVisualInput, googlePlaceTypes: str
     safari: "safari_accommodation",
     glamping: "glamping",
     camping: "camping",
+    resort: "resort",
+    ski_lodge: "ski_lodge",
     tour: "tour",
     sightseeing: "sightseeing",
     dining: "dining",
@@ -98,6 +100,7 @@ export function inferStepVisualType(step: StepVisualInput, googlePlaceTypes: str
     theatre: "theatre",
     live_show: "live_show",
     wellness: "wellness",
+    sport: "sport",
   };
 
   if (directMap[step.event_type]) return directMap[step.event_type];
