@@ -96,12 +96,12 @@ function buildEventDescription(locationName: string, country: string) {
 }
 
 function buildMediaCaption(photo: PhotoExifData, locationName: string) {
-  const mediaLabel = photo.file.type.startsWith("video/") ? "Video" : "Image";
+  const isVideo = photo.file.type.startsWith("video/");
   if (!isKnownLocationName(locationName)) {
-    return `${mediaLabel} from this travel stop`;
+    return isVideo ? "Video from this travel stop" : "Photo from this travel stop";
   }
 
-  return `${mediaLabel} showing ${locationName}`;
+  return isVideo ? `Video taken at ${locationName}` : `Photo taken at ${locationName}`;
 }
 
 function applyMediaInsights(

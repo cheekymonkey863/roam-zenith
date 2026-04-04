@@ -678,6 +678,47 @@ function haversine(lat1: number, lng1: number, lat2: number, lng2: number): numb
 const GOOGLE_MAPS_API_KEY = "AIzaSyCHXGKSMbpkEN5Amr0VRDF44cLcOg_JUD8";
 
 export async function reverseGeocode(lat: number, lng: number): Promise<{ name: string; country: string }> {
+  // 1. Try Google Places Nearby Search for actual POI name (e.g. "Edinburgh Castle")
+  try {
+    const placesRes = await fetch(
+      `https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=${lat},${lng}&rankby=distance&key=${GOOGLE_MAPS_API_KEY}`
+    );
+    const placesData = await placesRes.json();
+
+    if (placesData.status === "OK" && placesData.results?.length > 0) {
+      // Pick the first result that is a named place (not just a street address)
+      const poi = placesData.results.find((r: any) =>
+        r.types?.some((t: string) =>
+          ["tourist_attraction", "point_of_interest", "natural_feature", "park",
+           "museum", "church", "castle", "monument", "establishment",
+           "restaurant", "lodging", "airport", "train_station", "transit_station",
+           "bar", "cafe", "stadium", "amusement_park", "zoo", "aquarium",
+           "art_gallery", "campground", "university", "shopping_mall"].includes(t)
+        )
+      ) || placesData.results[0];
+
+      if (poi?.name) {
+        // Get country from geocoding
+        let country = "Unknown";
+        try {
+          const geoRes = await fetch(
+            `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=${GOOGLE_MAPS_API_KEY}&result_type=country`
+          );
+          const geoData = await geoRes.json();
+          if (geoData.status === "OK" && geoData.results?.[0]) {
+            country = geoData.results[0].address_components?.find((c: any) => c.types.includes("country"))?.long_name || "Unknown";
+          }
+        } catch { /* ignore */ }
+
+        console.log(`[reverse-geo] Places API found: "${poi.name}" at ${lat},${lng}`);
+        return { name: poi.name, country };
+      }
+    }
+  } catch {
+    // Fall through to geocoding
+  }
+
+  // 2. Fallback: Google Geocoding with POI result types
   try {
     const gRes = await fetch(
       `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=${GOOGLE_MAPS_API_KEY}&result_type=point_of_interest|natural_feature|park|tourist_attraction|establishment`
@@ -717,6 +758,7 @@ export async function reverseGeocode(lat: number, lng: number): Promise<{ name: 
     // Fall through to Nominatim
   }
 
+  // 3. Final fallback: Nominatim
   try {
     const res = await fetch(
       `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=10&addressdetails=1`
