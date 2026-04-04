@@ -247,16 +247,8 @@ async function extractVideoMetadataServerSide(
 } | null> {
   try {
     const CHUNK_SIZE = 2 * 1024 * 1024;
+    // Reduce to fit edge function payload limits (base64 adds ~33%)
     const headBuffer = await file.slice(0, Math.min(file.size, CHUNK_SIZE)).arrayBuffer();
-    const buffers = [headBuffer];
-
-    if (file.size > CHUNK_SIZE) {
-      const tailStart = Math.max(file.size - CHUNK_SIZE, 0);
-      const tailBuffer = await file.slice(tailStart, file.size).arrayBuffer();
-      if (tailBuffer.byteLength > 0) {
-        buffers.push(tailBuffer);
-      }
-    }
 
     const videoPartsBase64 = buffers.map(arrayBufferToBase64);
 
