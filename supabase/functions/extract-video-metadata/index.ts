@@ -320,6 +320,114 @@ function extractMetadataFromBuffer(buffer: ArrayBuffer): VideoMetadata {
   return metadata;
 }
 
+/**
+ * For tail chunks that don't start at atom boundaries, scan for known
+ * atom signatures and try to parse metadata starting from each match.
+ */
+function extractMetadataFromTailChunk(buffer: ArrayBuffer): VideoMetadata {
+  const bytes = new Uint8Array(buffer);
+  const view = new DataView(buffer);
+
+  const metadata: VideoMetadata = {
+    latitude: null,
+    longitude: null,
+    altitude: null,
+    creationDate: null,
+    duration: null,
+    cameraMake: null,
+    cameraModel: null,
+  };
+
+  // First try normal atom walk (works if chunk happens to start at atom boundary)
+  walkAtoms(view, bytes, 0, bytes.byteLength, "", metadata);
+
+  // Scan for 'moov' atom signature anywhere in the buffer
+  const MOOV = [0x6D, 0x6F, 0x6F, 0x76]; // moov
+  for (let i = 4; i < bytes.length - 8; i++) {
+    if (bytes[i] === MOOV[0] && bytes[i+1] === MOOV[1] && bytes[i+2] === MOOV[2] && bytes[i+3] === MOOV[3]) {
+      // Atom header starts 4 bytes before the type
+      const atomStart = i - 4;
+      if (atomStart < 0) continue;
+      const atom = readAtomHeader(view, atomStart);
+      if (!atom || atom.size < 16) continue;
+      const atomEnd = Math.min(atomStart + atom.size, bytes.byteLength);
+      // Walk children of moov
+      walkAtoms(view, bytes, atomStart + atom.headerSize, atomEnd, "moov", metadata);
+      break;
+    }
+  }
+
+  // Scan for mvhd if we still need date/duration
+  if (metadata.creationDate === null || metadata.duration === null) {
+    const MVHD = [0x6D, 0x76, 0x68, 0x64]; // mvhd
+    for (let i = 4; i < bytes.length - 20; i++) {
+      if (bytes[i] === MVHD[0] && bytes[i+1] === MVHD[1] && bytes[i+2] === MVHD[2] && bytes[i+3] === MVHD[3]) {
+        const atomStart = i - 4;
+        if (atomStart < 0) continue;
+        const atom = readAtomHeader(view, atomStart);
+        if (!atom || atom.size < 12) continue;
+        const dataOffset = atomStart + atom.headerSize;
+        const dataSize = Math.min(atomStart + atom.size, bytes.byteLength) - dataOffset;
+        const mvhd = parseMvhd(view, dataOffset, dataSize);
+        if (mvhd.creationDate && !metadata.creationDate) metadata.creationDate = mvhd.creationDate;
+        if (mvhd.duration !== null && metadata.duration === null) metadata.duration = mvhd.duration;
+        break;
+      }
+    }
+  }
+
+  // Scan for ©xyz GPS
+  if (metadata.latitude === null || metadata.longitude === null) {
+    for (let i = 0; i < bytes.length - 16; i++) {
+      if (bytes[i] === 0xA9 && bytes[i+1] === 0x78 && bytes[i+2] === 0x79 && bytes[i+3] === 0x7A) {
+        // Read atom size from 4 bytes before if possible
+        const atomStart = i - 4;
+        if (atomStart >= 0) {
+          const atomSize = view.getUint32(atomStart);
+          const dataSize = Math.min(atomSize - 8, bytes.byteLength - i - 4);
+          if (dataSize > 0 && dataSize < 256) {
+            const gps = parseXyzAtom(bytes, i + 4, dataSize);
+            if (gps) {
+              metadata.latitude = gps.latitude;
+              metadata.longitude = gps.longitude;
+              if (gps.altitude !== undefined) metadata.altitude = gps.altitude;
+              break;
+            }
+          }
+        }
+        // Also try just reading text after the signature
+        const text = readString(bytes, i + 4, Math.min(64, bytes.byteLength - i - 4));
+        const gps = parseISO6709(text);
+        if (gps) {
+          metadata.latitude = gps.latitude;
+          metadata.longitude = gps.longitude;
+          if (gps.altitude !== undefined) metadata.altitude = gps.altitude;
+          break;
+        }
+      }
+    }
+  }
+
+  // Also try loci and XMP fallbacks
+  if (metadata.latitude === null || metadata.longitude === null) {
+    const loci = scanForLociAtom(bytes, view);
+    if (loci) {
+      metadata.latitude = loci.latitude;
+      metadata.longitude = loci.longitude;
+    }
+  }
+
+  if (metadata.latitude === null || metadata.longitude === null) {
+    const xmpGps = scanForXMPGPS(bytes);
+    if (xmpGps) {
+      metadata.latitude = xmpGps.latitude;
+      metadata.longitude = xmpGps.longitude;
+    }
+  }
+
+  return metadata;
+}
+
 function createEmptyMetadata(): VideoMetadata {
   return {
     latitude: null,
@@ -396,10 +504,15 @@ Deno.serve(async (req) => {
       return jsonResponse({ error: "File too small to be a valid video" }, 400);
     }
 
-    const metadata = validBuffers.reduce(
-      (merged, buffer) => mergeMetadata(merged, extractMetadataFromBuffer(buffer)),
-      createEmptyMetadata(),
-    );
+    const metadata = createEmptyMetadata();
+    for (let i = 0; i < validBuffers.length; i++) {
+      // First buffer is the head chunk (starts at atom boundary)
+      // Subsequent buffers are tail chunks (may not start at atom boundary)
+      const extracted = i === 0
+        ? extractMetadataFromBuffer(validBuffers[i])
+        : extractMetadataFromTailChunk(validBuffers[i]);
+      mergeMetadata(metadata, extracted);
+    }
 
     return jsonResponse(metadata);
   } catch (error) {
