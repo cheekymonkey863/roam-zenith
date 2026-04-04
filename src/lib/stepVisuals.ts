@@ -167,6 +167,8 @@ export function inferStepVisualType(step: StepVisualInput, googlePlaceTypes: str
       if (isHotel) return "hotel";
       if (isFood) return "dining";
       if (isBorder) return "border";
+      if (isCruise) return "cruise";
+      if (isYacht) return "yacht_boat";
       if (isTrain) return "train";
       if (isFerry) return "ferry";
       if (isBus) return "bus";
