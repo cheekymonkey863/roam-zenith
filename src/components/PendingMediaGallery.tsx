@@ -1,26 +1,25 @@
-import { useEffect, useState } from "react";
-import { ArrowRightLeft, Check, ChevronLeft, ChevronRight, Play, Trash2, X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { ArrowRightLeft, Check, ChevronLeft, ChevronRight, Film, Play, Trash2, X } from "lucide-react";
 import type { PhotoExifData } from "@/lib/exif";
 import { cn } from "@/lib/utils";
 
-function useObjectUrl(file?: File | null) {
-  const [url, setUrl] = useState<string | null>(null);
+function useObjectUrl(file?: File | null): string | null {
+  const urlRef = useRef<string | null>(null);
+  const prevFileRef = useRef<File | null>(null);
+
+  if (file !== prevFileRef.current) {
+    if (urlRef.current) URL.revokeObjectURL(urlRef.current);
+    urlRef.current = file ? URL.createObjectURL(file) : null;
+    prevFileRef.current = file ?? null;
+  }
 
   useEffect(() => {
-    if (!file) {
-      setUrl(null);
-      return;
-    }
-
-    const nextUrl = URL.createObjectURL(file);
-    setUrl(nextUrl);
-
     return () => {
-      URL.revokeObjectURL(nextUrl);
+      if (urlRef.current) URL.revokeObjectURL(urlRef.current);
     };
-  }, [file]);
+  }, []);
 
-  return url;
+  return urlRef.current;
 }
 
 function PendingMediaLightbox({
@@ -182,9 +181,9 @@ function PendingMediaThumbnail({
 }) {
   const isVideo = photo.file.type.startsWith("video/");
   const previewImage = photo.thumbnail || photo.analysisImage || null;
-  const fileUrl = useObjectUrl(previewImage ? null : (photo.uploadFile ?? photo.file));
+  // For images without a preview, create an object URL from the file
+  const fileUrl = useObjectUrl(!isVideo && !previewImage ? (photo.uploadFile ?? photo.file) : null);
   const imageSrc = !isVideo ? previewImage || fileUrl : previewImage;
-  const videoSrc = isVideo && !previewImage ? `${fileUrl ?? ""}#t=0.1` : null;
 
   return (
     <button
@@ -196,17 +195,14 @@ function PendingMediaThumbnail({
       )}
     >
       {isVideo ? (
-        previewImage ? (
-          <img src={previewImage} alt={photo.caption || photo.file.name} className="h-full w-full object-cover" />
-        ) : videoSrc ? (
-          <video
-            src={videoSrc}
-            className="h-full w-full object-cover"
-            muted
-            playsInline
-            preload="metadata"
-          />
-        ) : null
+        imageSrc ? (
+          <img src={imageSrc} alt={photo.caption || photo.file.name} className="h-full w-full object-cover" />
+        ) : (
+          <div className="flex h-full w-full flex-col items-center justify-center gap-1 bg-muted">
+            <Film className="h-5 w-5 text-muted-foreground" />
+            <span className="max-w-[70px] truncate text-[9px] text-muted-foreground">{photo.file.name}</span>
+          </div>
+        )
       ) : imageSrc ? (
         <img src={imageSrc} alt={photo.caption || photo.file.name} className="h-full w-full object-cover" />
       ) : null}
