@@ -272,7 +272,7 @@ RULES:
         messages: [
           {
             role: "system",
-            content: "You analyze travel photos and representative video frames to identify locations, caption each media item, and describe the overall stop. For locationName, always use specific landmark/POI names (e.g. 'Boulders Beach', 'Table Mountain') not generic city names. For summary, describe what is consistently visible across the group. For eventDescription, describe the stop as a whole based on the location and combined media, not any single image. For photoCaptions, return one concise caption, one richer sceneDescription sentence, and 3-8 lowercase richTags for every captionId. Never mention GPS metadata or people.",
+            content: "You analyze travel photos and video frames. Describe ONLY what is literally, visually present in each image or frame. Never speculate, never invent narratives, never describe things not shown. For locationName, use specific venue/landmark/POI names. For summary, state only what is consistently visible. For eventDescription, one factual sentence. For photoCaptions, describe the literal visual content of each frame. If multiple videos show the same scene (e.g. a band on stage), use consistent descriptions. Never mention GPS metadata or people's identities.",
           },
           { role: "user", content },
         ],
