@@ -450,13 +450,19 @@ export async function processImportedMediaFiles(
     onProgress?.("Analyzing videos", 0, allVideoMedia.length);
     let videoDone = 0;
 
-    await mapWithConcurrency(allVideoMedia, 2, async ({ photo, step }) => {
+    // Serialize video analysis: 1-at-a-time with retry+backoff to respect API rate limits
+    let rateLimitHit = false;
+    for (const { photo, step } of allVideoMedia) {
+      if (rateLimitHit) {
+        videoDone++;
+        onProgress?.("Analyzing videos", videoDone, allVideoMedia.length);
+        continue;
+      }
+
       try {
-        // Send full video file — Gemini needs a valid container
         const buffer = await photo.file.arrayBuffer();
         const bytes = new Uint8Array(buffer);
 
-        // Convert to base64 in chunks to avoid stack overflow
         let binary = "";
         const chunkSize = 8192;
         for (let i = 0; i < bytes.length; i += chunkSize) {
@@ -464,40 +470,64 @@ export async function processImportedMediaFiles(
         }
         const videoBase64 = btoa(binary);
 
-        // Map MIME types — Gemini doesn't accept video/quicktime, use video/mov
         let mimeType = photo.file.type || "video/mp4";
-        if (mimeType === "video/quicktime") {
-          mimeType = "video/mov";
+        if (mimeType === "video/quicktime" || mimeType === "video/mov") {
+          mimeType = "video/mp4";
         }
 
-        const { data, error } = await supabase.functions.invoke("analyze-video", {
-          body: {
-            videoBase64,
-            mimeType,
-            captionId: photo.captionId,
-            fileName: photo.file.name,
-            takenAt: photo.takenAt?.toISOString() ?? null,
-            latitude: step?.latitude ?? photo.latitude ?? null,
-            longitude: step?.longitude ?? photo.longitude ?? null,
-            locationName: step?.locationName ?? null,
-            country: step?.country ?? null,
-          },
-        });
-
-        if (!error && data?.result) {
-          videoInsights.set(photo.captionId, {
-            captionId: data.result.captionId,
-            caption: data.result.caption,
-            sceneDescription: data.result.sceneDescription,
-            richTags: data.result.richTags,
+        let lastError: string | null = null;
+        for (let attempt = 0; attempt < 3; attempt++) {
+          const { data, error } = await supabase.functions.invoke("analyze-video", {
+            body: {
+              videoBase64,
+              mimeType,
+              captionId: photo.captionId,
+              fileName: photo.file.name,
+              takenAt: photo.takenAt?.toISOString() ?? null,
+              latitude: step?.latitude ?? photo.latitude ?? null,
+              longitude: step?.longitude ?? photo.longitude ?? null,
+              locationName: step?.locationName ?? null,
+              country: step?.country ?? null,
+            },
           });
+
+          if (!error && data?.result) {
+            videoInsights.set(photo.captionId, {
+              captionId: data.result.captionId,
+              caption: data.result.caption,
+              sceneDescription: data.result.sceneDescription,
+              richTags: data.result.richTags,
+            });
+            lastError = null;
+            break;
+          }
+
+          const errMsg = error?.message || data?.error || "";
+          if (errMsg.includes("429") || errMsg.includes("Rate limited") || errMsg.includes("RESOURCE_EXHAUSTED")) {
+            const delaySec = Math.min(30 * (attempt + 1), 90);
+            console.warn(`[video-analysis] Rate limited on "${photo.file.name}", waiting ${delaySec}s (attempt ${attempt + 1}/3)...`);
+            await new Promise((r) => setTimeout(r, delaySec * 1000));
+            lastError = errMsg;
+            continue;
+          }
+
+          // Non-retryable error — skip this video
+          console.error(`Video analysis failed for ${photo.file.name}:`, errMsg);
+          lastError = null;
+          break;
+        }
+
+        if (lastError) {
+          console.warn(`[video-analysis] Giving up after 3 retries, skipping remaining videos.`);
+          rateLimitHit = true;
         }
       } catch (err) {
         console.error(`Video analysis failed for ${photo.file.name}:`, err);
       }
+
       videoDone++;
       onProgress?.("Analyzing videos", videoDone, allVideoMedia.length);
-    });
+    }
   }
 
   const steps = baseSteps.map((step) => {

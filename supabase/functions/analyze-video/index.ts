@@ -76,7 +76,10 @@ OUTPUT RULES:
         contents: [
           {
             parts: [
-              { inlineData: { mimeType, data: videoBase64 } },
+              {
+                inlineData: { mimeType, data: videoBase64 },
+                videoMetadata: { startOffset: "0s", endOffset: "30s" },
+              },
               { text: prompt },
             ],
           },
