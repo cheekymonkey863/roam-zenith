@@ -42,6 +42,7 @@ const VISUAL_CONFIG: Record<StepVisualType, { icon: React.ElementType; bg: strin
   theatre: { icon: Theater, bg: "bg-red-600", text: "text-white" },
   live_show: { icon: Sparkles, bg: "bg-fuchsia-500", text: "text-white" },
   wellness: { icon: Heart, bg: "bg-rose-500", text: "text-white" },
+  sport: { icon: Trophy, bg: "bg-amber-500", text: "text-white" },
   border: { icon: MapPin, bg: "bg-amber-500", text: "text-white" },
   transport: { icon: ArrowRightLeft, bg: "bg-sky-600", text: "text-white" },
   activity: { icon: Flag, bg: "bg-primary", text: "text-primary-foreground" },
