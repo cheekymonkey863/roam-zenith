@@ -6,7 +6,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useStepVisualTypes } from "@/hooks/useStepVisualTypes";
 import { TripTimeline } from "@/components/TripTimeline";
-import { TrackingControl } from "@/components/TrackingControl";
+
 import { PhotoImport } from "@/components/PhotoImport";
 import { ItineraryImport } from "@/components/ItineraryImport";
 import { WorldMap, type WorldMapHandle } from "@/components/WorldMap";
