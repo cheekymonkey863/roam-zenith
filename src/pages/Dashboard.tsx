@@ -22,9 +22,10 @@ const Dashboard = () => {
   useEffect(() => {
     if (!user) return;
     const fetchData = async () => {
+      // Fetch own trips
       const [tripsRes, stepsRes] = await Promise.all([
-        supabase.from("trips").select("*").eq("user_id", user.id).order("start_date", { ascending: true, nullsFirst: false }),
-        supabase.from("trip_steps").select("*").eq("user_id", user.id).order("recorded_at", { ascending: true }),
+        supabase.from("trips").select("*").order("start_date", { ascending: true, nullsFirst: false }),
+        supabase.from("trip_steps").select("*").order("recorded_at", { ascending: true }),
       ]);
       setTrips(tripsRes.data || []);
       setSteps(stepsRes.data || []);
@@ -105,9 +106,16 @@ const Dashboard = () => {
                   className="group flex flex-col overflow-hidden rounded-2xl bg-card shadow-card transition-all duration-300 hover:shadow-card-hover hover:-translate-y-1"
                 >
                   <div className="relative h-32 bg-gradient-to-br from-primary/20 via-accent/10 to-secondary">
-                    <span className={`absolute right-3 top-3 rounded-full px-2.5 py-0.5 text-xs font-medium ${getTripStatusStyle(status)}`}>
-                      {getTripStatusLabel(status)}
-                    </span>
+                    <div className="absolute right-3 top-3 flex items-center gap-1.5">
+                      {trip.user_id !== user?.id && (
+                        <span className="rounded-full bg-accent/80 px-2.5 py-0.5 text-xs font-medium text-accent-foreground">
+                          Shared
+                        </span>
+                      )}
+                      <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${getTripStatusStyle(status)}`}>
+                        {getTripStatusLabel(status)}
+                      </span>
+                    </div>
                     <div className="absolute inset-0 flex items-end p-5">
                       <h3 className="font-display text-xl font-semibold text-foreground">{trip.title}</h3>
                     </div>

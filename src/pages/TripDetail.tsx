@@ -12,6 +12,7 @@ import { ItineraryImport } from "@/components/ItineraryImport";
 import { WorldMap, type WorldMapHandle } from "@/components/WorldMap";
 import { AddEventForm } from "@/components/AddEventForm";
 import { EditTripDialog } from "@/components/EditTripDialog";
+import { ShareTripDialog } from "@/components/ShareTripDialog";
 import { useIsMobile } from "@/hooks/use-mobile";
 import type { Tables } from "@/integrations/supabase/types";
 
@@ -30,6 +31,7 @@ const TripDetail = () => {
   const [trip, setTrip] = useState<Trip | null>(null);
   const [steps, setSteps] = useState<TripStep[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isOwner, setIsOwner] = useState(false);
   const [showPhotoImport, setShowPhotoImport] = useState(false);
   const [showItineraryImport, setShowItineraryImport] = useState(false);
   const [activeStepId, setActiveStepId] = useState<string | null>(null);
@@ -38,12 +40,12 @@ const TripDetail = () => {
 
   const fetchData = async () => {
     if (!user || !id) return;
-    const [tripRes, stepsRes] = await Promise.all([
-      supabase.from("trips").select("*").eq("id", id).eq("user_id", user.id).single(),
-      supabase.from("trip_steps").select("*").eq("trip_id", id).eq("user_id", user.id).order("sort_order", { ascending: true }).order("recorded_at", { ascending: true }),
-    ]);
+    // Fetch trip (RLS allows both owner and shared users)
+    const tripRes = await supabase.from("trips").select("*").eq("id", id).single();
+    const stepsRes = await supabase.from("trip_steps").select("*").eq("trip_id", id).order("sort_order", { ascending: true }).order("recorded_at", { ascending: true });
     setTrip(tripRes.data);
     setSteps(stepsRes.data || []);
+    setIsOwner(tripRes.data?.user_id === user.id);
     setLoading(false);
   };
 
@@ -88,7 +90,8 @@ const TripDetail = () => {
               <span className={`rounded-full px-3 py-1 text-xs font-medium ${getTripStatusStyle(getTripStatus(trip.start_date, trip.end_date))}`}>
                 {getTripStatusLabel(getTripStatus(trip.start_date, trip.end_date))}
               </span>
-              <EditTripDialog trip={trip} onUpdated={fetchData} />
+              {isOwner && <ShareTripDialog tripId={trip.id} tripTitle={trip.title} />}
+              {isOwner && <EditTripDialog trip={trip} onUpdated={fetchData} />}
             </div>
           </div>
 

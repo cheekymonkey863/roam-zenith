@@ -11,6 +11,7 @@ import NewTrip from "./pages/NewTrip";
 import StatsPage from "./pages/StatsPage";
 import AuthPage from "./pages/AuthPage";
 import NotFound from "./pages/NotFound";
+import JoinTrip from "./pages/JoinTrip";
 
 const queryClient = new QueryClient();
 
@@ -36,6 +37,7 @@ function AppRoutes() {
           <Route path="/trips/new" element={<NewTrip />} />
           <Route path="/trips/:id" element={<TripDetail />} />
           <Route path="/stats" element={<StatsPage />} />
+          <Route path="/join/:token" element={<JoinTrip />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </main>
