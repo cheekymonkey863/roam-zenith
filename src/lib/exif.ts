@@ -1006,8 +1006,8 @@ export interface ReverseGeocodeResult {
 }
 
 const GEOCODE_FETCH_TIMEOUT_MS = 8000;
-const EXACT_PLACE_DISTANCE_METERS = 50;
-const NEARBY_SEARCH_RADIUS_METERS = 150;
+const EXACT_PLACE_DISTANCE_METERS = 5;
+const NEARBY_SEARCH_RADIUS_METERS = 20;
 
 function getDistanceMeters(lat1: number, lng1: number, lat2: number, lng2: number) {
   const dLat = (lat2 - lat1) * 111320;
