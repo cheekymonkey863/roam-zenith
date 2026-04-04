@@ -1,5 +1,6 @@
 import exifr from "exifr";
 import heic2any from "heic2any";
+import { supabase } from "@/integrations/supabase/client";
 
 export interface PhotoExifData {
   file: File;
@@ -211,6 +212,40 @@ async function parseVideoGPS(file: File): Promise<{ latitude: number; longitude:
   return null;
 }
 
+/**
+ * Send the first ~2MB of a video file to the server-side metadata extraction
+ * edge function for robust MP4/MOV atom tree parsing.
+ */
+async function extractVideoMetadataServerSide(
+  file: File
+): Promise<{ latitude: number | null; longitude: number | null; creationDate: string | null; cameraMake: string | null; cameraModel: string | null } | null> {
+  try {
+    const CHUNK_SIZE = 2 * 1024 * 1024; // 2MB — enough for all metadata atoms
+    const chunk = file.slice(0, Math.min(file.size, CHUNK_SIZE));
+    const arrayBuffer = await chunk.arrayBuffer();
+    const bytes = new Uint8Array(arrayBuffer);
+    let binary = "";
+    for (let i = 0; i < bytes.length; i++) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    const base64 = btoa(binary);
+
+    const { data, error } = await supabase.functions.invoke("extract-video-metadata", {
+      body: { videoBase64: base64 },
+    });
+
+    if (error) {
+      console.warn("[video-metadata] Server-side extraction failed:", error);
+      return null;
+    }
+
+    return data as { latitude: number | null; longitude: number | null; creationDate: string | null; cameraMake: string | null; cameraModel: string | null };
+  } catch (e) {
+    console.warn("[video-metadata] Server-side extraction error:", e);
+    return null;
+  }
+}
+
 export async function extractExifFromFile(file: File): Promise<PhotoExifData> {
   const isVideo = file.type.startsWith("video/");
 
@@ -226,9 +261,32 @@ export async function extractExifFromFile(file: File): Promise<PhotoExifData> {
 
   let { latitude, longitude } = extractCoordinatesFromExif(exif);
   let takenAt = extractTakenAtFromExif(exif, file.lastModified);
+  let cameraMake: string | undefined = typeof exif?.Make === "string" ? exif.Make : undefined;
+  let cameraModel: string | undefined = typeof exif?.Model === "string" ? exif.Model : undefined;
 
-  // For videos: try MP4/MOV-specific metadata extraction if exifr didn't find anything
+  // For videos: use server-side metadata extraction for robust MP4/MOV parsing
   if (isVideo) {
+    const serverMeta = await extractVideoMetadataServerSide(file);
+    if (serverMeta) {
+      if ((latitude === null || longitude === null) && serverMeta.latitude !== null && serverMeta.longitude !== null) {
+        latitude = serverMeta.latitude;
+        longitude = serverMeta.longitude;
+      }
+      if (!takenAt && serverMeta.creationDate) {
+        const serverDate = new Date(serverMeta.creationDate);
+        if (!isNaN(serverDate.getTime())) {
+          takenAt = serverDate;
+        }
+      }
+      if (!cameraMake && serverMeta.cameraMake) {
+        cameraMake = serverMeta.cameraMake;
+      }
+      if (!cameraModel && serverMeta.cameraModel) {
+        cameraModel = serverMeta.cameraModel;
+      }
+    }
+
+    // Client-side fallback if server-side didn't find GPS
     if (latitude === null || longitude === null) {
       const videoGPS = await parseVideoGPS(file);
       if (videoGPS) {
@@ -237,9 +295,9 @@ export async function extractExifFromFile(file: File): Promise<PhotoExifData> {
       }
     }
     
-    // If exifr didn't find a date, try MP4 header
+    // Client-side fallback for date
     const exifDate = normalizeDate(exif?.DateTimeOriginal) ?? normalizeDate(exif?.CreateDate);
-    if (!exifDate) {
+    if (!exifDate && !takenAt) {
       const videoDate = await parseVideoCreationDate(file);
       if (videoDate) {
         takenAt = videoDate;
@@ -256,8 +314,8 @@ export async function extractExifFromFile(file: File): Promise<PhotoExifData> {
     takenAt,
     thumbnail,
     analysisImage,
-    cameraMake: typeof exif?.Make === "string" ? exif.Make : undefined,
-    cameraModel: typeof exif?.Model === "string" ? exif.Model : undefined,
+    cameraMake,
+    cameraModel,
     exifRaw: exif ? { ...exif } : undefined,
   };
 }
