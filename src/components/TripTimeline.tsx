@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { MapPin, Image as ImageIcon, Trash2, Plane, Hotel, Utensils, Camera, ArrowRightLeft, Flag, CircleDot } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { EditStepDialog } from "@/components/EditStepDialog";
@@ -32,13 +32,49 @@ export function TripTimeline({
   steps,
   onUpdated,
   visualTypes = {},
+  onStepInView,
 }: {
   steps: TripStep[];
   onUpdated: () => void;
   visualTypes?: Record<string, StepVisualType>;
+  onStepInView?: (stepId: string) => void;
 }) {
   const [photosByStep, setPhotosByStep] = useState<Record<string, StepPhoto[]>>({});
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const stepRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+
+  // IntersectionObserver to detect which step is in view
+  useEffect(() => {
+    if (!onStepInView || steps.length === 0) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        let bestEntry: IntersectionObserverEntry | null = null;
+        for (const entry of entries) {
+          if (entry.isIntersecting) {
+            if (!bestEntry || entry.intersectionRatio > bestEntry.intersectionRatio) {
+              bestEntry = entry;
+            }
+          }
+        }
+        if (bestEntry) {
+          const stepId = (bestEntry.target as HTMLElement).dataset.stepId;
+          if (stepId) onStepInView(stepId);
+        }
+      },
+      { threshold: [0.3, 0.5, 0.7], rootMargin: "-20% 0px -40% 0px" }
+    );
+
+    // Observe after a brief delay to ensure refs are set
+    const timer = setTimeout(() => {
+      stepRefs.current.forEach((el) => observer.observe(el));
+    }, 100);
+
+    return () => {
+      clearTimeout(timer);
+      observer.disconnect();
+    };
+  }, [steps, onStepInView]);
 
   useEffect(() => {
     const stepIds = steps.map((s) => s.id);
@@ -89,7 +125,12 @@ export function TripTimeline({
           const StepIcon = config.icon;
 
           return (
-            <div key={step.id} className="relative flex gap-5 pb-8 last:pb-0">
+            <div
+              key={step.id}
+              data-step-id={step.id}
+              ref={(el) => { if (el) stepRefs.current.set(step.id, el); }}
+              className="relative flex gap-5 pb-8 last:pb-0"
+            >
               <div className={`relative z-10 flex h-10 w-10 shrink-0 items-center justify-center rounded-full shadow-card ring-4 ring-background ${config.bg}`}>
                 <StepIcon className={`h-4 w-4 ${config.text}`} />
               </div>
