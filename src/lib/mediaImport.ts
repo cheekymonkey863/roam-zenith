@@ -1,7 +1,7 @@
 import { supabase } from "@/integrations/supabase/client";
 import { dedupeTags } from "@/lib/mediaMetadata";
 import {
-  extractExifFromFiles,
+  extractExifFromFile,
   geocodeLocationName,
   groupMediaByTime,
   groupPhotosByLocation,
@@ -60,6 +60,8 @@ export interface ProcessedMediaImport {
   resolvedMediaCount: number;
   unresolvedCount: number;
 }
+
+export type ImportProgressCallback = (phase: string, current: number, total: number) => void;
 
 const LOCATION_GROUP_RADIUS_METERS = 500;
 const LOCATION_GROUP_MAX_GAP_HOURS = 6;
@@ -234,7 +236,10 @@ async function inferLocationsWithVision(
   );
 }
 
-export async function processImportedMediaFiles(files: File[]): Promise<ProcessedMediaImport> {
+export async function processImportedMediaFiles(
+  files: File[],
+  onProgress?: ImportProgressCallback,
+): Promise<ProcessedMediaImport> {
   const mediaFiles = files.filter((file) => file.type.startsWith("image/") || file.type.startsWith("video/"));
   if (mediaFiles.length === 0) {
     return {
@@ -248,15 +253,31 @@ export async function processImportedMediaFiles(files: File[]): Promise<Processe
     };
   }
 
-  const exifResults = await extractExifFromFiles(mediaFiles);
+  onProgress?.("Reading metadata", 0, mediaFiles.length);
+  let exifDone = 0;
+  const exifResults = await Promise.all(
+    mediaFiles.map(async (file) => {
+      const result = await extractExifFromFile(file);
+      exifDone++;
+      onProgress?.("Reading metadata", exifDone, mediaFiles.length);
+      return result;
+    }),
+  );
+
+  onProgress?.("Grouping locations", 0, 1);
   const allDates = exifResults.map((photo) => photo.takenAt).filter(Boolean) as Date[];
   const groups = groupPhotosByLocation(exifResults, LOCATION_GROUP_RADIUS_METERS, LOCATION_GROUP_MAX_GAP_HOURS);
 
+  const groupEntries = Array.from(groups.entries());
+  onProgress?.("Resolving locations", 0, groupEntries.length);
+  let geoResolved = 0;
   const baseSteps: ImportedMediaStep[] = await Promise.all(
-    Array.from(groups.entries()).map(async ([key, photos]) => {
+    groupEntries.map(async ([key, photos]) => {
       const sortedPhotos = sortMediaByCapturedTime(photos);
       const { latitude, longitude } = getRepresentativeCoordinates(sortedPhotos);
       const geo = await reverseGeocode(latitude, longitude);
+      geoResolved++;
+      onProgress?.("Resolving locations", geoResolved, groupEntries.length);
       const displayName = geo.locality && geo.locality !== "Unknown" && geo.name !== geo.locality && geo.name !== "Unknown"
         ? `${geo.name}, ${geo.locality}`
         : geo.name;
@@ -311,12 +332,14 @@ export async function processImportedMediaFiles(files: File[]): Promise<Processe
     }),
   );
 
+  onProgress?.("Visual recognition", 0, 1);
   let inferredLocations = new Map<string, HybridLocationResult>();
   try {
     inferredLocations = await inferLocationsWithVision(baseSteps, noGpsGroups);
   } catch (error) {
     console.error("Visual location inference error:", error);
   }
+  onProgress?.("Visual recognition", 1, 1);
 
   const steps = baseSteps.map((step) => {
     const inferred = inferredLocations.get(step.key);
