@@ -378,7 +378,7 @@ export async function processImportedMediaFiles(
         country: geo.country,
         latitude,
         longitude,
-        photos: applyMediaInsights(sortedPhotos, undefined, displayName, stepDetails.eventType),
+        photos: applyMediaInsights(sortedPhotos, undefined, undefined, displayName, stepDetails.eventType),
         earliestDate,
         selected: true,
         eventType: stepDetails.eventType,
