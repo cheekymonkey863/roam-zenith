@@ -5,6 +5,7 @@ import {
 } from "@/lib/exif";
 import { processImportedMediaFiles } from "@/lib/mediaImport";
 import { buildStoredMediaMetadata } from "@/lib/mediaMetadata";
+import { buildImportedEventDescription, buildImportedLocationSummary, buildImportedStepDetails } from "@/lib/placeClassification";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
@@ -18,6 +19,7 @@ interface SuggestedStep {
   photos: PhotoExifData[];
   earliestDate: Date | null;
   selected: boolean;
+  eventType: string;
   confidence: "high" | "medium" | "low";
   summary: string;
   description: string;
@@ -69,24 +71,12 @@ function isKnownLocationName(value: string) {
   return normalized.length > 0 && normalized !== "unknown" && normalized !== "unknown location";
 }
 
-function buildLocationSummary(locationName: string, country: string) {
-  if (!isKnownLocationName(locationName)) {
-    return "Grouped nearby media from the same travel stop.";
-  }
-
-  return country && country !== "Unknown"
-    ? `Grouped media around ${locationName}, ${country}.`
-    : `Grouped media around ${locationName}.`;
+function buildLocationSummary(locationName: string, country: string, eventType = "activity") {
+  return buildImportedLocationSummary(locationName, country, eventType);
 }
 
-function buildEventDescription(locationName: string, country: string) {
-  if (!isKnownLocationName(locationName)) {
-    return "Travel event created from nearby media captured in the same time range.";
-  }
-
-  return country && country !== "Unknown"
-    ? `Travel event around ${locationName}, ${country}.`
-    : `Travel event around ${locationName}.`;
+function buildEventDescription(locationName: string, country: string, eventType = "activity") {
+  return buildImportedEventDescription(locationName, country, eventType);
 }
 
 function buildMediaCaption(photo: PhotoExifData, locationName: string) {
@@ -286,7 +276,31 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
   const toggleStep = (key: string) => setSuggestions((prev) => prev.map((s) => (s.key === key ? { ...s, selected: !s.selected } : s)));
 
   const updateSuggestion = (key: string, field: keyof SuggestedStep, value: string) => {
-    setSuggestions((prev) => prev.map((s) => (s.key === key ? { ...s, [field]: value } : s)));
+    setSuggestions((prev) =>
+      prev.map((s) => {
+        if (s.key !== key) return s;
+
+        const nextSuggestion = { ...s, [field]: value };
+        if (field !== "locationName" && field !== "country") {
+          return nextSuggestion;
+        }
+
+        const nextLocationName = field === "locationName" ? value : s.locationName;
+        const nextCountry = field === "country" ? value : s.country;
+        const nextDetails = buildImportedStepDetails({
+          locationName: nextLocationName,
+          country: nextCountry,
+          fallbackEventType: s.eventType,
+        });
+
+        return {
+          ...nextSuggestion,
+          eventType: nextDetails.eventType,
+          summary: buildLocationSummary(nextLocationName, nextCountry, nextDetails.eventType),
+          description: buildEventDescription(nextLocationName, nextCountry, nextDetails.eventType),
+        };
+      }),
+    );
   };
 
   const mergeSteps = (targetKey: string, sourceKey: string) => {
@@ -302,6 +316,12 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
       const allDates = allPhotos.map((p) => p.takenAt).filter(Boolean) as Date[];
       const earliestDate = allDates.length > 0 ? new Date(Math.min(...allDates.map((d) => d.getTime()))) : target.earliestDate;
 
+      const mergedDetails = buildImportedStepDetails({
+        locationName: mergedLocationName,
+        country: mergedCountry,
+        fallbackEventType: target.eventType !== "activity" ? target.eventType : source.eventType,
+      });
+
       const merged: SuggestedStep = {
         ...target,
         locationName: mergedLocationName,
@@ -309,9 +329,10 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
         photos: allPhotos,
         earliestDate,
         selected: target.selected || source.selected,
+        eventType: mergedDetails.eventType,
         confidence: pickHigherConfidence(target.confidence, source.confidence),
-        description: target.description || source.description || buildEventDescription(mergedLocationName, mergedCountry),
-        summary: target.summary || source.summary || buildLocationSummary(mergedLocationName, mergedCountry),
+        description: buildEventDescription(mergedLocationName, mergedCountry, mergedDetails.eventType),
+        summary: buildLocationSummary(mergedLocationName, mergedCountry, mergedDetails.eventType),
       };
 
       return prev.filter((s) => s.key !== sourceKey).map((s) => (s.key === targetKey ? merged : s));
@@ -382,7 +403,7 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
           longitude: step.longitude,
           recorded_at: step.earliestDate?.toISOString() || new Date().toISOString(),
           source: "photo_import",
-          event_type: "activity",
+          event_type: step.eventType,
           is_confirmed: true,
           notes: null,
           description: step.description || step.summary || null,

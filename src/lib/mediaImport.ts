@@ -8,6 +8,11 @@ import {
   reverseGeocode,
   type PhotoExifData,
 } from "@/lib/exif";
+import {
+  buildImportedEventDescription,
+  buildImportedLocationSummary,
+  buildImportedStepDetails,
+} from "@/lib/placeClassification";
 
 export type StepConfidence = "high" | "medium" | "low";
 
@@ -39,7 +44,9 @@ export interface ImportedMediaStep {
   photos: PhotoExifData[];
   earliestDate: Date | null;
   selected: boolean;
+  eventType: string;
   confidence: StepConfidence;
+  placeTypes?: string[];
   summary: string;
   description: string;
 }
@@ -75,24 +82,12 @@ function isKnownLocationName(value: string) {
   return normalized.length > 0 && normalized !== "unknown" && normalized !== "unknown location";
 }
 
-function buildLocationSummary(locationName: string, country: string) {
-  if (!isKnownLocationName(locationName)) {
-    return "Grouped nearby media from the same travel stop.";
-  }
-
-  return country && country !== "Unknown"
-    ? `Grouped media around ${locationName}, ${country}.`
-    : `Grouped media around ${locationName}.`;
+function buildLocationSummary(locationName: string, country: string, eventType = "activity") {
+  return buildImportedLocationSummary(locationName, country, eventType);
 }
 
-function buildEventDescription(locationName: string, country: string) {
-  if (!isKnownLocationName(locationName)) {
-    return "Travel event created from nearby media captured in the same time range.";
-  }
-
-  return country && country !== "Unknown"
-    ? `Travel event around ${locationName}, ${country}.`
-    : `Travel event around ${locationName}.`;
+function buildEventDescription(locationName: string, country: string, eventType = "activity") {
+  return buildImportedEventDescription(locationName, country, eventType);
 }
 
 function buildMediaCaption(photo: PhotoExifData, locationName: string) {
@@ -262,6 +257,11 @@ export async function processImportedMediaFiles(files: File[]): Promise<Processe
       const sortedPhotos = sortMediaByCapturedTime(photos);
       const { latitude, longitude } = getRepresentativeCoordinates(sortedPhotos);
       const geo = await reverseGeocode(latitude, longitude);
+      const stepDetails = buildImportedStepDetails({
+        locationName: geo.name,
+        country: geo.country,
+        placeTypes: geo.placeTypes,
+      });
       const dates = sortedPhotos.map((p) => p.takenAt).filter(Boolean) as Date[];
       const earliestDate = dates.length > 0 ? new Date(Math.min(...dates.map((d) => d.getTime()))) : null;
 
@@ -274,9 +274,11 @@ export async function processImportedMediaFiles(files: File[]): Promise<Processe
         photos: applyMediaInsights(sortedPhotos, undefined, geo.name),
         earliestDate,
         selected: true,
+        eventType: stepDetails.eventType,
         confidence: "low" as const,
-        summary: buildLocationSummary(geo.name, geo.country),
-        description: buildEventDescription(geo.name, geo.country),
+        placeTypes: geo.placeTypes,
+        summary: buildLocationSummary(geo.name, geo.country, stepDetails.eventType),
+        description: buildEventDescription(geo.name, geo.country, stepDetails.eventType),
       };
     }),
   );
@@ -318,14 +320,28 @@ export async function processImportedMediaFiles(files: File[]): Promise<Processe
     const locationName = isKnownLocationName(step.locationName) ? step.locationName : inferred?.locationName || step.locationName;
     const country = step.country && step.country !== "Unknown" ? step.country : inferred?.country || step.country;
 
+    const stepDetails = buildImportedStepDetails({
+      locationName,
+      country,
+      placeTypes: step.placeTypes,
+      fallbackEventType: step.eventType,
+    });
+
     return {
       ...step,
       locationName,
       country,
       photos: applyMediaInsights(step.photos, inferred?.photoCaptions, locationName),
+      eventType: stepDetails.eventType,
       confidence: inferred?.confidence ? pickHigherConfidence(step.confidence, inferred.confidence) : step.confidence,
-      summary: inferred?.summary || buildLocationSummary(locationName, country),
-      description: inferred?.eventDescription || buildEventDescription(locationName, country),
+      summary:
+        stepDetails.eventType === "activity" && inferred?.summary
+          ? inferred.summary
+          : buildLocationSummary(locationName, country, stepDetails.eventType),
+      description:
+        stepDetails.eventType === "activity" && inferred?.eventDescription
+          ? inferred.eventDescription
+          : buildEventDescription(locationName, country, stepDetails.eventType),
     };
   });
 
@@ -352,6 +368,11 @@ export async function processImportedMediaFiles(files: File[]): Promise<Processe
         const dates = photos.map((photo) => photo.takenAt).filter(Boolean) as Date[];
         const earliestDate = dates.length > 0 ? new Date(Math.min(...dates.map((date) => date.getTime()))) : null;
 
+        const stepDetails = buildImportedStepDetails({
+          locationName,
+          country,
+        });
+
         return {
           key: group.key,
           locationName,
@@ -361,9 +382,16 @@ export async function processImportedMediaFiles(files: File[]): Promise<Processe
           photos,
           earliestDate,
           selected: true,
+          eventType: stepDetails.eventType,
           confidence: inferred.confidence,
-          summary: inferred.summary || buildLocationSummary(locationName, country),
-          description: inferred.eventDescription || buildEventDescription(locationName, country),
+          summary:
+            stepDetails.eventType === "activity" && inferred.summary
+              ? inferred.summary
+              : buildLocationSummary(locationName, country, stepDetails.eventType),
+          description:
+            stepDetails.eventType === "activity" && inferred.eventDescription
+              ? inferred.eventDescription
+              : buildEventDescription(locationName, country, stepDetails.eventType),
         };
       }),
     )
