@@ -1,0 +1,14 @@
+ALTER TYPE public.step_event_type ADD VALUE IF NOT EXISTS 'hotel';
+ALTER TYPE public.step_event_type ADD VALUE IF NOT EXISTS 'apartment_flat';
+ALTER TYPE public.step_event_type ADD VALUE IF NOT EXISTS 'private_home';
+ALTER TYPE public.step_event_type ADD VALUE IF NOT EXISTS 'villa';
+ALTER TYPE public.step_event_type ADD VALUE IF NOT EXISTS 'safari';
+ALTER TYPE public.step_event_type ADD VALUE IF NOT EXISTS 'glamping';
+ALTER TYPE public.step_event_type ADD VALUE IF NOT EXISTS 'camping';
+ALTER TYPE public.step_event_type ADD VALUE IF NOT EXISTS 'tour';
+ALTER TYPE public.step_event_type ADD VALUE IF NOT EXISTS 'dining';
+ALTER TYPE public.step_event_type ADD VALUE IF NOT EXISTS 'meeting';
+ALTER TYPE public.step_event_type ADD VALUE IF NOT EXISTS 'concert';
+ALTER TYPE public.step_event_type ADD VALUE IF NOT EXISTS 'theatre';
+ALTER TYPE public.step_event_type ADD VALUE IF NOT EXISTS 'live_show';
+ALTER TYPE public.step_event_type ADD VALUE IF NOT EXISTS 'wellness';
