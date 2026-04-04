@@ -218,7 +218,7 @@ Deno.serve(async (req) => {
 
     console.log(`Analyzing "${fileName}" via Lovable AI. Video URL: ${videoUrl}`);
 
-    const prompt = buildPrompt({ takenAt, latitude, longitude, locationName, country });
+    const prompt = buildPrompt({ takenAt, latitude, longitude, locationName, country, itinerarySteps });
     const data = await callLovableAiWithRetries(lovableApiKey, {
       model: MODEL,
       messages: [
