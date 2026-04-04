@@ -549,47 +549,50 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
 
       {suggestions.length > 0 && (
         <div className="flex flex-col gap-4">
-          <div className="flex items-center justify-between">
-            <h3 className="font-display text-lg font-semibold text-foreground">
-              Detected Locations ({suggestions.filter((s) => s.selected).length}/{suggestions.length})
-            </h3>
-            <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <Merge className="h-3 w-3" /> Drag one event onto another to merge
-            </p>
-            <div className="flex items-center gap-2">
-              {onCancel && (
-                <button onClick={onCancel} className="flex items-center gap-1.5 rounded-xl bg-secondary px-4 py-2 text-sm font-medium text-secondary-foreground hover:bg-secondary/80 transition-colors">
-                  <X className="h-4 w-4" />
-                  Cancel
+          <div className="flex flex-col gap-3">
+            <div className="flex items-center justify-between">
+              <h3 className="font-display text-lg font-semibold text-foreground">
+                Detected Locations ({suggestions.filter((s) => s.selected).length}/{suggestions.length})
+              </h3>
+              <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <Merge className="h-3 w-3" /> Drag to merge
+              </p>
+              <div className="flex items-center gap-2">
+                {onCancel && (
+                  <button type="button" onClick={onCancel} className="flex items-center gap-1.5 rounded-xl bg-secondary px-4 py-2 text-sm font-medium text-secondary-foreground hover:bg-secondary/80 transition-colors">
+                    <X className="h-4 w-4" />
+                    Cancel
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={importSelected}
+                  disabled={importing || suggestions.filter((s) => s.selected).length === 0}
+                  className="flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
+                >
+                  {importing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                  {importing
+                    ? `Importing… ${importProgress.total > 0 ? `(${Math.round((importProgress.current / importProgress.total) * 100)}%)` : ""}`
+                    : "Import Selected"}
                 </button>
-              )}
-               <button
-                 onClick={importSelected}
-                 disabled={importing || suggestions.filter((s) => s.selected).length === 0}
-                 className="flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
-               >
-                 {importing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-                 {importing
-                   ? `Importing… ${importProgress.total > 0 ? `(${Math.round((importProgress.current / importProgress.total) * 100)}%)` : ""}`
-                   : "Import Selected"}
-               </button>
-             </div>
+              </div>
+            </div>
 
-             {/* Import progress bar */}
-             {importing && importProgress.total > 0 && (
-               <div className="flex flex-col gap-1.5">
-                 <div className="flex items-center justify-between text-xs text-muted-foreground">
-                   <span>Uploading media…</span>
-                   <span>{Math.round((importProgress.current / importProgress.total) * 100)}%</span>
-                 </div>
-                 <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
-                   <div
-                     className="h-full rounded-full bg-primary transition-all duration-300 ease-out"
-                     style={{ width: `${(importProgress.current / importProgress.total) * 100}%` }}
-                   />
-                 </div>
-               </div>
-             )}
+            {/* Import progress bar */}
+            {importing && importProgress.total > 0 && (
+              <div className="flex flex-col gap-1.5">
+                <div className="flex items-center justify-between text-xs text-muted-foreground">
+                  <span>Uploading media…</span>
+                  <span>{Math.round((importProgress.current / importProgress.total) * 100)}%</span>
+                </div>
+                <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+                  <div
+                    className="h-full rounded-full bg-primary transition-all duration-300 ease-out"
+                    style={{ width: `${(importProgress.current / importProgress.total) * 100}%` }}
+                  />
+                </div>
+              </div>
+            )}
           </div>
 
           {noGpsPhotos.length > 0 && (
