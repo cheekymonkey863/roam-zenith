@@ -193,10 +193,9 @@ async function captureFrameWithFfmpeg(file: File): Promise<string> {
       if (exitCode !== 0) return "";
 
       const output = await ffmpeg.readFile(outputName);
-      const bytes = output instanceof Uint8Array ? output : new Uint8Array(output as ArrayBuffer);
-      if (!bytes.byteLength) return "";
+      if (typeof output === "string" || !output.byteLength) return "";
 
-      const dataUrl = await blobToDataUrl(new Blob([bytes], { type: "image/jpeg" }));
+      const dataUrl = await blobToDataUrl(new Blob([output.buffer as ArrayBuffer], { type: "image/jpeg" }));
       return resizeImageDataUrl(dataUrl, ANALYSIS_IMAGE_SIZE, ANALYSIS_IMAGE_QUALITY);
     } catch (error) {
       console.warn(`[video-preview] FFmpeg fallback failed for "${file.name}"`, error);
