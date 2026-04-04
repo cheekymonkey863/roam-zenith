@@ -33,7 +33,10 @@ async function extractTextFromPDF(file: File): Promise<string> {
     return textParts.join("\n\n");
   } catch (workerError) {
     console.error("PDF worker extraction failed, retrying without worker:", workerError);
-    const pdf = await pdfjsLib.getDocument({ data: buffer, disableWorker: true }).promise;
+    const pdf = await pdfjsLib.getDocument({
+      data: buffer,
+      disableWorker: true,
+    } as any).promise;
     const textParts: string[] = [];
 
     for (let i = 1; i <= pdf.numPages; i++) {
