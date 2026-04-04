@@ -552,7 +552,7 @@ export async function processImportedMediaFiles(
           placeTypes: contextualStep?.placeTypes,
           fallbackEventType: contextualStep?.eventType,
         });
-        const photos = applyMediaInsights(group.photos, inferred?.photoCaptions, undefined, locationName, stepDetails.eventType);
+        const photos = applyMediaInsights(group.photos, inferred?.photoCaptions, videoInsights, locationName, stepDetails.eventType);
         const dates = photos.map((photo) => photo.takenAt).filter(Boolean) as Date[];
         const earliestDate = dates.length > 0 ? new Date(Math.min(...dates.map((date) => date.getTime()))) : null;
 
