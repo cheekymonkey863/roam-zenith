@@ -4,6 +4,8 @@ import heic2any from "heic2any";
 export interface PhotoExifData {
   file: File;
   uploadFile?: File;
+  captionId: string;
+  caption?: string;
   latitude: number | null;
   longitude: number | null;
   takenAt: Date | null;
@@ -136,6 +138,7 @@ export async function extractExifFromFile(file: File): Promise<PhotoExifData> {
   return {
     file,
     uploadFile,
+    captionId: crypto.randomUUID(),
     latitude,
     longitude,
     takenAt,
@@ -197,7 +200,7 @@ function createVideoThumbnail(file: File, size: number, quality: number): Promis
         return;
       }
 
-      const targetTime = Math.min(Math.max(video.duration * 0.1, 0.1), video.duration - 0.05);
+      const targetTime = Math.min(Math.max(video.duration * 0.33, 0.5), video.duration - 0.1);
       video.currentTime = targetTime;
     };
     video.onloadeddata = () => {
@@ -247,16 +250,19 @@ export async function extractExifFromFiles(files: File[]): Promise<PhotoExifData
   return Promise.all(files.map(extractExifFromFile));
 }
 
-const EXTENDED_TIME_WINDOW_MS = 12 * 60 * 60 * 1000;
-const SHORT_WINDOW_MS = 3 * 60 * 60 * 1000;
-const RELAXED_DISTANCE_MULTIPLIER = 3;
+const DEFAULT_LOCATION_GROUP_MAX_GAP_HOURS = 6;
 
-export function groupPhotosByLocation(photos: PhotoExifData[], radiusMeters = 2000): Map<string, PhotoExifData[]> {
+export function groupPhotosByLocation(
+  photos: PhotoExifData[],
+  radiusMeters = 500,
+  maxGapHours = DEFAULT_LOCATION_GROUP_MAX_GAP_HOURS
+): Map<string, PhotoExifData[]> {
   const geoPhotos = photos
     .filter((photo) => photo.latitude !== null && photo.longitude !== null)
     .sort((a, b) => (a.takenAt?.getTime() ?? a.file.lastModified ?? 0) - (b.takenAt?.getTime() ?? b.file.lastModified ?? 0));
 
   const groups = new Map<string, PhotoExifData[]>();
+  const maxGapMs = maxGapHours * 60 * 60 * 1000;
 
   for (const photo of geoPhotos) {
     let bestGroupKey: string | null = null;
@@ -267,20 +273,17 @@ export function groupPhotosByLocation(photos: PhotoExifData[], radiusMeters = 20
       const centerDistance = getGroupCenterDistance(photo, group);
       const closestTimeDistance = getClosestGroupTimeDistance(photo, group);
       const sharesDay = isCompatibleDay(photo, group);
-      const withinTimeWindow = closestTimeDistance === null || closestTimeDistance <= EXTENDED_TIME_WINDOW_MS;
+      const withinTimeWindow = closestTimeDistance === null || closestTimeDistance <= maxGapMs;
       const closestLocationDistance = Math.min(closestDistance, centerDistance);
-      const strictLocationMatch = closestLocationDistance <= radiusMeters;
-      const relaxedLocationMatch =
-        closestTimeDistance !== null &&
-        closestTimeDistance <= SHORT_WINDOW_MS &&
-        closestLocationDistance <= radiusMeters * RELAXED_DISTANCE_MULTIPLIER;
 
-      if (sharesDay && withinTimeWindow && (strictLocationMatch || relaxedLocationMatch)) {
-        const score = closestLocationDistance + (closestTimeDistance ?? 0) / 1000;
-        if (score < bestScore) {
-          bestScore = score;
-          bestGroupKey = key;
-        }
+      if (!sharesDay || !withinTimeWindow || closestLocationDistance > radiusMeters) {
+        continue;
+      }
+
+      const score = closestLocationDistance + (closestTimeDistance ?? 0) / 1000;
+      if (score < bestScore) {
+        bestScore = score;
+        bestGroupKey = key;
       }
     }
 
