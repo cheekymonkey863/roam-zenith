@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Plus, X, Search, Loader2, MapPin } from "lucide-react";
+import { useState, useRef } from "react";
+import { Plus, X, Search, Loader2, MapPin, FileUp } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
@@ -7,16 +7,45 @@ import { PendingPhotoUpload, type SelectedFile } from "@/components/ActivityPhot
 import { useGooglePlacesSearch } from "@/hooks/useGooglePlacesSearch";
 import { EventTypeSelect } from "@/components/EventTypeSelect";
 import { getEventType } from "@/lib/eventTypes";
+import JSZip from "jszip";
 
 interface AddEventFormProps {
   tripId: string;
   onEventAdded: () => void;
 }
 
+async function extractTextFromFile(file: File): Promise<string> {
+  const name = file.name.toLowerCase();
+  if (name.endsWith(".txt") || name.endsWith(".md")) {
+    return file.text();
+  }
+  if (name.endsWith(".pdf")) {
+    const pdfjsLib = await import("pdfjs-dist");
+    pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+    const buf = await file.arrayBuffer();
+    const doc = await pdfjsLib.getDocument({ data: buf }).promise;
+    const pages: string[] = [];
+    for (let i = 1; i <= doc.numPages; i++) {
+      const page = await doc.getPage(i);
+      const content = await page.getTextContent();
+      pages.push(content.items.map((it: any) => it.str).join(" "));
+    }
+    return pages.join("\n\n");
+  }
+  if (name.endsWith(".docx")) {
+    const zip = await JSZip.loadAsync(await file.arrayBuffer());
+    const xml = await zip.file("word/document.xml")?.async("string");
+    if (!xml) return "";
+    return xml.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+  }
+  return file.text();
+}
+
 export function AddEventForm({ tripId, onEventAdded }: AddEventFormProps) {
   const { user } = useAuth();
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [parsing, setParsing] = useState(false);
   const [eventType, setEventType] = useState("tour");
   const [activityName, setActivityName] = useState("");
   const [description, setDescription] = useState("");
@@ -24,6 +53,7 @@ export function AddEventForm({ tripId, onEventAdded }: AddEventFormProps) {
   const [notes, setNotes] = useState("");
   const [pendingPhotos, setPendingPhotos] = useState<SelectedFile[]>([]);
   const places = useGooglePlacesSearch();
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const resetForm = () => {
     setEventType("tour");
@@ -47,6 +77,63 @@ export function AddEventForm({ tripId, onEventAdded }: AddEventFormProps) {
         step_id: stepId, user_id: user.id, storage_path: path, file_name: file.name,
       });
     }
+  };
+
+  const handleConfirmationUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (fileInputRef.current) fileInputRef.current.value = "";
+
+    setParsing(true);
+    try {
+      const text = await extractTextFromFile(file);
+      if (text.trim().length < 5) {
+        toast.error("Could not extract text from this file");
+        setParsing(false);
+        return;
+      }
+
+      const { data, error } = await supabase.functions.invoke("parse-confirmation", {
+        body: { text },
+      });
+
+      if (error || !data?.event) {
+        toast.error("Failed to parse confirmation");
+        console.error(error);
+        setParsing(false);
+        return;
+      }
+
+      const evt = data.event;
+
+      // Auto-fill fields
+      if (evt.eventType) setEventType(evt.eventType);
+      if (evt.activityName) setActivityName(evt.activityName);
+      if (evt.description) setDescription(evt.description);
+      if (evt.notes) setNotes(evt.notes);
+      if (evt.date) {
+        const time = evt.time || "12:00";
+        setDate(`${evt.date}T${time}`);
+      }
+
+      // Auto-fill location if we have coordinates
+      if (evt.latitude && evt.longitude && evt.locationName) {
+        const displayName = [evt.locationName, evt.city, evt.country].filter(Boolean).join(", ");
+        places.setQuery(displayName);
+        places.setSelectedPlace({
+          display_name: displayName,
+          lat: String(evt.latitude),
+          lon: String(evt.longitude),
+          address: { country: evt.country || "" },
+        });
+      }
+
+      toast.success("Confirmation parsed! Review and save.");
+    } catch (err) {
+      console.error(err);
+      toast.error("Error parsing confirmation document");
+    }
+    setParsing(false);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -98,6 +185,29 @@ export function AddEventForm({ tripId, onEventAdded }: AddEventFormProps) {
       </div>
 
       <form onSubmit={handleSubmit} className="flex flex-col gap-5">
+        {/* Import from confirmation */}
+        <div>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".pdf,.docx,.txt,.md,.html"
+            onChange={handleConfirmationUpload}
+            className="hidden"
+          />
+          <button
+            type="button"
+            disabled={parsing}
+            onClick={() => fileInputRef.current?.click()}
+            className="flex w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-primary/30 bg-primary/5 px-4 py-3 text-sm font-medium text-primary hover:border-primary/50 hover:bg-primary/10 disabled:opacity-50 transition-colors"
+          >
+            {parsing ? (
+              <><Loader2 className="h-4 w-4 animate-spin" /> Parsing confirmation...</>
+            ) : (
+              <><FileUp className="h-4 w-4" /> Import from Confirmation</>
+            )}
+          </button>
+        </div>
+
         {/* Event type selector */}
         <div className="flex flex-col gap-2">
           <label className="text-sm font-medium text-foreground">Event Type</label>
