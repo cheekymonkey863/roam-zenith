@@ -73,11 +73,12 @@ export function TripTimeline({ steps, onUpdated }: { steps: TripStep[]; onUpdate
       <div className="flex flex-col gap-0">
         {steps.map((step, index) => {
           const photos = photosByStep[step.id] || [];
-          const StepIcon = EVENT_TYPE_ICONS[step.event_type] || MapPin;
+          const config = EVENT_TYPE_CONFIG[step.event_type] || DEFAULT_CONFIG;
+          const StepIcon = config.icon;
           return (
             <div key={step.id} className="relative flex gap-5 pb-8 last:pb-0">
-              <div className="relative z-10 flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-card shadow-card ring-4 ring-background">
-                <StepIcon className="h-4 w-4 text-primary" />
+              <div className={`relative z-10 flex h-10 w-10 shrink-0 items-center justify-center rounded-full shadow-card ring-4 ring-background ${config.bg}`}>
+                <StepIcon className={`h-4 w-4 ${config.text}`} />
               </div>
               <div className="flex flex-1 flex-col gap-2 rounded-2xl bg-card p-5 shadow-card">
                 <div className="flex items-center justify-between gap-4">
