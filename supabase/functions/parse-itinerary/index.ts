@@ -73,7 +73,9 @@ For each item determine:
     "flight" - air travel
     "train" - rail travel
     "bus" - bus or coach travel
-    "ferry" - boat, ferry, or cruise travel
+    "ferry" - ferry travel
+    "yacht_boat" - yacht, sailboat, private boat, catamaran charter
+    "cruise" - cruise ship, ocean liner, river cruise
     "car" - car, taxi, uber, transfer, or driving
     "on_foot" - walking tours, hikes, treks
     "cycling" - bicycle travel
