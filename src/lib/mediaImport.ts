@@ -479,7 +479,7 @@ export async function processImportedMediaFiles(
     if (!user) {
       console.error("No authenticated user for video upload");
     } else {
-      const VIDEO_UPLOAD_CONCURRENCY = 2;
+      const VIDEO_UPLOAD_CONCURRENCY = 3;
       let uploadsDone = 0;
 
       await mapWithConcurrency(allVideoMedia, VIDEO_UPLOAD_CONCURRENCY, async ({ photo, step }) => {
