@@ -11,6 +11,7 @@ interface VideoAnalysisResult {
   captionId: string;
   caption: string;
   sceneDescription: string;
+  essence: string;
   richTags: string[];
   activityType: string;
   moodTags: string[];
@@ -125,36 +126,54 @@ async function analyzeVideoWithGemini(
     country: string | null;
   },
 ): Promise<VideoAnalysisResult> {
-  const metadataBlock = [
-    metadata.takenAt ? `Timestamp: ${metadata.takenAt}` : null,
-    metadata.latitude != null && metadata.longitude != null
-      ? `Coordinates: ${metadata.latitude.toFixed(6)}, ${metadata.longitude.toFixed(6)}`
-      : null,
-    metadata.locationName
-      ? `Reverse-geocoded location: ${metadata.locationName}${metadata.country ? `, ${metadata.country}` : ""}`
-      : null,
-  ]
-    .filter(Boolean)
-    .join(" | ");
+  // Build the Context Sandwich — ground-truth metadata injected alongside the video
+  const metadataParts: string[] = [];
+  if (metadata.takenAt) {
+    const d = new Date(metadata.takenAt);
+    const formatted = d.toLocaleString("en-GB", {
+      dateStyle: "long",
+      timeStyle: "short",
+      timeZone: "UTC",
+    });
+    metadataParts.push(`Recorded on ${formatted} UTC`);
+  }
+  if (metadata.latitude != null && metadata.longitude != null) {
+    metadataParts.push(
+      `Coordinates: ${Math.abs(metadata.latitude).toFixed(4)}° ${metadata.latitude >= 0 ? "N" : "S"}, ${Math.abs(metadata.longitude).toFixed(4)}° ${metadata.longitude >= 0 ? "E" : "W"}`,
+    );
+  }
+  if (metadata.locationName) {
+    const loc = metadata.country && metadata.country !== "Unknown"
+      ? `${metadata.locationName}, ${metadata.country}`
+      : metadata.locationName;
+    metadataParts.push(`Approximate Location: ${loc}`);
+  }
+
+  const metadataBlock = metadataParts.length > 0
+    ? `METADATA: ${metadataParts.join(". ")}.`
+    : "No metadata available.";
 
   const prompt = `You are a world-class travel writer and expert metadata tagger.
-I am providing a video from a user's trip, along with its metadata.
+I am providing a video from a user's trip, along with hard EXIF metadata extracted from the file.
 
-${metadataBlock ? `METADATA:\n${metadataBlock}` : "No metadata available."}
+${metadataBlock}
 
 TASKS:
-1. Watch the entire video carefully.
-2. Listen to the audio track — identify background noise, music, speech, nature sounds, crowd sounds.
-3. Analyze visual elements: lighting, scenery, objects, movement, signage, architecture, landmarks.
-4. Synthesize the metadata and media to determine the exact travel moment.
+1. Watch the entire video carefully — every second matters.
+2. Listen to the full audio track — identify background noise, music, speech, nature sounds, crowd sounds, wind.
+3. Analyze visual elements: lighting, scenery, objects, movement, signage, architecture, landmarks, food, people, weather.
+4. Cross-reference what you see and hear with the provided metadata to determine the exact travel moment.
+5. Use the GPS coordinates and location name as ground truth for WHERE. Use your visual/audio analysis for WHAT is happening.
 
 OUTPUT RULES:
 - Describe ONLY what is literally visible and audible. Never speculate or invent narratives.
-- "caption": A concise label (max 14 words) describing the literal content of the video.
+- The metadata location is authoritative — do not contradict it unless what you see clearly indicates otherwise.
+- "caption": A concise label (max 14 words) describing the literal content.
 - "sceneDescription": One rich sentence capturing the visual AND audio elements literally present.
-- "activityType": One to three words (e.g. "Live Concert", "Street Food Dining", "Beach Walk").
-- "richTags": 3-8 lowercase tags about what is visible/audible.
-- "moodTags": 3 emotional/atmospheric tags derived from audio+visual (e.g. "energetic", "serene", "festive").`;
+- "essence": Two to three vivid sentences capturing the atmosphere of this moment — what it felt like to be there. Reference specific visual details, sounds, and the setting from the metadata. Write in present tense.
+- "activityType": One to three words (e.g. "City Sightseeing", "Live Concert", "Street Food Dining", "Beach Walk", "Stadium Event").
+- "richTags": 3-8 lowercase tags about what is visible/audible (e.g. "gothic architecture", "christmas market", "crowd noise", "pizza").
+- "moodTags": 3 emotional/atmospheric tags derived from audio+visual (e.g. "energetic", "serene", "festive", "moody").`;
 
   const response = await fetch(
     `${GEMINI_API_BASE}/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`,
@@ -177,11 +196,12 @@ OUTPUT RULES:
             properties: {
               caption: { type: "STRING" },
               sceneDescription: { type: "STRING" },
+              essence: { type: "STRING" },
               activityType: { type: "STRING" },
               richTags: { type: "ARRAY", items: { type: "STRING" } },
               moodTags: { type: "ARRAY", items: { type: "STRING" } },
             },
-            required: ["caption", "sceneDescription", "activityType", "richTags", "moodTags"],
+            required: ["caption", "sceneDescription", "essence", "activityType", "richTags", "moodTags"],
           },
         },
       }),
@@ -208,6 +228,7 @@ OUTPUT RULES:
     captionId: metadata.captionId,
     caption: typeof parsed.caption === "string" ? parsed.caption.trim() : "Video clip",
     sceneDescription: typeof parsed.sceneDescription === "string" ? parsed.sceneDescription.trim() : "",
+    essence: typeof parsed.essence === "string" ? parsed.essence.trim() : "",
     richTags: Array.isArray(parsed.richTags)
       ? parsed.richTags.filter((t: unknown): t is string => typeof t === "string").map((t: string) => t.trim().toLowerCase())
       : [],
