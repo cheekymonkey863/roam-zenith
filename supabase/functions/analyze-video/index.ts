@@ -247,7 +247,6 @@ Deno.serve(async (req) => {
     const body = await req.json();
     const {
       videoBase64,
-      mimeType = "video/mp4",
       captionId,
       fileName = "video.mp4",
       takenAt = null,
@@ -256,6 +255,12 @@ Deno.serve(async (req) => {
       locationName = null,
       country = null,
     } = body;
+
+    // Normalize MIME type — Gemini doesn't accept video/quicktime
+    let mimeType = body.mimeType || "video/mp4";
+    if (mimeType === "video/quicktime") {
+      mimeType = "video/mov";
+    }
 
     if (!videoBase64 || typeof videoBase64 !== "string") {
       return jsonResponse({ error: "videoBase64 is required" }, 400);
