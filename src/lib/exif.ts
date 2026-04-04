@@ -1002,6 +1002,39 @@ let _placesServiceHost: HTMLDivElement | null = null;
 
 const GOOGLE_JS_CALLBACK_TIMEOUT_MS = 1800;
 const GEOCODE_FETCH_TIMEOUT_MS = 5000;
+const EXACT_PLACE_DISTANCE_METERS = 5;
+const EXACT_PLACE_NEARBY_RADIUS_METERS = 25;
+
+function getDistanceMeters(lat1: number, lng1: number, lat2: number, lng2: number) {
+  const dLat = (lat2 - lat1) * 111320;
+  const dLng = (lng2 - lng1) * 111320 * Math.cos((lat1 * Math.PI) / 180);
+  return Math.sqrt(dLat * dLat + dLng * dLng);
+}
+
+function pickExactAddressLabel(address: Record<string, unknown>, fallback: string | null = null) {
+  const candidates = [
+    address.amenity,
+    address.attraction,
+    address.tourism,
+    address.leisure,
+    address.shop,
+    address.building,
+    address.hotel,
+    address.house_name,
+    address.road,
+    address.pedestrian,
+    address.footway,
+    address.path,
+  ];
+
+  for (const candidate of candidates) {
+    if (typeof candidate === "string" && candidate.trim().length > 0) {
+      return candidate.trim();
+    }
+  }
+
+  return fallback;
+}
 
 function withCallbackTimeout<T>(
   run: (finish: (value: T) => void) => void,
@@ -1133,17 +1166,28 @@ async function reverseGeocodeWithJsApi(lat: number, lng: number): Promise<{ name
                 if (!r.geometry?.location) return false;
                 const rLat = typeof r.geometry.location.lat === "function" ? r.geometry.location.lat() : r.geometry.location.lat;
                 const rLng = typeof r.geometry.location.lng === "function" ? r.geometry.location.lng() : r.geometry.location.lng;
-                const dLat = (rLat - lat) * 111320;
-                const dLng = (rLng - lng) * 111320 * Math.cos(lat * Math.PI / 180);
-                const dist = Math.sqrt(dLat * dLat + dLng * dLng);
-                return dist < 500;
+                return getDistanceMeters(lat, lng, rLat, rLng) <= EXACT_PLACE_NEARBY_RADIUS_METERS;
               });
 
-              const poi = nearby.find((r: any) =>
-                r.types?.some((t: string) => POI_TYPES.has(t))
-              ) || nearby[0];
+              const poi = nearby
+                .filter((r: any) => r.types?.some((t: string) => POI_TYPES.has(t)))
+                .sort((a: any, b: any) => {
+                  const aLat = typeof a.geometry.location.lat === "function" ? a.geometry.location.lat() : a.geometry.location.lat;
+                  const aLng = typeof a.geometry.location.lng === "function" ? a.geometry.location.lng() : a.geometry.location.lng;
+                  const bLat = typeof b.geometry.location.lat === "function" ? b.geometry.location.lat() : b.geometry.location.lat;
+                  const bLng = typeof b.geometry.location.lng === "function" ? b.geometry.location.lng() : b.geometry.location.lng;
+                  return getDistanceMeters(lat, lng, aLat, aLng) - getDistanceMeters(lat, lng, bLat, bLng);
+                })[0] || null;
 
-              finish(poi?.name || null);
+              if (!poi?.name) {
+                finish(null);
+                return;
+              }
+
+              const poiLat = typeof poi.geometry.location.lat === "function" ? poi.geometry.location.lat() : poi.geometry.location.lat;
+              const poiLng = typeof poi.geometry.location.lng === "function" ? poi.geometry.location.lng() : poi.geometry.location.lng;
+              const exactDistance = getDistanceMeters(lat, lng, poiLat, poiLng);
+              finish(exactDistance <= EXACT_PLACE_DISTANCE_METERS ? poi.name : null);
             },
           );
         },
@@ -1183,15 +1227,27 @@ export async function reverseGeocode(lat: number, lng: number): Promise<{ name: 
   // Fallback: Nominatim
   try {
     const data = await fetchJsonWithTimeout<any>(
-      `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=10&addressdetails=1`,
+      `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1&extratags=1&namedetails=1`,
     );
     if (!data) {
       return { name: "Unknown", country: "Unknown" };
     }
+
     const addr = data.address || {};
-    const name = addr.city || addr.town || addr.village || addr.county || data.name || "Unknown";
     const country = addr.country || "Unknown";
-    return { name, country };
+    const reverseLat = Number(data.lat);
+    const reverseLng = Number(data.lon);
+    const exactDistance = Number.isFinite(reverseLat) && Number.isFinite(reverseLng)
+      ? getDistanceMeters(lat, lng, reverseLat, reverseLng)
+      : Number.POSITIVE_INFINITY;
+
+    const exactName = pickExactAddressLabel(addr, typeof data.name === "string" ? data.name.trim() : null);
+
+    if (exactName && exactDistance <= EXACT_PLACE_DISTANCE_METERS) {
+      return { name: exactName, country };
+    }
+
+    return { name: "Unknown", country };
   } catch {
     return { name: "Unknown", country: "Unknown" };
   }
