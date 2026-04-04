@@ -161,6 +161,9 @@ function createVideoThumbnail(file: File, size: number, quality: number): Promis
       settled = true;
       window.clearTimeout(timeoutId);
       URL.revokeObjectURL(url);
+      if (!value) {
+        console.warn(`[video-thumbnail] Failed to capture frame from "${file.name}" (${file.type}, ${(file.size / 1024 / 1024).toFixed(1)}MB)`);
+      }
       resolve(value);
     };
 
@@ -183,32 +186,66 @@ function createVideoThumbnail(file: File, size: number, quality: number): Promis
         }
 
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        finish(canvas.toDataURL("image/jpeg", quality));
-      } catch {
+        const dataUrl = canvas.toDataURL("image/jpeg", quality);
+        // Verify we got a real image (not just the empty canvas header)
+        if (dataUrl.length < 500) {
+          console.warn(`[video-thumbnail] Frame capture produced tiny output for "${file.name}"`);
+          finish("");
+          return;
+        }
+        finish(dataUrl);
+      } catch (e) {
+        console.warn(`[video-thumbnail] Draw error for "${file.name}":`, e);
         finish("");
       }
     };
 
-    video.preload = "metadata";
+    video.preload = "auto";
     video.muted = true;
     video.playsInline = true;
+    video.crossOrigin = "anonymous";
     video.src = url;
-    video.onerror = () => finish("");
+
+    video.onerror = (e) => {
+      console.warn(`[video-thumbnail] Video element error for "${file.name}" (${file.type}):`, e);
+      finish("");
+    };
+
+    let seekAttempted = false;
+
     video.onloadedmetadata = () => {
       if (!Number.isFinite(video.duration) || video.duration <= 0.1) {
-        captureFrame();
+        // Very short or unknown duration — try frame at 0
+        video.currentTime = 0;
+        seekAttempted = true;
         return;
       }
 
       const targetTime = Math.min(Math.max(video.duration * 0.33, 0.5), video.duration - 0.1);
       video.currentTime = targetTime;
+      seekAttempted = true;
     };
-    video.onloadeddata = () => {
-      if (video.currentTime === 0) captureFrame();
+
+    // Fallback: if data is loaded but no seek happened, try capturing at current position
+    video.oncanplaythrough = () => {
+      if (!seekAttempted && !settled) {
+        captureFrame();
+      }
     };
+
     video.onseeked = captureFrame;
 
-    const timeoutId = window.setTimeout(() => finish(""), 10000);
+    // Increase timeout for larger files
+    const timeoutMs = Math.min(Math.max(15000, file.size / 100000), 30000);
+    const timeoutId = window.setTimeout(() => {
+      console.warn(`[video-thumbnail] Timeout after ${timeoutMs}ms for "${file.name}"`);
+      // Last-ditch attempt: try to capture whatever frame is showing
+      if (video.videoWidth && video.videoHeight) {
+        captureFrame();
+      } else {
+        finish("");
+      }
+    }, timeoutMs);
   });
 }
 
