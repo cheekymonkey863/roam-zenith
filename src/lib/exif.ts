@@ -12,136 +12,157 @@ export interface PhotoExifData {
   exifRaw?: Record<string, unknown>;
 }
 
+const EXIF_FIELDS = [
+  "DateTimeOriginal",
+  "CreateDate",
+  "GPSLatitude",
+  "GPSLongitude",
+  "GPSLatitudeRef",
+  "GPSLongitudeRef",
+  "Make",
+  "Model",
+  "LensModel",
+  "ExposureTime",
+  "FNumber",
+  "ISO",
+  "ImageWidth",
+  "ImageHeight",
+  "GPSAltitude",
+] as const;
+
+function normalizeDate(value: unknown): Date | null {
+  if (!value) return null;
+  const date = value instanceof Date ? value : new Date(value as string | number);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function extractCoordinatesFromExif(exif: any): { latitude: number | null; longitude: number | null } {
+  let latitude: number | null = null;
+  let longitude: number | null = null;
+
+  if (typeof exif?.latitude === "number" && typeof exif?.longitude === "number") {
+    latitude = exif.latitude;
+    longitude = exif.longitude;
+  } else if (typeof exif?.GPSLatitude === "number" && typeof exif?.GPSLongitude === "number") {
+    latitude = exif.GPSLatitude;
+    longitude = exif.GPSLongitude;
+    if (exif.GPSLatitudeRef === "S" || exif.GPSLatitudeRef === "s") latitude = -Math.abs(latitude);
+    if (exif.GPSLongitudeRef === "W" || exif.GPSLongitudeRef === "w") longitude = -Math.abs(longitude);
+  }
+
+  if (
+    latitude === null ||
+    longitude === null ||
+    Math.abs(latitude) > 90 ||
+    Math.abs(longitude) > 180
+  ) {
+    return { latitude: null, longitude: null };
+  }
+
+  return { latitude, longitude };
+}
+
+function extractTakenAtFromExif(exif: any, fallbackTimestamp?: number): Date | null {
+  const fromExif = normalizeDate(exif?.DateTimeOriginal) ?? normalizeDate(exif?.CreateDate);
+  if (fromExif) return fromExif;
+  return typeof fallbackTimestamp === "number" && fallbackTimestamp > 0 ? normalizeDate(fallbackTimestamp) : null;
+}
+
+async function parseMediaExif(file: File) {
+  try {
+    return await exifr.parse(file, {
+      gps: true,
+      pick: [...EXIF_FIELDS],
+    });
+  } catch {
+    return null;
+  }
+}
+
 export async function extractExifFromFile(file: File): Promise<PhotoExifData> {
   const isVideo = file.type.startsWith("video/");
 
-  const [thumbnail, analysisImage] = await Promise.all([
+  const [thumbnail, analysisImage, exif] = await Promise.all([
     isVideo ? createVideoThumbnail(file, 120, 0.6) : createImagePreview(file, 120, 0.6),
     isVideo ? createVideoThumbnail(file, 768, 0.76) : createImagePreview(file, 768, 0.76),
+    parseMediaExif(file),
   ]);
 
-  // For videos, try to get date from file metadata, but exifr won't work well
-  if (isVideo) {
-    // Try exifr anyway (works on some MP4s)
-    try {
-      const exif = await exifr.parse(file, { gps: true });
-      if (exif) {
-        let latitude: number | null = null;
-        let longitude: number | null = null;
-        let takenAt: Date | null = null;
+  const { latitude, longitude } = extractCoordinatesFromExif(exif);
+  const takenAt = extractTakenAtFromExif(exif, file.lastModified);
 
-        if (typeof exif.latitude === "number" && typeof exif.longitude === "number") {
-          latitude = exif.latitude;
-          longitude = exif.longitude;
-        } else if (typeof exif.GPSLatitude === "number" && typeof exif.GPSLongitude === "number") {
-          latitude = exif.GPSLatitude;
-          longitude = exif.GPSLongitude;
-          if (exif.GPSLatitudeRef === "S" || exif.GPSLatitudeRef === "s") latitude = -Math.abs(latitude);
-          if (exif.GPSLongitudeRef === "W" || exif.GPSLongitudeRef === "w") longitude = -Math.abs(longitude);
-        }
-
-        if (exif.DateTimeOriginal) takenAt = new Date(exif.DateTimeOriginal);
-        else if (exif.CreateDate) takenAt = new Date(exif.CreateDate);
-
-        return { file, latitude, longitude, takenAt, thumbnail, analysisImage, exifRaw: { ...exif } };
-      }
-    } catch {
-      // exifr failed on video, use lastModified as fallback date
-    }
-
-    // Fallback: use file's lastModified date
-    const takenAt = file.lastModified ? new Date(file.lastModified) : null;
-    return { file, latitude: null, longitude: null, takenAt, thumbnail, analysisImage };
-  }
-
-  // Image handling (unchanged)
-  try {
-    const exif = await exifr.parse(file, {
-      gps: true,
-      pick: [
-        "DateTimeOriginal", "CreateDate",
-        "GPSLatitude", "GPSLongitude",
-        "GPSLatitudeRef", "GPSLongitudeRef",
-        "Make", "Model", "LensModel",
-        "ExposureTime", "FNumber", "ISO",
-        "ImageWidth", "ImageHeight",
-        "GPSAltitude",
-      ],
-    });
-
-    let latitude: number | null = null;
-    let longitude: number | null = null;
-    let takenAt: Date | null = null;
-    let cameraMake: string | undefined;
-    let cameraModel: string | undefined;
-    let exifRaw: Record<string, unknown> | undefined;
-
-    if (exif) {
-      if (typeof exif.latitude === "number" && typeof exif.longitude === "number") {
-        latitude = exif.latitude;
-        longitude = exif.longitude;
-      } else if (typeof exif.GPSLatitude === "number" && typeof exif.GPSLongitude === "number") {
-        latitude = exif.GPSLatitude;
-        longitude = exif.GPSLongitude;
-        if (exif.GPSLatitudeRef === "S" || exif.GPSLatitudeRef === "s") latitude = -Math.abs(latitude);
-        if (exif.GPSLongitudeRef === "W" || exif.GPSLongitudeRef === "w") longitude = -Math.abs(longitude);
-      }
-
-      if (exif.DateTimeOriginal) takenAt = new Date(exif.DateTimeOriginal);
-      else if (exif.CreateDate) takenAt = new Date(exif.CreateDate);
-
-      cameraMake = exif.Make || undefined;
-      cameraModel = exif.Model || undefined;
-      exifRaw = { ...exif };
-    }
-
-    return { file, latitude, longitude, takenAt, thumbnail, analysisImage, cameraMake, cameraModel, exifRaw };
-  } catch {
-    return { file, latitude: null, longitude: null, takenAt: null, thumbnail, analysisImage };
-  }
+  return {
+    file,
+    latitude,
+    longitude,
+    takenAt,
+    thumbnail,
+    analysisImage,
+    cameraMake: typeof exif?.Make === "string" ? exif.Make : undefined,
+    cameraModel: typeof exif?.Model === "string" ? exif.Model : undefined,
+    exifRaw: exif ? { ...exif } : undefined,
+  };
 }
 
 function createVideoThumbnail(file: File, size: number, quality: number): Promise<string> {
   return new Promise((resolve) => {
     const video = document.createElement("video");
-    video.preload = "metadata";
-    video.muted = true;
-    video.playsInline = true;
-
     const url = URL.createObjectURL(file);
-    video.src = url;
+    let settled = false;
 
-    const cleanup = () => URL.revokeObjectURL(url);
-
-    video.onerror = () => { cleanup(); resolve(""); };
-
-    video.onloadeddata = () => {
-      // Seek to 1 second or 10% of duration
-      video.currentTime = Math.min(1, video.duration * 0.1);
+    const finish = (value: string) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timeoutId);
+      URL.revokeObjectURL(url);
+      resolve(value);
     };
 
-    video.onseeked = () => {
+    const captureFrame = () => {
       try {
+        if (!video.videoWidth || !video.videoHeight) {
+          finish("");
+          return;
+        }
+
         const scale = Math.min(size / video.videoWidth, size / video.videoHeight, 1);
         const canvas = document.createElement("canvas");
         canvas.width = Math.max(1, Math.round(video.videoWidth * scale));
         canvas.height = Math.max(1, Math.round(video.videoHeight * scale));
 
         const ctx = canvas.getContext("2d");
-        if (!ctx) { cleanup(); resolve(""); return; }
+        if (!ctx) {
+          finish("");
+          return;
+        }
 
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        const dataUrl = canvas.toDataURL("image/jpeg", quality);
-        cleanup();
-        resolve(dataUrl);
+        finish(canvas.toDataURL("image/jpeg", quality));
       } catch {
-        cleanup();
-        resolve("");
+        finish("");
       }
     };
 
-    // Timeout fallback
-    setTimeout(() => { cleanup(); resolve(""); }, 10000);
+    video.preload = "metadata";
+    video.muted = true;
+    video.playsInline = true;
+    video.src = url;
+    video.onerror = () => finish("");
+    video.onloadedmetadata = () => {
+      if (!Number.isFinite(video.duration) || video.duration <= 0.1) {
+        captureFrame();
+        return;
+      }
+
+      const targetTime = Math.min(Math.max(video.duration * 0.1, 0.1), video.duration - 0.05);
+      video.currentTime = targetTime;
+    };
+    video.onloadeddata = () => {
+      if (video.currentTime === 0) captureFrame();
+    };
+    video.onseeked = captureFrame;
+
+    const timeoutId = window.setTimeout(() => finish(""), 10000);
   });
 }
 
@@ -164,7 +185,10 @@ function createImagePreview(file: File, size: number, quality: number): Promise<
         canvas.height = Math.max(1, Math.round(img.height * scale));
 
         const ctx = canvas.getContext("2d");
-        if (!ctx) { resolve(""); return; }
+        if (!ctx) {
+          resolve("");
+          return;
+        }
 
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
         resolve(canvas.toDataURL("image/jpeg", quality));
@@ -180,38 +204,62 @@ export async function extractExifFromFiles(files: File[]): Promise<PhotoExifData
   return Promise.all(files.map(extractExifFromFile));
 }
 
-/**
- * Groups photos by location AND date. Photos within `radiusMeters` AND
- * taken on the same calendar day are grouped together. Photos at the same
- * location but on different days become separate groups.
- */
 export function groupPhotosByLocation(photos: PhotoExifData[], radiusMeters = 2000): Map<string, PhotoExifData[]> {
-  const geoPhotos = photos.filter((photo) => photo.latitude !== null && photo.longitude !== null);
+  const geoPhotos = photos
+    .filter((photo) => photo.latitude !== null && photo.longitude !== null)
+    .sort((a, b) => (a.takenAt?.getTime() ?? 0) - (b.takenAt?.getTime() ?? 0));
+
   const groups = new Map<string, PhotoExifData[]>();
 
   for (const photo of geoPhotos) {
-    let foundGroup = false;
-    const photoDay = photo.takenAt ? dayKey(photo.takenAt) : "no-date";
+    let bestGroupKey: string | null = null;
+    let bestScore = Number.POSITIVE_INFINITY;
 
     for (const [key, group] of groups) {
-      const ref = group[0];
-      const dist = haversine(ref.latitude!, ref.longitude!, photo.latitude!, photo.longitude!);
-      const refDay = ref.takenAt ? dayKey(ref.takenAt) : "no-date";
+      const closestDistance = getClosestGroupDistance(photo, group);
+      const closestTimeDistance = getClosestGroupTimeDistance(photo, group);
+      const sharesDay = isCompatibleDay(photo, group);
+      const withinTimeWindow = closestTimeDistance === null || closestTimeDistance <= 6 * 60 * 60 * 1000;
 
-      if (dist < radiusMeters && photoDay === refDay) {
-        group.push(photo);
-        foundGroup = true;
-        break;
+      if (sharesDay && withinTimeWindow && closestDistance <= radiusMeters) {
+        const score = closestDistance + (closestTimeDistance ?? 0) / 1000;
+        if (score < bestScore) {
+          bestScore = score;
+          bestGroupKey = key;
+        }
       }
     }
 
-    if (!foundGroup) {
-      const key = `${photo.latitude!.toFixed(3)},${photo.longitude!.toFixed(3)}-${photoDay}`;
-      groups.set(key, [photo]);
+    if (bestGroupKey) {
+      groups.get(bestGroupKey)?.push(photo);
+    } else {
+      const day = photo.takenAt ? dayKey(photo.takenAt) : "no-date";
+      groups.set(`${photo.latitude!.toFixed(3)},${photo.longitude!.toFixed(3)}-${day}`, [photo]);
     }
   }
 
   return groups;
+}
+
+function isCompatibleDay(photo: PhotoExifData, group: PhotoExifData[]) {
+  if (!photo.takenAt) return true;
+  return group.some((member) => !member.takenAt || dayKey(member.takenAt) === dayKey(photo.takenAt!));
+}
+
+function getClosestGroupDistance(photo: PhotoExifData, group: PhotoExifData[]) {
+  return Math.min(
+    ...group.map((member) => haversine(member.latitude!, member.longitude!, photo.latitude!, photo.longitude!))
+  );
+}
+
+function getClosestGroupTimeDistance(photo: PhotoExifData, group: PhotoExifData[]): number | null {
+  if (!photo.takenAt) return null;
+
+  const distances = group
+    .map((member) => (member.takenAt ? Math.abs(member.takenAt.getTime() - photo.takenAt!.getTime()) : null))
+    .filter((value): value is number => value !== null);
+
+  return distances.length > 0 ? Math.min(...distances) : null;
 }
 
 function dayKey(date: Date): string {
@@ -240,9 +288,12 @@ export async function reverseGeocode(lat: number, lng: number): Promise<{ name: 
     if (gData.status === "OK" && gData.results?.length > 0) {
       const result = gData.results[0];
       const comps: any[] = result.address_components || [];
-      const poiName = comps.find((c: any) => 
-        c.types.includes("point_of_interest") || c.types.includes("natural_feature") || 
-        c.types.includes("park") || c.types.includes("tourist_attraction") || c.types.includes("establishment")
+      const poiName = comps.find((c: any) =>
+        c.types.includes("point_of_interest") ||
+        c.types.includes("natural_feature") ||
+        c.types.includes("park") ||
+        c.types.includes("tourist_attraction") ||
+        c.types.includes("establishment")
       )?.long_name;
       const country = comps.find((c: any) => c.types.includes("country"))?.long_name || "Unknown";
       const name = poiName || result.formatted_address?.split(",")[0] || "Unknown";
