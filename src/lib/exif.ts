@@ -119,6 +119,98 @@ async function parseMediaExif(file: File) {
   }
 }
 
+/**
+ * Try to extract creation date from MP4/MOV file header (mvhd atom).
+ * The mvhd atom stores creation_time as seconds since 1904-01-01.
+ */
+async function parseVideoCreationDate(file: File): Promise<Date | null> {
+  try {
+    const buffer = await file.slice(0, Math.min(file.size, 64 * 1024)).arrayBuffer();
+    const view = new DataView(buffer);
+    
+    // Search for 'mvhd' atom in the first 64KB
+    for (let i = 0; i < view.byteLength - 8; i++) {
+      if (
+        view.getUint8(i) === 0x6D && // m
+        view.getUint8(i + 1) === 0x76 && // v
+        view.getUint8(i + 2) === 0x68 && // h
+        view.getUint8(i + 3) === 0x64    // d
+      ) {
+        const version = view.getUint8(i + 4);
+        let creationTime: number;
+        
+        if (version === 0) {
+          // 32-bit creation time at offset +8
+          if (i + 12 > view.byteLength) break;
+          creationTime = view.getUint32(i + 8);
+        } else {
+          // 64-bit creation time at offset +8
+          if (i + 16 > view.byteLength) break;
+          // Read as two 32-bit values (JS doesn't handle 64-bit ints natively)
+          const high = view.getUint32(i + 8);
+          const low = view.getUint32(i + 12);
+          creationTime = high * 0x100000000 + low;
+        }
+        
+        if (creationTime === 0) return null;
+        
+        // MP4 epoch is 1904-01-01, JS epoch is 1970-01-01
+        // Difference: 2082844800 seconds
+        const MP4_EPOCH_OFFSET = 2082844800;
+        const unixTimestamp = creationTime - MP4_EPOCH_OFFSET;
+        const date = new Date(unixTimestamp * 1000);
+        
+        // Sanity check: date should be between 2000 and 2100
+        if (date.getFullYear() >= 2000 && date.getFullYear() <= 2100) {
+          return date;
+        }
+        return null;
+      }
+    }
+  } catch {
+    // Ignore parse errors
+  }
+  return null;
+}
+
+/**
+ * Try to extract GPS from MP4/MOV metadata (©xyz atom used by iPhones).
+ * Format: "+34.1234-118.4567/" (ISO 6709)
+ */
+async function parseVideoGPS(file: File): Promise<{ latitude: number; longitude: number } | null> {
+  try {
+    const chunkSize = Math.min(file.size, 128 * 1024);
+    const buffer = await file.slice(0, chunkSize).arrayBuffer();
+    const bytes = new Uint8Array(buffer);
+    
+    // Search for ©xyz pattern (0xA9 0x78 0x79 0x7A)
+    for (let i = 0; i < bytes.length - 20; i++) {
+      if (bytes[i] === 0xA9 && bytes[i+1] === 0x78 && bytes[i+2] === 0x79 && bytes[i+3] === 0x7A) {
+        // Read the string after the atom header
+        // Format varies, but typically: data offset + ISO 6709 string
+        // Try to find the coordinate string nearby
+        const searchStart = i + 4;
+        const searchEnd = Math.min(i + 64, bytes.length);
+        const textBytes = bytes.slice(searchStart, searchEnd);
+        const text = new TextDecoder().decode(textBytes);
+        
+        // Match ISO 6709: +DD.DDDD-DDD.DDDD or +DD.DDDD+DDD.DDDD
+        const match = text.match(/([+-]\d+\.\d+)([+-]\d+\.\d+)/);
+        if (match) {
+          const lat = parseFloat(match[1]);
+          const lng = parseFloat(match[2]);
+          if (Math.abs(lat) <= 90 && Math.abs(lng) <= 180) {
+            return { latitude: lat, longitude: lng };
+          }
+        }
+      }
+    }
+  } catch {
+    // Ignore parse errors
+  }
+  return null;
+}
+
 export async function extractExifFromFile(file: File): Promise<PhotoExifData> {
   const isVideo = file.type.startsWith("video/");
 
@@ -132,8 +224,28 @@ export async function extractExifFromFile(file: File): Promise<PhotoExifData> {
     isVideo ? createVideoThumbnail(file, 768, 0.76) : createImagePreview(uploadFile, 768, 0.76),
   ]);
 
-  const { latitude, longitude } = extractCoordinatesFromExif(exif);
-  const takenAt = extractTakenAtFromExif(exif, file.lastModified);
+  let { latitude, longitude } = extractCoordinatesFromExif(exif);
+  let takenAt = extractTakenAtFromExif(exif, file.lastModified);
+
+  // For videos: try MP4/MOV-specific metadata extraction if exifr didn't find anything
+  if (isVideo) {
+    if (latitude === null || longitude === null) {
+      const videoGPS = await parseVideoGPS(file);
+      if (videoGPS) {
+        latitude = videoGPS.latitude;
+        longitude = videoGPS.longitude;
+      }
+    }
+    
+    // If exifr didn't find a date, try MP4 header
+    const exifDate = normalizeDate(exif?.DateTimeOriginal) ?? normalizeDate(exif?.CreateDate);
+    if (!exifDate) {
+      const videoDate = await parseVideoCreationDate(file);
+      if (videoDate) {
+        takenAt = videoDate;
+      }
+    }
+  }
 
   return {
     file,
