@@ -522,15 +522,33 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
                   Cancel
                 </button>
               )}
-              <button
-                onClick={importSelected}
-                disabled={importing || suggestions.filter((s) => s.selected).length === 0}
-                className="flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
-              >
-                {importing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-                {importing ? "Importing..." : "Import Selected"}
-              </button>
-            </div>
+               <button
+                 onClick={importSelected}
+                 disabled={importing || suggestions.filter((s) => s.selected).length === 0}
+                 className="flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
+               >
+                 {importing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                 {importing
+                   ? `Importing… ${importProgress.total > 0 ? `(${Math.round((importProgress.current / importProgress.total) * 100)}%)` : ""}`
+                   : "Import Selected"}
+               </button>
+             </div>
+
+             {/* Import progress bar */}
+             {importing && importProgress.total > 0 && (
+               <div className="flex flex-col gap-1.5">
+                 <div className="flex items-center justify-between text-xs text-muted-foreground">
+                   <span>Uploading media…</span>
+                   <span>{Math.round((importProgress.current / importProgress.total) * 100)}%</span>
+                 </div>
+                 <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+                   <div
+                     className="h-full rounded-full bg-primary transition-all duration-300 ease-out"
+                     style={{ width: `${(importProgress.current / importProgress.total) * 100}%` }}
+                   />
+                 </div>
+               </div>
+             )}
           </div>
 
           {noGpsPhotos.length > 0 && (
