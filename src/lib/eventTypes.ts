@@ -35,6 +35,8 @@ export const EVENT_TYPE_GROUPS = [
       { value: "safari", label: "Safari", icon: Trees },
       { value: "glamping", label: "Glamping", icon: Mountain },
       { value: "camping", label: "Camping", icon: Tent },
+      { value: "resort", label: "Resort", icon: Palmtree },
+      { value: "ski_lodge", label: "Ski Lodge", icon: Snowflake },
     ],
   },
   {
