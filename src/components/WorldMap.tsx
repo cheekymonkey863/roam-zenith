@@ -11,38 +11,54 @@ mapboxgl.accessToken = "pk.eyJ1IjoicnNvdXNhMzE1IiwiYSI6ImNtbmo2Z3lsNDA4ajMyc3M0Z
 const ROUTE_COLOR = "#E74C5E";
 const ROUTE_COLOR_ALT = ["#E74C5E", "#3B82F6", "#10B981", "#F59E0B", "#8B5CF6"];
 
-const HOTEL_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2Z"/><path d="m9 16 .348-.24c1.465-1.013 3.84-1.013 5.304 0L15 16"/><path d="M8 7h.01"/><path d="M16 7h.01"/><path d="M12 7h.01"/><path d="M12 11h.01"/><path d="M16 11h.01"/><path d="M8 11h.01"/></svg>`;
-const PLANE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2Z"/></svg>`;
-const FOOD_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2"/><path d="M7 2v20"/><path d="M21 15V2a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7"/></svg>`;
-const TRANSPORT_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/><path d="m12 19-7-7 7-7"/></svg>`;
-const PIN_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>`;
-const TRAIN_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3.1V7a4 4 0 0 0 8 0V3.1"/><path d="m9 15-1-1"/><path d="m15 15 1-1"/><path d="M9 19c-2.8 0-5-2.2-5-5v-4a8 8 0 0 1 16 0v4c0 2.8-2.2 5-5 5Z"/><path d="m8 19-2 3"/><path d="m16 19 2 3"/></svg>`;
-const BUS_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6v6"/><path d="M15 6v6"/><path d="M2 12h19.6"/><path d="M18 18h3s.5-1.7.8-2.8c.1-.4.2-.8.2-1.2 0-.4-.1-.8-.2-1.2l-1.4-5C20.1 6.8 19.1 6 18 6H4a2 2 0 0 0-2 2v10h3"/><circle cx="7" cy="18" r="2"/><path d="M9 18h5"/><circle cx="16" cy="18" r="2"/></svg>`;
-const SHIP_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 21c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1 .6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"/><path d="M19.38 20A11.6 11.6 0 0 0 21 14l-9-4-9 4c0 2.9.94 5.34 2.81 7.76"/><path d="M19 13V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v6"/><path d="M12 10v4"/><path d="M12 2v3"/></svg>`;
-const CAR_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4c0 .6.4 1 1 1h2"/><circle cx="7" cy="17" r="2"/><path d="M9 17h6"/><circle cx="17" cy="17" r="2"/></svg>`;
-
-const VISUAL_CONFIG: Record<StepVisualType, { bg: string; svg: string }> = {
-  flight: { bg: "#2563EB", svg: PLANE_SVG },
-  train: { bg: "#6366F1", svg: TRAIN_SVG },
-  bus: { bg: "#0891B2", svg: BUS_SVG },
-  ferry: { bg: "#14B8A6", svg: SHIP_SVG },
-  car: { bg: "#64748B", svg: CAR_SVG },
-  hotel: { bg: "#8B5CF6", svg: HOTEL_SVG },
-  food: { bg: "#F97316", svg: FOOD_SVG },
-  sightseeing: { bg: "#10B981", svg: PIN_SVG },
-  border: { bg: "#F59E0B", svg: PIN_SVG },
-  transport: { bg: "#0284C7", svg: TRANSPORT_SVG },
-  activity: { bg: ROUTE_COLOR, svg: PIN_SVG },
-  other: { bg: "#6B7280", svg: PIN_SVG },
+// Transport SVGs at 20px for animated markers
+const TRANSPORT_SVGS: Record<string, string> = {
+  flight: `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="white" stroke="none"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2Z"/></svg>`,
+  train: `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="white" stroke="none"><path d="M8 3.1V7a4 4 0 0 0 8 0V3.1M9 19c-2.8 0-5-2.2-5-5v-4a8 8 0 0 1 16 0v4c0 2.8-2.2 5-5 5Z"/><circle cx="9" cy="15" r="1"/><circle cx="15" cy="15" r="1"/></svg>`,
+  bus: `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="white" stroke="none"><rect x="4" y="4" width="16" height="12" rx="2"/><circle cx="7" cy="18" r="2"/><circle cx="17" cy="18" r="2"/><path d="M4 10h16"/></svg>`,
+  ferry: `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="white" stroke="none"><path d="M2 21c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1 .6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"/><path d="M19.38 20A11.6 11.6 0 0 0 21 14l-9-4-9 4c0 2.9.94 5.34 2.81 7.76"/><path d="M19 13V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v6"/><path d="M12 2v3"/></svg>`,
+  car: `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="white" stroke="none"><path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4c0 .6.4 1 1 1h2"/><circle cx="7" cy="17" r="2"/><circle cx="17" cy="17" r="2"/></svg>`,
 };
 
-function getOffsetCoordinates(longitude: number, latitude: number, index: number, total: number): [number, number] {
-  if (total <= 1) return [longitude, latitude];
-  const radiusMeters = total <= 4 ? 220 : total <= 8 ? 320 : 420;
-  const angle = (2 * Math.PI * index) / total;
-  const latOffset = (radiusMeters * Math.sin(angle)) / 111320;
-  const lngOffset = (radiusMeters * Math.cos(angle)) / (111320 * Math.cos((latitude * Math.PI) / 180) || 1);
-  return [longitude + lngOffset, latitude + latOffset];
+const TRANSPORT_TYPES = new Set(["flight", "train", "bus", "ferry", "car", "transport"]);
+
+// Determine the transport mode for a segment between two steps
+function getSegmentTransport(
+  fromStep: TripStep,
+  toStep: TripStep,
+  visualTypes: Record<string, StepVisualType>
+): StepVisualType | null {
+  // Check destination step first (e.g. arriving at airport = flight segment)
+  const toType = visualTypes[toStep.id] || inferStepVisualType(toStep);
+  if (TRANSPORT_TYPES.has(toType)) return toType;
+
+  // Check source step
+  const fromType = visualTypes[fromStep.id] || inferStepVisualType(fromStep);
+  if (TRANSPORT_TYPES.has(fromType)) return fromType;
+
+  return null;
+}
+
+// Interpolate a point along a great-circle-ish path
+function interpolatePosition(
+  from: [number, number],
+  to: [number, number],
+  t: number
+): [number, number] {
+  return [
+    from[0] + (to[0] - from[0]) * t,
+    from[1] + (to[1] - from[1]) * t,
+  ];
+}
+
+// Calculate bearing between two points in degrees
+function getBearing(from: [number, number], to: [number, number]): number {
+  const dLng = ((to[0] - from[0]) * Math.PI) / 180;
+  const lat1 = (from[1] * Math.PI) / 180;
+  const lat2 = (to[1] * Math.PI) / 180;
+  const y = Math.sin(dLng) * Math.cos(lat2);
+  const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLng);
+  return ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
 }
 
 export interface WorldMapHandle {
@@ -60,13 +76,22 @@ interface WorldMapProps {
   style?: CSSProperties;
 }
 
+interface AnimatedSegment {
+  from: [number, number];
+  to: [number, number];
+  marker: mapboxgl.Marker;
+  el: HTMLDivElement;
+  bearing: number;
+}
+
 export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function WorldMap(
   { steps, singleTrip = false, visualTypes = {}, activeStepId, className, style },
   ref
 ) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
-  const markersRef = useRef<Map<string, { marker: mapboxgl.Marker; el: HTMLDivElement }>>(new Map());
+  const animFrameRef = useRef<number>(0);
+  const segmentsRef = useRef<AnimatedSegment[]>([]);
   const stepsRef = useRef<TripStep[]>(steps);
   stepsRef.current = steps;
 
@@ -91,28 +116,11 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
     }
   }, []);
 
-  const highlightStep = useCallback((stepId: string | null) => {
-    markersRef.current.forEach(({ el }, id) => {
-      if (id === stepId) {
-        el.style.transform = "scale(1.4)";
-        el.style.zIndex = "10";
-        el.style.boxShadow = "0 0 0 3px rgba(255,255,255,0.9), 0 0 12px rgba(231,76,94,0.6)";
-      } else {
-        el.style.transform = "scale(1)";
-        el.style.zIndex = "1";
-        el.style.boxShadow = "0 2px 6px rgba(0,0,0,0.3)";
-      }
-    });
+  const highlightStep = useCallback((_stepId: string | null) => {
+    // No static markers to highlight anymore
   }, []);
 
   useImperativeHandle(ref, () => ({ flyToStep, fitAllSteps, highlightStep }), [flyToStep, fitAllSteps, highlightStep]);
-
-  // Highlight active step when activeStepId prop changes
-  useEffect(() => {
-    if (activeStepId !== undefined) {
-      highlightStep(activeStepId);
-    }
-  }, [activeStepId, highlightStep]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -121,7 +129,8 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
       mapRef.current.remove();
       mapRef.current = null;
     }
-    markersRef.current.clear();
+    cancelAnimationFrame(animFrameRef.current);
+    segmentsRef.current = [];
 
     const map = new mapboxgl.Map({
       container: containerRef.current,
@@ -150,6 +159,7 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
 
       const bounds = new mapboxgl.LngLatBounds();
       let colorIdx = 0;
+      const animatedSegments: AnimatedSegment[] = [];
 
       byTrip.forEach((tripSteps, tripId) => {
         const color = singleTrip ? ROUTE_COLOR : ROUTE_COLOR_ALT[colorIdx % ROUTE_COLOR_ALT.length];
@@ -185,60 +195,65 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
           });
         }
 
-        const clusterCounts = new Map<string, number>();
-        const clusterIndexes = new Map<string, number>();
+        // Create animated transport markers for each segment
+        for (let i = 0; i < tripSteps.length - 1; i++) {
+          const fromStep = tripSteps[i];
+          const toStep = tripSteps[i + 1];
+          const transportType = getSegmentTransport(fromStep, toStep, visualTypes);
 
-        tripSteps.forEach((step) => {
-          const clusterKey = `${step.latitude.toFixed(5)},${step.longitude.toFixed(5)}`;
-          clusterCounts.set(clusterKey, (clusterCounts.get(clusterKey) || 0) + 1);
-        });
+          if (!transportType) continue;
 
-        tripSteps.forEach((step, index) => {
-          const visualType = visualTypes[step.id] || inferStepVisualType(step);
-          const iconCfg = VISUAL_CONFIG[visualType] || VISUAL_CONFIG.other;
-          const clusterKey = `${step.latitude.toFixed(5)},${step.longitude.toFixed(5)}`;
-          const clusterIndex = clusterIndexes.get(clusterKey) || 0;
-          const clusterSize = clusterCounts.get(clusterKey) || 1;
-          clusterIndexes.set(clusterKey, clusterIndex + 1);
+          // Normalize to a known SVG key
+          const svgKey = transportType === "transport" ? "car" : transportType;
+          const svg = TRANSPORT_SVGS[svgKey];
+          if (!svg) continue;
 
-          const [displayLongitude, displayLatitude] = getOffsetCoordinates(
-            step.longitude, step.latitude, clusterIndex, clusterSize
-          );
+          const from: [number, number] = [fromStep.longitude, fromStep.latitude];
+          const to: [number, number] = [toStep.longitude, toStep.latitude];
+          const bearing = getBearing(from, to);
 
           const el = document.createElement("div");
-          el.style.width = "24px";
-          el.style.height = "24px";
-          el.style.borderRadius = "6px";
-          el.style.backgroundColor = iconCfg.bg;
+          el.style.width = "32px";
+          el.style.height = "32px";
           el.style.display = "flex";
           el.style.alignItems = "center";
           el.style.justifyContent = "center";
-          el.style.boxShadow = "0 2px 6px rgba(0,0,0,0.3)";
-          el.style.cursor = "pointer";
-          el.style.transition = "transform 0.2s ease, box-shadow 0.2s ease";
-          el.innerHTML = iconCfg.svg;
+          el.style.filter = "drop-shadow(0 2px 4px rgba(0,0,0,0.5))";
+          el.style.transition = "none";
+          el.style.transform = `rotate(${bearing - 90}deg)`;
+          el.innerHTML = svg;
 
-          const label = step.location_name || step.country || `Step ${index + 1}`;
-          const dateStr = new Date(step.recorded_at).toLocaleDateString("en-US", {
-            month: "short", day: "numeric", year: "numeric",
-          });
-
-          const marker = new mapboxgl.Marker({ element: el, anchor: "center" })
-            .setLngLat([displayLongitude, displayLatitude])
-            .setPopup(
-              new mapboxgl.Popup({ offset: 12, closeButton: false, className: "ps-popup" }).setHTML(
-                `<div style="font-family:system-ui,-apple-system,sans-serif;padding:4px 2px;">
-                  <div style="font-weight:600;font-size:14px;color:#1a1a2e;margin-bottom:2px;">${label}</div>
-                  <div style="font-size:12px;color:#888;">${dateStr}</div>
-                  <div style="font-size:11px;color:#aaa;text-transform:capitalize;margin-top:2px;">${step.event_type.replace("_", " ")}</div>
-                </div>`
-              )
-            )
+          const marker = new mapboxgl.Marker({ element: el, anchor: "center", rotationAlignment: "map" })
+            .setLngLat(from)
             .addTo(map);
 
-          markersRef.current.set(step.id, { marker, el });
-        });
+          animatedSegments.push({ from, to, marker, el, bearing });
+        }
       });
+
+      segmentsRef.current = animatedSegments;
+
+      // Animation loop - each segment icon moves from start to end continuously
+      const CYCLE_DURATION = 6000; // ms for one full trip
+      const startTime = performance.now();
+
+      const animate = (now: number) => {
+        const elapsed = now - startTime;
+        const t = (elapsed % CYCLE_DURATION) / CYCLE_DURATION;
+        // Smooth ease in-out
+        const eased = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+
+        for (const seg of segmentsRef.current) {
+          const pos = interpolatePosition(seg.from, seg.to, eased);
+          seg.marker.setLngLat(pos);
+        }
+
+        animFrameRef.current = requestAnimationFrame(animate);
+      };
+
+      if (animatedSegments.length > 0) {
+        animFrameRef.current = requestAnimationFrame(animate);
+      }
 
       if (!bounds.isEmpty()) {
         map.fitBounds(bounds, {
@@ -250,9 +265,10 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
     });
 
     return () => {
+      cancelAnimationFrame(animFrameRef.current);
+      segmentsRef.current = [];
       map.remove();
       mapRef.current = null;
-      markersRef.current.clear();
     };
   }, [steps, singleTrip, visualTypes]);
 
