@@ -255,7 +255,7 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
       return;
     }
 
-    toast.info(`Processing ${mediaFiles.length} file(s) with metadata + visual recognition...");
+    toast.info(`Processing ${mediaFiles.length} file(s) with metadata + visual recognition...`);
 
     try {
       const exifResults = await extractExifFromFiles(mediaFiles);
