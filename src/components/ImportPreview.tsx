@@ -21,7 +21,7 @@ interface ImportPreviewProps {
 function MediaLightbox({ src, onClose }: { src: string; onClose: () => void }) {
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-4 backdrop-blur-sm"
       onClick={onClose}
     >
       <button
@@ -34,7 +34,7 @@ function MediaLightbox({ src, onClose }: { src: string; onClose: () => void }) {
       <img
         src={src}
         alt="Preview"
-        className="max-h-[85vh] max-w-[90vw] rounded-lg object-contain"
+        className="max-h-[92vh] max-w-[96vw] rounded-xl object-contain shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       />
     </div>
@@ -54,16 +54,17 @@ function StepThumbnails({ photos }: { photos: PhotoExifData[] }) {
     <>
       <div className="flex gap-1.5 overflow-x-auto py-1">
         {previews.map((photo) => {
-          const src = photo.thumbnail || photo.analysisImage || "";
+          const thumbnailSrc = photo.thumbnail || photo.analysisImage || "";
+          const lightboxPreviewSrc = photo.analysisImage || photo.thumbnail || "";
           return (
             <button
               key={photo.captionId}
               type="button"
-              onClick={() => setLightboxSrc(src)}
+              onClick={() => setLightboxSrc(lightboxPreviewSrc)}
               className="group relative h-14 w-14 flex-shrink-0 overflow-hidden rounded-lg border border-border transition-all hover:border-primary hover:ring-2 hover:ring-primary/30"
             >
               <img
-                src={src}
+                src={thumbnailSrc}
                 alt={photo.caption || photo.file.name}
                 className="h-full w-full object-cover"
               />
