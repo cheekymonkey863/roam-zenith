@@ -15,43 +15,6 @@ interface VideoAnalysisResult {
   moodTags: string[];
 }
 
-type HttpError = Error & { status?: number };
-
-function jsonResponse(body: unknown, status = 200) {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
-  });
-}
-
-const LOVABLE_AI_URL = "https://ai.gateway.lovable.dev/v1/chat/completions";
-const MODEL = "google/gemini-2.5-flash";
-const RATE_LIMIT_RETRY_DELAYS_MS = [2000, 4000, 8000];
-
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-
-function createHttpError(status: number, message: string): HttpError {
-  const error = new Error(message) as HttpError;
-  error.status = status;
-  return error;
-}
-
-function getRetryDelayMs(retryAfterHeader: string | null, fallbackMs: number) {
-  if (!retryAfterHeader) return fallbackMs;
-
-  const retryAfterSeconds = Number(retryAfterHeader);
-  if (Number.isFinite(retryAfterSeconds) && retryAfterSeconds >= 0) {
-    return retryAfterSeconds * 1000;
-  }
-
-  const retryAt = new Date(retryAfterHeader).getTime();
-  if (Number.isFinite(retryAt)) {
-    return Math.max(retryAt - Date.now(), fallbackMs);
-  }
-
-  return fallbackMs;
-}
-
 interface ItineraryStop {
   location_name: string | null;
   country: string | null;
@@ -61,6 +24,30 @@ interface ItineraryStop {
   event_type: string;
   description: string | null;
 }
+
+type HttpError = Error & { status?: number };
+
+function jsonResponse(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+}
+
+const GEMINI_MODEL = "gemini-2.5-flash";
+const RATE_LIMIT_RETRY_DELAYS_MS = [2000, 4000, 8000];
+const FILE_POLL_INTERVAL_MS = 2000;
+const FILE_POLL_MAX_ATTEMPTS = 60; // 2 minutes max
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+function createHttpError(status: number, message: string): HttpError {
+  const error = new Error(message) as HttpError;
+  error.status = status;
+  return error;
+}
+
+// ── Prompt builder ──────────────────────────────────────────────────
 
 function buildPrompt(metadata: {
   takenAt: string | null;
@@ -133,47 +120,157 @@ OUTPUT RULES:
 Respond with valid JSON matching the schema exactly.`;
 }
 
-async function callLovableAiWithRetries(lovableApiKey: string, requestBody: unknown) {
-  for (let attempt = 0; attempt <= RATE_LIMIT_RETRY_DELAYS_MS.length; attempt++) {
-    const response = await fetch(LOVABLE_AI_URL, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${lovableApiKey}`,
-        "Content-Type": "application/json",
+// ── Gemini File API helpers ─────────────────────────────────────────
+
+async function uploadToGeminiFileApi(
+  apiKey: string,
+  videoUrl: string,
+  mimeType: string,
+  displayName: string,
+): Promise<string> {
+  // Stream the video from Supabase Storage directly to the Gemini File API
+  const videoResponse = await fetch(videoUrl);
+  if (!videoResponse.ok || !videoResponse.body) {
+    throw createHttpError(videoResponse.status, `Failed to fetch video from storage: ${videoResponse.statusText}`);
+  }
+
+  const fileApiUrl = `https://generativelanguage.googleapis.com/upload/v1beta/files?uploadType=media&key=${apiKey}`;
+
+  console.log(`Streaming "${displayName}" to Gemini File API (${mimeType})...`);
+
+  const uploadRes = await fetch(fileApiUrl, {
+    method: "POST",
+    headers: {
+      "X-Goog-Upload-Protocol": "raw",
+      "Content-Type": mimeType,
+    },
+    body: videoResponse.body,
+  });
+
+  if (!uploadRes.ok) {
+    const errBody = await uploadRes.text();
+    throw createHttpError(uploadRes.status, `Gemini File API upload failed [${uploadRes.status}]: ${errBody}`);
+  }
+
+  const uploadData = await uploadRes.json();
+  const fileUri = uploadData?.file?.uri;
+  const fileName = uploadData?.file?.name;
+
+  if (!fileUri || !fileName) {
+    throw new Error(`Gemini File API returned no fileUri: ${JSON.stringify(uploadData)}`);
+  }
+
+  console.log(`Upload complete. File: ${fileName}, URI: ${fileUri}`);
+  return fileUri;
+}
+
+async function waitForFileActive(apiKey: string, fileUri: string): Promise<void> {
+  // Extract file name from URI: files/xxx -> xxx
+  const fileName = fileUri.replace("https://generativelanguage.googleapis.com/v1beta/", "");
+  const statusUrl = `https://generativelanguage.googleapis.com/v1beta/${fileName}?key=${apiKey}`;
+
+  for (let attempt = 0; attempt < FILE_POLL_MAX_ATTEMPTS; attempt++) {
+    const res = await fetch(statusUrl);
+    if (!res.ok) {
+      const errText = await res.text();
+      throw createHttpError(res.status, `Failed to check file status: ${errText}`);
+    }
+
+    const data = await res.json();
+    const state = data?.state;
+
+    if (state === "ACTIVE") {
+      console.log(`File is ACTIVE, ready for analysis.`);
+      return;
+    }
+
+    if (state === "FAILED") {
+      throw new Error(`Gemini file processing failed: ${JSON.stringify(data?.error)}`);
+    }
+
+    // PROCESSING — wait and retry
+    await sleep(FILE_POLL_INTERVAL_MS);
+  }
+
+  throw new Error("Gemini file processing timed out after 2 minutes.");
+}
+
+async function deleteGeminiFile(apiKey: string, fileUri: string): Promise<void> {
+  try {
+    const filePath = fileUri.replace("https://generativelanguage.googleapis.com/v1beta/", "");
+    const deleteUrl = `https://generativelanguage.googleapis.com/v1beta/${filePath}?key=${apiKey}`;
+    const res = await fetch(deleteUrl, { method: "DELETE" });
+    if (res.ok) {
+      console.log(`Cleaned up Gemini file: ${filePath}`);
+    }
+    await res.text(); // consume body
+  } catch {
+    // Non-critical — Gemini auto-deletes after 48h
+  }
+}
+
+// ── Gemini generateContent with retries ─────────────────────────────
+
+async function callGeminiWithRetries(
+  apiKey: string,
+  fileUri: string,
+  mimeType: string,
+  prompt: string,
+) {
+  const generateUrl = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`;
+
+  const requestBody = {
+    contents: [
+      {
+        parts: [
+          {
+            fileData: {
+              mimeType,
+              fileUri,
+            },
+          },
+          {
+            text: prompt,
+          },
+        ],
       },
+    ],
+    generationConfig: {
+      responseMimeType: "application/json",
+    },
+  };
+
+  for (let attempt = 0; attempt <= RATE_LIMIT_RETRY_DELAYS_MS.length; attempt++) {
+    const response = await fetch(generateUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(requestBody),
     });
 
     if (response.status === 429) {
       const errText = await response.text();
       if (attempt < RATE_LIMIT_RETRY_DELAYS_MS.length) {
-        const delayMs = getRetryDelayMs(response.headers.get("retry-after"), RATE_LIMIT_RETRY_DELAYS_MS[attempt]);
-        console.warn(
-          `[analyze-video] Lovable AI rate limited, retrying in ${delayMs}ms (attempt ${attempt + 1}/${RATE_LIMIT_RETRY_DELAYS_MS.length + 1})`,
-        );
+        const delayMs = RATE_LIMIT_RETRY_DELAYS_MS[attempt];
+        console.warn(`[analyze-video] Gemini rate limited, retrying in ${delayMs}ms (attempt ${attempt + 1})`);
         await sleep(delayMs);
         continue;
       }
-
       throw createHttpError(429, errText || "Rate limited, please try again later.");
-    }
-
-    if (response.status === 402) {
-      const errText = await response.text();
-      throw createHttpError(402, errText || "AI credits exhausted. Please add funds in Settings > Workspace > Usage.");
     }
 
     if (!response.ok) {
       const errText = await response.text();
-      console.error(`Lovable AI error [${response.status}]:`, errText);
-      throw createHttpError(response.status, `AI gateway error [${response.status}]: ${errText}`);
+      console.error(`Gemini API error [${response.status}]:`, errText);
+      throw createHttpError(response.status, `Gemini API error [${response.status}]: ${errText}`);
     }
 
     return await response.json();
   }
 
-  throw createHttpError(429, "Rate limited, please try again later.");
+  throw createHttpError(429, "Rate limited after all retries.");
 }
+
+// ── Main handler ────────────────────────────────────────────────────
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -183,9 +280,11 @@ Deno.serve(async (req) => {
     return jsonResponse({ error: "Method not allowed" }, 405);
   }
 
+  let geminiFileUri: string | null = null;
+
   try {
-    const lovableApiKey = Deno.env.get("LOVABLE_API_KEY");
-    if (!lovableApiKey) throw new Error("LOVABLE_API_KEY is not configured");
+    const geminiApiKey = Deno.env.get("GOOGLE_AI_STUDIO_KEY");
+    if (!geminiApiKey) throw new Error("GOOGLE_AI_STUDIO_KEY is not configured");
 
     const body = await req.json();
     const {
@@ -208,6 +307,7 @@ Deno.serve(async (req) => {
       return jsonResponse({ error: "captionId is required" }, 400);
     }
 
+    // Normalize MIME type — Gemini needs video/mp4 for .mov files
     let mimeType = rawMimeType || "video/mp4";
     if (mimeType === "video/quicktime" || mimeType === "video/mov") {
       mimeType = "video/mp4";
@@ -216,51 +316,23 @@ Deno.serve(async (req) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const videoUrl = `${supabaseUrl}/storage/v1/object/public/trip-photos/${storagePath}`;
 
-    console.log(`Analyzing "${fileName}" via Lovable AI. Fetching video for base64 encoding...`);
+    console.log(`Analyzing "${fileName}" via Gemini File API.`);
 
-    // Fetch video and convert to base64 data URL — the gateway rejects video URLs directly
-    const videoResponse = await fetch(videoUrl);
-    if (!videoResponse.ok) {
-      throw createHttpError(videoResponse.status, `Failed to fetch video from storage: ${videoResponse.statusText}`);
-    }
-    const videoBuffer = await videoResponse.arrayBuffer();
-    const videoBytes = new Uint8Array(videoBuffer);
+    // 1. Stream video from Storage → Gemini File API
+    geminiFileUri = await uploadToGeminiFileApi(geminiApiKey, videoUrl, mimeType, fileName);
 
-    // Encode to base64
-    let binary = "";
-    for (let i = 0; i < videoBytes.length; i++) {
-      binary += String.fromCharCode(videoBytes[i]);
-    }
-    const base64Video = btoa(binary);
-    const dataUrl = `data:${mimeType};base64,${base64Video}`;
+    // 2. Poll until Gemini finishes processing the video
+    await waitForFileActive(geminiApiKey, geminiFileUri);
 
-    console.log(`Video fetched (${(videoBytes.length / 1024 / 1024).toFixed(1)}MB). Sending to AI...`);
-
+    // 3. Call generateContent with the file reference
     const prompt = buildPrompt({ takenAt, latitude, longitude, locationName, country, itinerarySteps });
-    const data = await callLovableAiWithRetries(lovableApiKey, {
-      model: MODEL,
-      messages: [
-        {
-          role: "user",
-          content: [
-            {
-              type: "image_url",
-              image_url: { url: dataUrl },
-            },
-            {
-              type: "text",
-              text: prompt,
-            },
-          ],
-        },
-      ],
-      response_format: { type: "json_object" },
-    });
+    const data = await callGeminiWithRetries(geminiApiKey, geminiFileUri, mimeType, prompt);
 
-    const textContent = data?.choices?.[0]?.message?.content;
+    // 4. Parse the response
+    const textContent = data?.candidates?.[0]?.content?.parts?.[0]?.text;
     if (!textContent) {
-      console.error("AI response had no content:", JSON.stringify(data));
-      throw new Error("No content in AI response");
+      console.error("Gemini response had no text content:", JSON.stringify(data));
+      throw new Error("No content in Gemini response");
     }
 
     const parsed = JSON.parse(textContent);
@@ -287,14 +359,18 @@ Deno.serve(async (req) => {
       ? (error as HttpError).status!
       : null;
 
-    if (status === 402 || message.includes("402")) {
-      return jsonResponse({ error: "AI credits exhausted. Please add funds in Settings > Workspace > Usage." }, 402);
-    }
-
     if (status === 429 || message.includes("429") || message.includes("RESOURCE_EXHAUSTED")) {
       return jsonResponse({ error: "Rate limited, please try again later." }, 429);
     }
 
     return jsonResponse({ error: message }, 500);
+  } finally {
+    // Clean up the Gemini file regardless of success/failure
+    if (geminiFileUri) {
+      const geminiApiKey = Deno.env.get("GOOGLE_AI_STUDIO_KEY");
+      if (geminiApiKey) {
+        await deleteGeminiFile(geminiApiKey, geminiFileUri);
+      }
+    }
   }
 });
