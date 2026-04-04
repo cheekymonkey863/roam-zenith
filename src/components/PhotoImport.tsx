@@ -1,5 +1,28 @@
 import { useState, useCallback } from "react";
 import { Upload, MapPin, Calendar, Check, Image as ImageIcon, Loader2, Pencil, X, Play, Merge } from "lucide-react";
+
+function MediaLightbox({ src, onClose }: { src: string; onClose: () => void }) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <button
+        type="button"
+        onClick={onClose}
+        className="absolute right-4 top-4 rounded-full bg-black/50 p-2 text-white hover:bg-black/70"
+      >
+        <X className="h-5 w-5" />
+      </button>
+      <img
+        src={src}
+        alt="Preview"
+        className="max-h-[85vh] max-w-[90vw] rounded-lg object-contain"
+        onClick={(e) => e.stopPropagation()}
+      />
+    </div>
+  );
+}
 import {
   type PhotoExifData,
 } from "@/lib/exif";
