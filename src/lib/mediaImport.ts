@@ -473,7 +473,7 @@ export async function processImportedMediaFiles(
         const { data, error } = await supabase.functions.invoke("analyze-video", {
           body: {
             videoBase64,
-            mimeType: photo.file.type,
+            mimeType,
             captionId: photo.captionId,
             fileName: photo.file.name,
             takenAt: photo.takenAt?.toISOString() ?? null,
