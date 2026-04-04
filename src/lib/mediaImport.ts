@@ -430,6 +430,72 @@ export async function processImportedMediaFiles(
   }
   onProgress?.("Visual recognition", 1, 1);
 
+  // Native Gemini video analysis — send actual video bytes for audio+visual understanding
+  const allVideoMedia = [
+    ...baseSteps.flatMap((step) =>
+      step.photos
+        .filter((p) => p.file.type.startsWith("video/"))
+        .map((p) => ({ photo: p, step })),
+    ),
+    ...noGpsGroups.flatMap((group) => {
+      const contextStep = findContextStepForNoGpsGroup(group.photos, baseSteps);
+      return group.photos
+        .filter((p) => p.file.type.startsWith("video/"))
+        .map((p) => ({ photo: p, step: contextStep }));
+    }),
+  ];
+
+  const videoInsights = new Map<string, MediaInsightResult>();
+  if (allVideoMedia.length > 0) {
+    onProgress?.("Analyzing videos", 0, allVideoMedia.length);
+    let videoDone = 0;
+
+    await mapWithConcurrency(allVideoMedia, 2, async ({ photo, step }) => {
+      try {
+        // Read video file — limit to first 5MB to control costs
+        const MAX_VIDEO_BYTES = 5 * 1024 * 1024;
+        const blob = photo.file.slice(0, MAX_VIDEO_BYTES);
+        const buffer = await blob.arrayBuffer();
+        const bytes = new Uint8Array(buffer);
+
+        // Convert to base64
+        let binary = "";
+        const chunkSize = 8192;
+        for (let i = 0; i < bytes.length; i += chunkSize) {
+          binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+        }
+        const videoBase64 = btoa(binary);
+
+        const { data, error } = await supabase.functions.invoke("analyze-video", {
+          body: {
+            videoBase64,
+            mimeType: photo.file.type,
+            captionId: photo.captionId,
+            fileName: photo.file.name,
+            takenAt: photo.takenAt?.toISOString() ?? null,
+            latitude: step?.latitude ?? photo.latitude ?? null,
+            longitude: step?.longitude ?? photo.longitude ?? null,
+            locationName: step?.locationName ?? null,
+            country: step?.country ?? null,
+          },
+        });
+
+        if (!error && data?.result) {
+          videoInsights.set(photo.captionId, {
+            captionId: data.result.captionId,
+            caption: data.result.caption,
+            sceneDescription: data.result.sceneDescription,
+            richTags: data.result.richTags,
+          });
+        }
+      } catch (err) {
+        console.error(`Video analysis failed for ${photo.file.name}:`, err);
+      }
+      videoDone++;
+      onProgress?.("Analyzing videos", videoDone, allVideoMedia.length);
+    });
+  }
+
   const steps = baseSteps.map((step) => {
     const inferred = inferredLocations.get(step.key);
     const locationName = isKnownLocationName(step.locationName) ? step.locationName : inferred?.locationName || step.locationName;
@@ -446,7 +512,7 @@ export async function processImportedMediaFiles(
       ...step,
       locationName,
       country,
-      photos: applyMediaInsights(step.photos, inferred?.photoCaptions, undefined, locationName, stepDetails.eventType),
+      photos: applyMediaInsights(step.photos, inferred?.photoCaptions, videoInsights, locationName, stepDetails.eventType),
       eventType: stepDetails.eventType,
       confidence: inferred?.confidence ? pickHigherConfidence(step.confidence, inferred.confidence) : step.confidence,
       summary: buildLocationSummary(locationName, country, stepDetails.eventType),
