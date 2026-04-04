@@ -1,5 +1,9 @@
 export type StepVisualType =
-  | "airport"
+  | "flight"
+  | "train"
+  | "bus"
+  | "ferry"
+  | "car"
   | "hotel"
   | "food"
   | "sightseeing"
@@ -15,31 +19,28 @@ export interface StepVisualInput {
   notes: string | null;
 }
 
-const AIRPORT_PATTERN = /\b(airport|airfield|flight|airline|boarding|gate|terminal|depart(?:ure|ing)|arriv(?:al|ing)|runway|iata)\b|\([A-Z]{3}\)/i;
+const FLIGHT_PATTERN = /\b(airport|airfield|flight|airline|boarding|gate|terminal|depart(?:ure|ing)|arriv(?:al|ing)|runway|iata)\b|\([A-Z]{3}\)/i;
 const HOTEL_PATTERN = /\b(hotel|resort|lodge|hostel|airbnb|inn|suite|suites|guesthouse|villa|camp|room|stay|marriott|hilton|hyatt|radisson|pullman|fairmont|sheraton|belmond|vignette|palace|palacio|sanctuary)\b/i;
 const HOTEL_EVENT_PATTERN = /\bhotel\s+check.?in\b|\bhotel\s+check.?out\b/i;
 const FOOD_PATTERN = /\b(restaurant|cafe|bar|bistro|breakfast|lunch|dinner|brunch|tasting|meal|food)\b/i;
 const BORDER_PATTERN = /\b(border|immigration|passport|customs|checkpoint|crossing)\b/i;
-const TRANSPORT_PATTERN = /\b(train|rail|station|metro|subway|tram|bus|coach|transfer|shuttle|ferry|port|harbor|pier|dock)\b/i;
+const TRAIN_PATTERN = /\b(train|rail|railway|metro|subway|tram|light.?rail)\b/i;
+const BUS_PATTERN = /\b(bus|coach|shuttle)\b/i;
+const FERRY_PATTERN = /\b(ferry|boat|cruise|port|harbor|harbour|pier|dock|sailing|catamaran)\b/i;
+const CAR_PATTERN = /\b(car|drive|driving|rental|uber|taxi|cab|lyft|transfer|road.?trip)\b/i;
 const SIGHTSEEING_PATTERN = /\b(museum|beach|mountain|park|falls|waterfall|trail|viewpoint|tower|temple|church|cathedral|plaza|square|landmark|safari|penguin|monument|gallery|tour|visit)\b/i;
 
 function getGoogleVisualType(googlePlaceTypes: string[]): StepVisualType | null {
   const types = new Set(googlePlaceTypes);
 
-  if (types.has("airport")) return "airport";
+  if (types.has("airport")) return "flight";
   if (types.has("lodging")) return "hotel";
   if (types.has("restaurant") || types.has("cafe") || types.has("bar") || types.has("meal_takeaway")) return "food";
-  if (
-    types.has("train_station") ||
-    types.has("transit_station") ||
-    types.has("bus_station") ||
-    types.has("subway_station") ||
-    types.has("light_rail_station") ||
-    types.has("taxi_stand") ||
-    types.has("ferry_terminal")
-  ) {
-    return "transport";
-  }
+  if (types.has("train_station") || types.has("light_rail_station") || types.has("subway_station")) return "train";
+  if (types.has("bus_station")) return "bus";
+  if (types.has("ferry_terminal")) return "ferry";
+  if (types.has("taxi_stand") || types.has("car_rental")) return "car";
+  if (types.has("transit_station")) return "transport";
   if (types.has("tourist_attraction") || types.has("natural_feature") || types.has("museum") || types.has("park") || types.has("campground")) {
     return "sightseeing";
   }
@@ -55,11 +56,14 @@ export function inferStepVisualType(step: StepVisualInput, googlePlaceTypes: str
   const text = buildStepContextText(step);
   const googleType = getGoogleVisualType(googlePlaceTypes);
 
-  const isAirport = AIRPORT_PATTERN.test(text) || googleType === "airport";
+  const isFlight = FLIGHT_PATTERN.test(text) || googleType === "flight";
   const isHotel = HOTEL_PATTERN.test(text) || HOTEL_EVENT_PATTERN.test(text) || googleType === "hotel";
   const isFood = FOOD_PATTERN.test(text) || googleType === "food";
   const isBorder = BORDER_PATTERN.test(text);
-  const isTransport = TRANSPORT_PATTERN.test(text) || googleType === "transport";
+  const isTrain = TRAIN_PATTERN.test(text) || googleType === "train";
+  const isBus = BUS_PATTERN.test(text) || googleType === "bus";
+  const isFerry = FERRY_PATTERN.test(text) || googleType === "ferry";
+  const isCar = CAR_PATTERN.test(text) || googleType === "car";
   const isSightseeing = SIGHTSEEING_PATTERN.test(text) || googleType === "sightseeing";
 
   switch (step.event_type) {
@@ -72,28 +76,37 @@ export function inferStepVisualType(step: StepVisualInput, googlePlaceTypes: str
     case "border_crossing":
       return "border";
     case "transport":
-      if (isAirport) return "airport";
+      if (isFlight) return "flight";
+      if (isTrain) return "train";
+      if (isFerry) return "ferry";
+      if (isBus) return "bus";
+      if (isCar) return "car";
       if (isHotel) return "hotel";
-      if (isTransport) return "transport";
       return googleType || "transport";
     case "arrival":
     case "departure":
-      if (isAirport) return "airport";
+      if (isFlight) return "flight";
+      if (isTrain) return "train";
+      if (isFerry) return "ferry";
+      if (isBus) return "bus";
+      if (isCar) return "car";
       if (isHotel) return "hotel";
-      if (isTransport) return "transport";
-      return googleType || "airport";
+      return googleType || "flight";
     case "activity":
       if (isFood) return "food";
       if (isSightseeing) return "sightseeing";
       if (isHotel) return "hotel";
-      if (isAirport) return "airport";
+      if (isFlight) return "flight";
       return googleType || "activity";
     default:
-      if (isAirport) return "airport";
+      if (isFlight) return "flight";
       if (isHotel) return "hotel";
       if (isFood) return "food";
       if (isBorder) return "border";
-      if (isTransport) return "transport";
+      if (isTrain) return "train";
+      if (isFerry) return "ferry";
+      if (isBus) return "bus";
+      if (isCar) return "car";
       if (isSightseeing) return "sightseeing";
       return googleType || "other";
   }

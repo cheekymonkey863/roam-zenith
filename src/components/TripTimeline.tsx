@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { MapPin, Image as ImageIcon, Trash2, Plane, Hotel, Utensils, Camera, ArrowRightLeft, Flag, CircleDot } from "lucide-react";
+import { MapPin, Image as ImageIcon, Trash2, Plane, Hotel, Utensils, Camera, ArrowRightLeft, Flag, CircleDot, TrainFront, Bus, Ship, Car } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { EditStepDialog } from "@/components/EditStepDialog";
 import { toast } from "sonner";
@@ -10,7 +10,11 @@ type TripStep = Tables<"trip_steps">;
 type StepPhoto = Tables<"step_photos">;
 
 const VISUAL_CONFIG: Record<StepVisualType, { icon: React.ElementType; bg: string; text: string }> = {
-  airport: { icon: Plane, bg: "bg-blue-500", text: "text-white" },
+  flight: { icon: Plane, bg: "bg-blue-500", text: "text-white" },
+  train: { icon: TrainFront, bg: "bg-indigo-500", text: "text-white" },
+  bus: { icon: Bus, bg: "bg-cyan-600", text: "text-white" },
+  ferry: { icon: Ship, bg: "bg-teal-500", text: "text-white" },
+  car: { icon: Car, bg: "bg-slate-500", text: "text-white" },
   hotel: { icon: Hotel, bg: "bg-violet-500", text: "text-white" },
   food: { icon: Utensils, bg: "bg-orange-500", text: "text-white" },
   sightseeing: { icon: Camera, bg: "bg-emerald-500", text: "text-white" },
