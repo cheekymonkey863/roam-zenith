@@ -462,24 +462,29 @@ export async function processImportedMediaFiles(
   const videoInsights = new Map<string, MediaInsightResult>();
   if (allVideoMedia.length > 0) {
     onProgress?.("Analyzing videos", 0, allVideoMedia.length);
-    let videoDone = 0;
 
-    // Serialize: 1-at-a-time to keep requests predictable on large imports.
+    // Phase 1: Upload all videos to Storage and kick off async analysis jobs
+    const pendingJobs: Array<{
+      jobId: string;
+      captionId: string;
+      fileName: string;
+      storagePath: string;
+    }> = [];
+
+    let uploadsDone = 0;
     for (const { photo, step } of allVideoMedia) {
-      let storagePath: string | null = null;
-
       try {
-        // Upload raw video to Storage via TUS resumable protocol.
         const {
           data: { user },
         } = await supabase.auth.getUser();
         if (!user) {
           console.error("No authenticated user for video upload");
+          uploadsDone++;
           continue;
         }
 
         const ext = photo.file.name.split(".").pop()?.toLowerCase() || "mp4";
-        storagePath = `${user.id}/video-analysis/${crypto.randomUUID()}.${ext}`;
+        const storagePath = `${user.id}/video-analysis/${crypto.randomUUID()}.${ext}`;
 
         await resumableUpload({
           bucketName: "trip-photos",
@@ -508,27 +513,74 @@ export async function processImportedMediaFiles(
           },
         });
 
-        if (!error && data?.result) {
-          videoInsights.set(photo.captionId, {
-            captionId: data.result.captionId,
-            caption: data.result.caption,
-            sceneDescription: data.result.sceneDescription,
-            essence: data.result.essence,
-            richTags: data.result.richTags,
+        if (!error && data?.jobId) {
+          pendingJobs.push({
+            jobId: data.jobId,
+            captionId: photo.captionId,
+            fileName: photo.file.name,
+            storagePath,
           });
         } else {
-          const errMsg = error?.message || data?.error || "Unknown video analysis error";
-          console.error(`Video analysis failed for ${photo.file.name}:`, errMsg);
-        }
-      } catch (err) {
-        console.error(`Video analysis failed for ${photo.file.name}:`, err);
-      } finally {
-        if (storagePath) {
+          const errMsg = error?.message || data?.error || "Unknown error";
+          console.error(`Video analysis request failed for ${photo.file.name}:`, errMsg);
+          // Clean up storage immediately on request failure
           await supabase.storage.from("trip-photos").remove([storagePath]).catch(() => {});
         }
+      } catch (err) {
+        console.error(`Video upload failed for ${photo.file.name}:`, err);
+      }
+      uploadsDone++;
+      onProgress?.("Uploading videos", uploadsDone, allVideoMedia.length);
+    }
 
-        videoDone++;
-        onProgress?.("Analyzing videos", videoDone, allVideoMedia.length);
+    // Phase 2: Poll for all job results
+    if (pendingJobs.length > 0) {
+      const POLL_INTERVAL_MS = 3000;
+      const MAX_POLL_ATTEMPTS = 80; // ~4 minutes max per video
+      const remaining = new Set(pendingJobs.map((j) => j.jobId));
+      let pollAttempt = 0;
+      let analysisDone = allVideoMedia.length - pendingJobs.length;
+
+      while (remaining.size > 0 && pollAttempt < MAX_POLL_ATTEMPTS) {
+        await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
+        pollAttempt++;
+
+        const { data: jobs } = await supabase
+          .from("video_analysis_jobs")
+          .select("id, caption_id, status, result, error")
+          .in("id", Array.from(remaining));
+
+        if (!jobs) continue;
+
+        for (const job of jobs) {
+          if (job.status === "complete" && job.result) {
+            const result = job.result as Record<string, unknown>;
+            videoInsights.set(job.caption_id, {
+              captionId: result.captionId as string,
+              caption: result.caption as string,
+              sceneDescription: result.sceneDescription as string | undefined,
+              essence: result.essence as string | undefined,
+              richTags: result.richTags as string[] | undefined,
+            });
+            remaining.delete(job.id);
+            analysisDone++;
+            onProgress?.("Analyzing videos", analysisDone, allVideoMedia.length);
+          } else if (job.status === "failed") {
+            console.error(`Video analysis job ${job.id} failed: ${job.error}`);
+            remaining.delete(job.id);
+            analysisDone++;
+            onProgress?.("Analyzing videos", analysisDone, allVideoMedia.length);
+          }
+        }
+      }
+
+      if (remaining.size > 0) {
+        console.warn(`${remaining.size} video analysis job(s) timed out waiting for results.`);
+      }
+
+      // Phase 3: Clean up storage files
+      for (const job of pendingJobs) {
+        await supabase.storage.from("trip-photos").remove([job.storagePath]).catch(() => {});
       }
     }
   }

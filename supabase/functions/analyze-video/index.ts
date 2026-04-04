@@ -1,3 +1,5 @@
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
@@ -25,8 +27,6 @@ interface ItineraryStop {
   description: string | null;
 }
 
-type HttpError = Error & { status?: number };
-
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
@@ -37,14 +37,15 @@ function jsonResponse(body: unknown, status = 200) {
 const GEMINI_MODEL = "gemini-2.5-flash";
 const RATE_LIMIT_RETRY_DELAYS_MS = [2000, 4000, 8000];
 const FILE_POLL_INTERVAL_MS = 2000;
-const FILE_POLL_MAX_ATTEMPTS = 60; // 2 minutes max
+const FILE_POLL_MAX_ATTEMPTS = 60;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-function createHttpError(status: number, message: string): HttpError {
-  const error = new Error(message) as HttpError;
-  error.status = status;
-  return error;
+function getServiceClient() {
+  return createClient(
+    Deno.env.get("SUPABASE_URL")!,
+    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+  );
 }
 
 // ── Prompt builder ──────────────────────────────────────────────────
@@ -92,7 +93,7 @@ function buildPrompt(metadata: {
       const desc = s.description ? ` — ${s.description}` : "";
       return `  ${i + 1}. ${loc}${country} (${date}, ${s.event_type})${desc}`;
     });
-    itineraryBlock = `\n\nKNOWN ITINERARY STOPS (pre-planned or already confirmed stops on this trip):\n${stopLines.join("\n")}\n\nIMPORTANT: If the video clearly matches one of these known stops, reference it in your caption and description. Use the stop's location name as ground truth when the visual content is consistent with it.`;
+    itineraryBlock = `\n\nKNOWN ITINERARY STOPS:\n${stopLines.join("\n")}\n\nIMPORTANT: If the video clearly matches one of these known stops, reference it in your caption and description.`;
   }
 
   return `You are a world-class travel writer and expert metadata tagger.
@@ -128,14 +129,12 @@ async function uploadToGeminiFileApi(
   mimeType: string,
   displayName: string,
 ): Promise<string> {
-  // Stream the video from Supabase Storage directly to the Gemini File API
   const videoResponse = await fetch(videoUrl);
   if (!videoResponse.ok || !videoResponse.body) {
-    throw createHttpError(videoResponse.status, `Failed to fetch video from storage: ${videoResponse.statusText}`);
+    throw new Error(`Failed to fetch video from storage: ${videoResponse.statusText}`);
   }
 
   const fileApiUrl = `https://generativelanguage.googleapis.com/upload/v1beta/files?uploadType=media&key=${apiKey}`;
-
   console.log(`Streaming "${displayName}" to Gemini File API (${mimeType})...`);
 
   const uploadRes = await fetch(fileApiUrl, {
@@ -149,125 +148,164 @@ async function uploadToGeminiFileApi(
 
   if (!uploadRes.ok) {
     const errBody = await uploadRes.text();
-    throw createHttpError(uploadRes.status, `Gemini File API upload failed [${uploadRes.status}]: ${errBody}`);
+    throw new Error(`Gemini File API upload failed [${uploadRes.status}]: ${errBody}`);
   }
 
   const uploadData = await uploadRes.json();
   const fileUri = uploadData?.file?.uri;
-  const fileName = uploadData?.file?.name;
-
-  if (!fileUri || !fileName) {
+  if (!fileUri) {
     throw new Error(`Gemini File API returned no fileUri: ${JSON.stringify(uploadData)}`);
   }
 
-  console.log(`Upload complete. File: ${fileName}, URI: ${fileUri}`);
+  console.log(`Upload complete. URI: ${fileUri}`);
   return fileUri;
 }
 
 async function waitForFileActive(apiKey: string, fileUri: string): Promise<void> {
-  // Extract file name from URI: files/xxx -> xxx
-  const fileName = fileUri.replace("https://generativelanguage.googleapis.com/v1beta/", "");
-  const statusUrl = `https://generativelanguage.googleapis.com/v1beta/${fileName}?key=${apiKey}`;
+  const filePath = fileUri.replace("https://generativelanguage.googleapis.com/v1beta/", "");
+  const statusUrl = `https://generativelanguage.googleapis.com/v1beta/${filePath}?key=${apiKey}`;
 
   for (let attempt = 0; attempt < FILE_POLL_MAX_ATTEMPTS; attempt++) {
     const res = await fetch(statusUrl);
     if (!res.ok) {
       const errText = await res.text();
-      throw createHttpError(res.status, `Failed to check file status: ${errText}`);
+      throw new Error(`Failed to check file status: ${errText}`);
     }
-
     const data = await res.json();
-    const state = data?.state;
-
-    if (state === "ACTIVE") {
-      console.log(`File is ACTIVE, ready for analysis.`);
+    if (data?.state === "ACTIVE") {
+      console.log("File is ACTIVE.");
       return;
     }
-
-    if (state === "FAILED") {
+    if (data?.state === "FAILED") {
       throw new Error(`Gemini file processing failed: ${JSON.stringify(data?.error)}`);
     }
-
-    // PROCESSING — wait and retry
     await sleep(FILE_POLL_INTERVAL_MS);
   }
-
-  throw new Error("Gemini file processing timed out after 2 minutes.");
+  throw new Error("Gemini file processing timed out.");
 }
 
 async function deleteGeminiFile(apiKey: string, fileUri: string): Promise<void> {
   try {
     const filePath = fileUri.replace("https://generativelanguage.googleapis.com/v1beta/", "");
-    const deleteUrl = `https://generativelanguage.googleapis.com/v1beta/${filePath}?key=${apiKey}`;
-    const res = await fetch(deleteUrl, { method: "DELETE" });
-    if (res.ok) {
-      console.log(`Cleaned up Gemini file: ${filePath}`);
-    }
-    await res.text(); // consume body
-  } catch {
-    // Non-critical — Gemini auto-deletes after 48h
-  }
+    await fetch(`https://generativelanguage.googleapis.com/v1beta/${filePath}?key=${apiKey}`, { method: "DELETE" });
+  } catch { /* Gemini auto-deletes after 48h */ }
 }
 
-// ── Gemini generateContent with retries ─────────────────────────────
-
-async function callGeminiWithRetries(
-  apiKey: string,
-  fileUri: string,
-  mimeType: string,
-  prompt: string,
-) {
-  const generateUrl = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`;
-
-  const requestBody = {
-    contents: [
-      {
-        parts: [
-          {
-            fileData: {
-              mimeType,
-              fileUri,
-            },
-          },
-          {
-            text: prompt,
-          },
-        ],
-      },
-    ],
-    generationConfig: {
-      responseMimeType: "application/json",
-    },
+async function callGemini(apiKey: string, fileUri: string, mimeType: string, prompt: string) {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`;
+  const body = {
+    contents: [{
+      parts: [
+        { fileData: { mimeType, fileUri } },
+        { text: prompt },
+      ],
+    }],
+    generationConfig: { responseMimeType: "application/json" },
   };
 
   for (let attempt = 0; attempt <= RATE_LIMIT_RETRY_DELAYS_MS.length; attempt++) {
-    const response = await fetch(generateUrl, {
+    const response = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(requestBody),
+      body: JSON.stringify(body),
     });
 
     if (response.status === 429) {
       const errText = await response.text();
       if (attempt < RATE_LIMIT_RETRY_DELAYS_MS.length) {
-        const delayMs = RATE_LIMIT_RETRY_DELAYS_MS[attempt];
-        console.warn(`[analyze-video] Gemini rate limited, retrying in ${delayMs}ms (attempt ${attempt + 1})`);
-        await sleep(delayMs);
+        await sleep(RATE_LIMIT_RETRY_DELAYS_MS[attempt]);
         continue;
       }
-      throw createHttpError(429, errText || "Rate limited, please try again later.");
+      throw new Error(`Rate limited after retries: ${errText}`);
     }
-
     if (!response.ok) {
       const errText = await response.text();
-      console.error(`Gemini API error [${response.status}]:`, errText);
-      throw createHttpError(response.status, `Gemini API error [${response.status}]: ${errText}`);
+      throw new Error(`Gemini error [${response.status}]: ${errText}`);
     }
-
     return await response.json();
   }
+  throw new Error("Rate limited after all retries.");
+}
 
-  throw createHttpError(429, "Rate limited after all retries.");
+// ── Background processing ───────────────────────────────────────────
+
+async function processVideoInBackground(params: {
+  jobId: string;
+  storagePath: string;
+  captionId: string;
+  fileName: string;
+  mimeType: string;
+  takenAt: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  locationName: string | null;
+  country: string | null;
+  itinerarySteps: ItineraryStop[];
+}) {
+  const geminiApiKey = Deno.env.get("GOOGLE_AI_STUDIO_KEY")!;
+  const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+  const supabase = getServiceClient();
+  let geminiFileUri: string | null = null;
+
+  try {
+    const videoUrl = `${supabaseUrl}/storage/v1/object/public/trip-photos/${params.storagePath}`;
+
+    // 1. Stream to Gemini File API
+    geminiFileUri = await uploadToGeminiFileApi(geminiApiKey, videoUrl, params.mimeType, params.fileName);
+
+    // 2. Wait for file to be ready
+    await waitForFileActive(geminiApiKey, geminiFileUri);
+
+    // 3. Generate analysis
+    const prompt = buildPrompt({
+      takenAt: params.takenAt,
+      latitude: params.latitude,
+      longitude: params.longitude,
+      locationName: params.locationName,
+      country: params.country,
+      itinerarySteps: params.itinerarySteps,
+    });
+    const data = await callGemini(geminiApiKey, geminiFileUri, params.mimeType, prompt);
+
+    const textContent = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!textContent) throw new Error("No content in Gemini response");
+
+    const parsed = JSON.parse(textContent);
+    const result: VideoAnalysisResult = {
+      captionId: params.captionId,
+      caption: typeof parsed.caption === "string" ? parsed.caption.trim() : "Video clip",
+      sceneDescription: typeof parsed.sceneDescription === "string" ? parsed.sceneDescription.trim() : "",
+      essence: typeof parsed.essence === "string" ? parsed.essence.trim() : "",
+      richTags: Array.isArray(parsed.richTags)
+        ? parsed.richTags.filter((t: unknown): t is string => typeof t === "string").map((t: string) => t.trim().toLowerCase())
+        : [],
+      activityType: typeof parsed.activityType === "string" ? parsed.activityType.trim() : "activity",
+      moodTags: Array.isArray(parsed.moodTags)
+        ? parsed.moodTags.filter((t: unknown): t is string => typeof t === "string").map((t: string) => t.trim().toLowerCase())
+        : [],
+    };
+
+    console.log(`Analysis complete for "${params.fileName}": ${result.caption}`);
+
+    // Update job with results
+    await supabase
+      .from("video_analysis_jobs")
+      .update({ status: "complete", result, updated_at: new Date().toISOString() })
+      .eq("id", params.jobId);
+
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    console.error(`Background analysis failed for "${params.fileName}":`, message);
+
+    await supabase
+      .from("video_analysis_jobs")
+      .update({ status: "failed", error: message, updated_at: new Date().toISOString() })
+      .eq("id", params.jobId);
+  } finally {
+    if (geminiFileUri) {
+      await deleteGeminiFile(geminiApiKey, geminiFileUri);
+    }
+  }
 }
 
 // ── Main handler ────────────────────────────────────────────────────
@@ -280,11 +318,22 @@ Deno.serve(async (req) => {
     return jsonResponse({ error: "Method not allowed" }, 405);
   }
 
-  let geminiFileUri: string | null = null;
-
   try {
     const geminiApiKey = Deno.env.get("GOOGLE_AI_STUDIO_KEY");
     if (!geminiApiKey) throw new Error("GOOGLE_AI_STUDIO_KEY is not configured");
+
+    // Extract user from auth header
+    const authHeader = req.headers.get("authorization") ?? "";
+    const supabase = getServiceClient();
+    const token = authHeader.replace("Bearer ", "");
+    const { data: { user } } = await createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_ANON_KEY")!,
+    ).auth.getUser(token);
+
+    if (!user) {
+      return jsonResponse({ error: "Unauthorized" }, 401);
+    }
 
     const body = await req.json();
     const {
@@ -307,70 +356,46 @@ Deno.serve(async (req) => {
       return jsonResponse({ error: "captionId is required" }, 400);
     }
 
-    // Normalize MIME type — Gemini needs video/mp4 for .mov files
     let mimeType = rawMimeType || "video/mp4";
     if (mimeType === "video/quicktime" || mimeType === "video/mov") {
       mimeType = "video/mp4";
     }
 
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const videoUrl = `${supabaseUrl}/storage/v1/object/public/trip-photos/${storagePath}`;
+    // Create job record
+    const { data: job, error: jobError } = await supabase
+      .from("video_analysis_jobs")
+      .insert({ caption_id: captionId, user_id: user.id, status: "processing" })
+      .select("id")
+      .single();
 
-    console.log(`Analyzing "${fileName}" via Gemini File API.`);
-
-    // 1. Stream video from Storage → Gemini File API
-    geminiFileUri = await uploadToGeminiFileApi(geminiApiKey, videoUrl, mimeType, fileName);
-
-    // 2. Poll until Gemini finishes processing the video
-    await waitForFileActive(geminiApiKey, geminiFileUri);
-
-    // 3. Call generateContent with the file reference
-    const prompt = buildPrompt({ takenAt, latitude, longitude, locationName, country, itinerarySteps });
-    const data = await callGeminiWithRetries(geminiApiKey, geminiFileUri, mimeType, prompt);
-
-    // 4. Parse the response
-    const textContent = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!textContent) {
-      console.error("Gemini response had no text content:", JSON.stringify(data));
-      throw new Error("No content in Gemini response");
+    if (jobError || !job) {
+      console.error("Failed to create job:", jobError);
+      return jsonResponse({ error: "Failed to create analysis job" }, 500);
     }
 
-    const parsed = JSON.parse(textContent);
-    const result: VideoAnalysisResult = {
-      captionId,
-      caption: typeof parsed.caption === "string" ? parsed.caption.trim() : "Video clip",
-      sceneDescription: typeof parsed.sceneDescription === "string" ? parsed.sceneDescription.trim() : "",
-      essence: typeof parsed.essence === "string" ? parsed.essence.trim() : "",
-      richTags: Array.isArray(parsed.richTags)
-        ? parsed.richTags.filter((t: unknown): t is string => typeof t === "string").map((t: string) => t.trim().toLowerCase())
-        : [],
-      activityType: typeof parsed.activityType === "string" ? parsed.activityType.trim() : "activity",
-      moodTags: Array.isArray(parsed.moodTags)
-        ? parsed.moodTags.filter((t: unknown): t is string => typeof t === "string").map((t: string) => t.trim().toLowerCase())
-        : [],
-    };
+    console.log(`Job ${job.id} created for "${fileName}". Starting background analysis...`);
 
-    console.log(`Analysis complete for "${fileName}": ${result.caption}`);
-    return jsonResponse({ result });
+    // Start background processing — function returns immediately
+    EdgeRuntime.waitUntil(
+      processVideoInBackground({
+        jobId: job.id,
+        storagePath,
+        captionId,
+        fileName,
+        mimeType,
+        takenAt,
+        latitude,
+        longitude,
+        locationName,
+        country,
+        itinerarySteps,
+      }),
+    );
+
+    return jsonResponse({ jobId: job.id, status: "processing" });
   } catch (error) {
     console.error("analyze-video error:", error);
     const message = error instanceof Error ? error.message : "Unknown error";
-    const status = typeof error === "object" && error !== null && "status" in error && typeof (error as HttpError).status === "number"
-      ? (error as HttpError).status!
-      : null;
-
-    if (status === 429 || message.includes("429") || message.includes("RESOURCE_EXHAUSTED")) {
-      return jsonResponse({ error: "Rate limited, please try again later." }, 429);
-    }
-
     return jsonResponse({ error: message }, 500);
-  } finally {
-    // Clean up the Gemini file regardless of success/failure
-    if (geminiFileUri) {
-      const geminiApiKey = Deno.env.get("GOOGLE_AI_STUDIO_KEY");
-      if (geminiApiKey) {
-        await deleteGeminiFile(geminiApiKey, geminiFileUri);
-      }
-    }
   }
 });
