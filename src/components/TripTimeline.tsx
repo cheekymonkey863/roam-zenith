@@ -3,23 +3,22 @@ import { MapPin, Image as ImageIcon, Trash2, Plane, Hotel, Utensils, Camera, Arr
 import { supabase } from "@/integrations/supabase/client";
 import { EditStepDialog } from "@/components/EditStepDialog";
 import { toast } from "sonner";
+import { inferStepVisualType, type StepVisualType } from "@/lib/stepVisuals";
 import type { Tables } from "@/integrations/supabase/types";
 
 type TripStep = Tables<"trip_steps">;
 type StepPhoto = Tables<"step_photos">;
 
-const EVENT_TYPE_CONFIG: Record<string, { icon: React.ElementType; bg: string; text: string }> = {
-  arrival: { icon: Plane, bg: "bg-blue-500", text: "text-white" },
-  departure: { icon: Plane, bg: "bg-blue-500", text: "text-white" },
-  accommodation: { icon: Hotel, bg: "bg-violet-500", text: "text-white" },
-  transport: { icon: ArrowRightLeft, bg: "bg-blue-500", text: "text-white" },
-  activity: { icon: Flag, bg: "bg-primary", text: "text-primary-foreground" },
+const VISUAL_CONFIG: Record<StepVisualType, { icon: React.ElementType; bg: string; text: string }> = {
+  airport: { icon: Plane, bg: "bg-blue-500", text: "text-white" },
+  hotel: { icon: Hotel, bg: "bg-violet-500", text: "text-white" },
   food: { icon: Utensils, bg: "bg-orange-500", text: "text-white" },
   sightseeing: { icon: Camera, bg: "bg-emerald-500", text: "text-white" },
-  border_crossing: { icon: MapPin, bg: "bg-amber-500", text: "text-white" },
+  border: { icon: MapPin, bg: "bg-amber-500", text: "text-white" },
+  transport: { icon: ArrowRightLeft, bg: "bg-sky-600", text: "text-white" },
+  activity: { icon: Flag, bg: "bg-primary", text: "text-primary-foreground" },
   other: { icon: CircleDot, bg: "bg-muted", text: "text-muted-foreground" },
 };
-const DEFAULT_CONFIG = { icon: MapPin, bg: "bg-card", text: "text-primary" };
 
 function formatStepDate(dateStr: string) {
   return new Date(dateStr).toLocaleDateString("en-US", {
@@ -29,7 +28,15 @@ function formatStepDate(dateStr: string) {
   });
 }
 
-export function TripTimeline({ steps, onUpdated }: { steps: TripStep[]; onUpdated: () => void }) {
+export function TripTimeline({
+  steps,
+  onUpdated,
+  visualTypes = {},
+}: {
+  steps: TripStep[];
+  onUpdated: () => void;
+  visualTypes?: Record<string, StepVisualType>;
+}) {
   const [photosByStep, setPhotosByStep] = useState<Record<string, StepPhoto[]>>({});
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
@@ -62,8 +69,12 @@ export function TripTimeline({ steps, onUpdated }: { steps: TripStep[]; onUpdate
     if (!confirm("Delete this activity? This cannot be undone.")) return;
     setDeletingId(stepId);
     const { error } = await supabase.from("trip_steps").delete().eq("id", stepId);
-    if (error) { toast.error("Failed to delete activity"); }
-    else { toast.success("Activity deleted"); onUpdated(); }
+    if (error) {
+      toast.error("Failed to delete activity");
+    } else {
+      toast.success("Activity deleted");
+      onUpdated();
+    }
     setDeletingId(null);
   };
 
@@ -73,15 +84,10 @@ export function TripTimeline({ steps, onUpdated }: { steps: TripStep[]; onUpdate
       <div className="flex flex-col gap-0">
         {steps.map((step, index) => {
           const photos = photosByStep[step.id] || [];
-          // Determine effective type from context
-          let effectiveType = step.event_type;
-          if (step.event_type === "arrival" || step.event_type === "departure") {
-            const text = `${step.location_name || ""} ${step.description || ""} ${step.notes || ""}`;
-            const isHotel = /hotel|resort|lodge|hostel|airbnb|check.?in|check.?out|inn\b|suites|marriott|hilton|hyatt|radisson|pullman|fairmont|sheraton|collection|vignette|sanctuary|palace|palacio/i.test(text);
-            effectiveType = isHotel ? "accommodation" : "transport";
-          }
-          const config = EVENT_TYPE_CONFIG[effectiveType] || DEFAULT_CONFIG;
+          const visualType = visualTypes[step.id] || inferStepVisualType(step);
+          const config = VISUAL_CONFIG[visualType] || VISUAL_CONFIG.other;
           const StepIcon = config.icon;
+
           return (
             <div key={step.id} className="relative flex gap-5 pb-8 last:pb-0">
               <div className={`relative z-10 flex h-10 w-10 shrink-0 items-center justify-center rounded-full shadow-card ring-4 ring-background ${config.bg}`}>
@@ -103,18 +109,15 @@ export function TripTimeline({ steps, onUpdated }: { steps: TripStep[]; onUpdate
                     <button
                       onClick={() => handleDelete(step.id)}
                       disabled={deletingId === step.id}
-                      className="rounded-lg p-1 text-muted-foreground hover:text-destructive transition-colors disabled:opacity-50"
+                      className="rounded-lg p-1 text-muted-foreground transition-colors hover:text-destructive disabled:opacity-50"
                     >
                       <Trash2 className="h-3.5 w-3.5" />
                     </button>
                   </div>
                 </div>
-                {step.description && (
-                  <p className="text-sm leading-relaxed text-foreground">{step.description}</p>
-                )}
-                {step.notes && (
-                  <p className="text-sm leading-relaxed text-muted-foreground">{step.notes}</p>
-                )}
+
+                {step.description && <p className="text-sm leading-relaxed text-foreground">{step.description}</p>}
+                {step.notes && <p className="text-sm leading-relaxed text-muted-foreground">{step.notes}</p>}
 
                 {photos.length > 0 && (
                   <div className="mt-2 flex gap-2 overflow-x-auto">
