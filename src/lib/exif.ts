@@ -228,8 +228,29 @@ export async function extractExifFromFile(file: File): Promise<PhotoExifData> {
   let { latitude, longitude } = extractCoordinatesFromExif(exif);
   let takenAt = extractTakenAtFromExif(exif, file.lastModified);
 
-  // For videos: try MP4/MOV-specific metadata extraction if exifr didn't find anything
+  // For videos: use server-side metadata extraction for robust MP4/MOV parsing
   if (isVideo) {
+    const serverMeta = await extractVideoMetadataServerSide(file);
+    if (serverMeta) {
+      if ((latitude === null || longitude === null) && serverMeta.latitude !== null && serverMeta.longitude !== null) {
+        latitude = serverMeta.latitude;
+        longitude = serverMeta.longitude;
+      }
+      if (!takenAt && serverMeta.creationDate) {
+        const serverDate = new Date(serverMeta.creationDate);
+        if (!isNaN(serverDate.getTime())) {
+          takenAt = serverDate;
+        }
+      }
+      if (!cameraMakeFromExif && serverMeta.cameraMake) {
+        cameraMakeFromExif = serverMeta.cameraMake;
+      }
+      if (!cameraModelFromExif && serverMeta.cameraModel) {
+        cameraModelFromExif = serverMeta.cameraModel;
+      }
+    }
+
+    // Client-side fallback if server-side didn't find GPS
     if (latitude === null || longitude === null) {
       const videoGPS = await parseVideoGPS(file);
       if (videoGPS) {
@@ -238,9 +259,9 @@ export async function extractExifFromFile(file: File): Promise<PhotoExifData> {
       }
     }
     
-    // If exifr didn't find a date, try MP4 header
+    // Client-side fallback for date
     const exifDate = normalizeDate(exif?.DateTimeOriginal) ?? normalizeDate(exif?.CreateDate);
-    if (!exifDate) {
+    if (!exifDate && !takenAt) {
       const videoDate = await parseVideoCreationDate(file);
       if (videoDate) {
         takenAt = videoDate;
