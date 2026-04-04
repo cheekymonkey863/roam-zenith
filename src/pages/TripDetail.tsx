@@ -128,6 +128,7 @@ const TripDetail = () => {
           tripId={trip.id}
           onImportComplete={fetchData}
           onCancel={() => setShowPhotoImport(false)}
+          existingSteps={steps.map(s => ({ id: s.id, latitude: s.latitude, longitude: s.longitude, location_name: s.location_name }))}
         />
       )}
 
