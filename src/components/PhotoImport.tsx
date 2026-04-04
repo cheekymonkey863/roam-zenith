@@ -221,7 +221,8 @@ async function inferLocationsWithVision(
 export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps = [] }: PhotoImportProps) {
   const { user } = useAuth();
   const [dragOver, setDragOver] = useState(false);
-  const [processing, setProcessing] = useState(false);
+   const [processing, setProcessing] = useState(false);
+   const [processingStatus, setProcessingStatus] = useState({ phase: "", current: 0, total: 0 });
    const [importing, setImporting] = useState(false);
    const [importProgress, setImportProgress] = useState({ current: 0, total: 0 });
   const [suggestions, setSuggestions] = useState<SuggestedStep[]>([]);
