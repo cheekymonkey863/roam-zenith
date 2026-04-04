@@ -168,6 +168,23 @@ function findStepForUngroupedMedia(media: PhotoExifData, steps: SuggestedStep[])
   return null;
 }
 
+function prepareMediaForInference(photos: PhotoExifData[]) {
+  const sorted = sortMediaByCapturedTime(photos);
+  let remainingImages = 4;
+
+  return sorted.map((photo) => {
+    const includeImage = remainingImages > 0 && Boolean(photo.analysisImage);
+    if (includeImage) remainingImages -= 1;
+
+    return {
+      captionId: photo.captionId,
+      fileName: photo.file.name,
+      takenAt: photo.takenAt?.toISOString() ?? null,
+      analysisImage: includeImage ? photo.analysisImage ?? null : null,
+    };
+  });
+}
+
 async function inferLocationsWithVision(
   steps: SuggestedStep[],
   noGpsGroups: Array<{ key: string; photos: PhotoExifData[] }> = []
@@ -176,32 +193,15 @@ async function inferLocationsWithVision(
     .map((group) => ({
       key: group.key,
       exifLocation: null,
-      photos: sortMediaByCapturedTime(group.photos)
-        .filter((photo) => Boolean(photo.analysisImage))
-        .slice(0, 4)
-        .map((photo) => ({
-          captionId: photo.captionId,
-          fileName: photo.file.name,
-          takenAt: photo.takenAt?.toISOString() ?? null,
-          analysisImage: photo.analysisImage ?? null,
-        })),
+      photos: prepareMediaForInference(group.photos),
     }))
-    .filter((group) => group.photos.length > 0);
+    .filter((group) => group.photos.some((photo) => Boolean(photo.analysisImage)));
 
   const gpsGroups = steps
-    .filter((step) => step.photos.some((photo) => Boolean(photo.analysisImage)))
     .map((step) => ({
       key: step.key,
       exifLocation: { latitude: step.latitude, longitude: step.longitude, name: step.locationName, country: step.country },
-      photos: sortMediaByCapturedTime(step.photos)
-        .filter((photo) => Boolean(photo.analysisImage))
-        .slice(0, 4)
-        .map((photo) => ({
-          captionId: photo.captionId,
-          fileName: photo.file.name,
-          takenAt: photo.takenAt?.toISOString() ?? null,
-          analysisImage: photo.analysisImage ?? null,
-        })),
+      photos: prepareMediaForInference(step.photos),
     }))
     .filter((group) => group.photos.length > 0);
 
@@ -255,7 +255,7 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
       return;
     }
 
-    toast.info(`Processing ${mediaFiles.length} file(s) with metadata + visual recognition...`);
+    toast.info(`Processing ${mediaFiles.length} file(s) with metadata + visual recognition...");
 
     try {
       const exifResults = await extractExifFromFiles(mediaFiles);
@@ -318,19 +318,24 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
 
       const steps: SuggestedStep[] = baseSteps.map((step): SuggestedStep => {
         const inferred = inferredLocations.get(step.key);
-        const locationName = inferred?.locationName || step.locationName;
-        const country = inferred?.country || step.country;
+        const locationName = isKnownLocationName(step.locationName)
+          ? step.locationName
+          : inferred?.locationName || step.locationName;
+        const country = step.country && step.country !== "Unknown"
+          ? step.country
+          : inferred?.country || step.country;
 
         return {
           ...step,
           locationName,
           country,
           photos: applyMediaCaptions(step.photos, inferred?.photoCaptions, locationName),
-          confidence: inferred?.confidence ?? step.confidence,
+          confidence: inferred?.confidence ? pickHigherConfidence(step.confidence, inferred.confidence) : step.confidence,
           summary: inferred?.summary || buildLocationSummary(locationName, country),
           description: inferred?.eventDescription || buildEventDescription(locationName, country),
         };
       });
+
 
       const inferredNoGpsSteps = (
         await Promise.all(
