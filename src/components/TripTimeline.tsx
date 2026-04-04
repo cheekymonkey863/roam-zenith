@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { inferStepVisualType, type StepVisualType } from "@/lib/stepVisuals";
 import { getEventType } from "@/lib/eventTypes";
 import {
-  Plane, TrainFront, Bus, Ship, Car, Footprints, Bike,
+  Plane, TrainFront, Bus, Ship, Car, Footprints, Bike, Sailboat, Anchor,
   Hotel, Building, Home, Castle, Trees, Mountain, Tent, Palmtree, Snowflake,
   Map as MapIcon, Camera, UtensilsCrossed, Users, Music, Theater, Sparkles, Heart, Trophy,
   Flag, CircleDot, ArrowRightLeft,
@@ -21,6 +21,8 @@ const VISUAL_CONFIG: Record<StepVisualType, { icon: React.ElementType; bg: strin
   train: { icon: TrainFront, bg: "bg-indigo-500", text: "text-white" },
   bus: { icon: Bus, bg: "bg-cyan-600", text: "text-white" },
   ferry: { icon: Ship, bg: "bg-teal-500", text: "text-white" },
+  yacht_boat: { icon: Sailboat, bg: "bg-teal-600", text: "text-white" },
+  cruise: { icon: Anchor, bg: "bg-teal-700", text: "text-white" },
   car: { icon: Car, bg: "bg-slate-500", text: "text-white" },
   on_foot: { icon: Footprints, bg: "bg-lime-600", text: "text-white" },
   cycling: { icon: Bike, bg: "bg-green-600", text: "text-white" },

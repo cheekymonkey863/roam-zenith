@@ -3,6 +3,8 @@ export type StepVisualType =
   | "train"
   | "bus"
   | "ferry"
+  | "yacht_boat"
+  | "cruise"
   | "car"
   | "on_foot"
   | "cycling"
@@ -45,7 +47,9 @@ const FOOD_PATTERN = /\b(restaurant|cafe|bar|bistro|breakfast|lunch|dinner|brunc
 const BORDER_PATTERN = /\b(border|immigration|passport|customs|checkpoint|crossing)\b/i;
 const TRAIN_PATTERN = /\b(train|rail|railway|metro|subway|tram|light.?rail)\b/i;
 const BUS_PATTERN = /\b(bus|coach|shuttle)\b/i;
-const FERRY_PATTERN = /\b(ferry|boat|cruise|port|harbor|harbour|pier|dock|sailing|catamaran)\b/i;
+const FERRY_PATTERN = /\b(ferry|port|harbor|harbour|pier|dock)\b/i;
+const YACHT_PATTERN = /\b(yacht|sailboat|sailing|catamaran|boat(?!ing)|charter)\b/i;
+const CRUISE_PATTERN = /\b(cruise|cruising|cruise\s*ship|ocean\s*liner)\b/i;
 const CAR_PATTERN = /\b(car|drive|driving|rental|uber|taxi|cab|lyft|transfer|road.?trip)\b/i;
 const SIGHTSEEING_PATTERN = /\b(museum|beach|mountain|park|falls|waterfall|trail|viewpoint|tower|temple|church|cathedral|plaza|square|landmark|safari|penguin|monument|gallery|tour|visit)\b/i;
 
@@ -81,6 +85,8 @@ export function inferStepVisualType(step: StepVisualInput, googlePlaceTypes: str
     train: "train",
     bus: "bus",
     ferry: "ferry",
+    yacht_boat: "yacht_boat",
+    cruise: "cruise",
     car: "car",
     on_foot: "on_foot",
     cycling: "cycling",
@@ -117,6 +123,8 @@ export function inferStepVisualType(step: StepVisualInput, googlePlaceTypes: str
   const isTrain = TRAIN_PATTERN.test(text) || googleType === "train";
   const isBus = BUS_PATTERN.test(text) || googleType === "bus";
   const isFerry = FERRY_PATTERN.test(text) || googleType === "ferry";
+  const isYacht = YACHT_PATTERN.test(text);
+  const isCruise = CRUISE_PATTERN.test(text);
   const isCar = CAR_PATTERN.test(text) || googleType === "car";
   const isSightseeing = SIGHTSEEING_PATTERN.test(text) || googleType === "sightseeing";
 
@@ -129,6 +137,8 @@ export function inferStepVisualType(step: StepVisualInput, googlePlaceTypes: str
       return "border";
     case "transport":
       if (isFlight) return "flight";
+      if (isCruise) return "cruise";
+      if (isYacht) return "yacht_boat";
       if (isTrain) return "train";
       if (isFerry) return "ferry";
       if (isBus) return "bus";
@@ -138,6 +148,8 @@ export function inferStepVisualType(step: StepVisualInput, googlePlaceTypes: str
     case "arrival":
     case "departure":
       if (isFlight) return "flight";
+      if (isCruise) return "cruise";
+      if (isYacht) return "yacht_boat";
       if (isTrain) return "train";
       if (isFerry) return "ferry";
       if (isBus) return "bus";
@@ -155,6 +167,8 @@ export function inferStepVisualType(step: StepVisualInput, googlePlaceTypes: str
       if (isHotel) return "hotel";
       if (isFood) return "dining";
       if (isBorder) return "border";
+      if (isCruise) return "cruise";
+      if (isYacht) return "yacht_boat";
       if (isTrain) return "train";
       if (isFerry) return "ferry";
       if (isBus) return "bus";

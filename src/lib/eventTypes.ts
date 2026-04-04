@@ -1,5 +1,5 @@
 import {
-  Plane, TrainFront, Bus, Ship, Car, Footprints, Bike,
+  Plane, TrainFront, Bus, Ship, Car, Footprints, Bike, Sailboat, Anchor,
   Hotel, Building, Home, Castle, Trees, Tent, Mountain, Palmtree, Snowflake,
   Map, Camera, UtensilsCrossed, Users, Music, Theater, Sparkles, Heart, Flag, Trophy,
   type LucideIcon,
@@ -20,6 +20,8 @@ export const EVENT_TYPE_GROUPS = [
       { value: "train", label: "Train", icon: TrainFront },
       { value: "bus", label: "Bus", icon: Bus },
       { value: "ferry", label: "Ferry", icon: Ship },
+      { value: "yacht_boat", label: "Yacht / Boat", icon: Sailboat },
+      { value: "cruise", label: "Cruise", icon: Anchor },
       { value: "car", label: "Car", icon: Car },
       { value: "on_foot", label: "On Foot", icon: Footprints },
       { value: "cycling", label: "Cycling", icon: Bike },

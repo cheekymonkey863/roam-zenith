@@ -5,7 +5,7 @@ const corsHeaders = {
 };
 
 const VALID_EVENT_TYPES = [
-  "flight", "train", "bus", "ferry", "car", "on_foot", "cycling",
+  "flight", "train", "bus", "ferry", "yacht_boat", "cruise", "car", "on_foot", "cycling",
   "hotel", "apartment_flat", "private_home", "villa", "safari", "glamping", "camping", "resort", "ski_lodge",
   "tour", "sightseeing", "dining", "meeting", "concert", "theatre", "live_show", "wellness", "sport",
 ];
@@ -73,7 +73,9 @@ For each item determine:
     "flight" - air travel
     "train" - rail travel
     "bus" - bus or coach travel
-    "ferry" - boat, ferry, or cruise travel
+    "ferry" - ferry travel
+    "yacht_boat" - yacht, sailboat, private boat, catamaran charter
+    "cruise" - cruise ship, ocean liner, river cruise
     "car" - car, taxi, uber, transfer, or driving
     "on_foot" - walking tours, hikes, treks
     "cycling" - bicycle travel
