@@ -53,6 +53,8 @@ function extractCityName(results: any[] | null) {
   return null;
 }
 
+const GEOCODE_TIMEOUT_MS = 6000;
+
 async function resolveCityName(step: TripStep): Promise<string | null> {
   if (!isValidCoordinate(step.latitude, step.longitude)) {
     return getLocationNameFallback(step);
@@ -70,9 +72,15 @@ async function resolveCityName(step: TripStep): Promise<string | null> {
 
       const geocoder = new g.maps.Geocoder();
       const location = new g.maps.LatLng(step.latitude, step.longitude);
-      const results = await new Promise<any[] | null>((resolve) => {
+      const results = await new Promise<any[] | null>((resolve, reject) => {
+        const timer = window.setTimeout(() => resolve(null), GEOCODE_TIMEOUT_MS);
         geocoder.geocode({ location }, (matches: any[], status: string) => {
-          resolve(status === "OK" && matches?.length > 0 ? matches : null);
+          window.clearTimeout(timer);
+          if (status === "OK" && matches?.length > 0) {
+            resolve(matches);
+          } else {
+            resolve(null);
+          }
         });
       });
 

@@ -1007,10 +1007,10 @@ export interface ReverseGeocodeResult {
   placeTypes: string[];
 }
 
-const GOOGLE_JS_CALLBACK_TIMEOUT_MS = 3000;
+const GOOGLE_JS_CALLBACK_TIMEOUT_MS = 5000;
 const GEOCODE_FETCH_TIMEOUT_MS = 5000;
 const EXACT_PLACE_DISTANCE_METERS = 5;
-const EXACT_PLACE_NEARBY_RADIUS_METERS = 25;
+const EXACT_PLACE_NEARBY_RADIUS_METERS = 50;
 
 function getDistanceMeters(lat1: number, lng1: number, lat2: number, lng2: number) {
   const dLat = (lat2 - lat1) * 111320;
@@ -1284,6 +1284,51 @@ async function reverseGeocodeWithJsApi(lat: number, lng: number): Promise<Revers
       null,
       `[reverse-geo] Geocoder at ${lat},${lng}`,
     );
+
+    // If geocoder timed out, retry once with a longer timeout
+    if (geoResult === null) {
+      const retryResult = await withCallbackTimeout<any[] | null>(
+        (finish) => {
+          geocoder.geocode({ location }, (results: any[], status: string) => {
+            finish(status === "OK" && results?.length > 0 ? results : null);
+          });
+        },
+        null,
+        `[reverse-geo] Geocoder retry at ${lat},${lng}`,
+        8000,
+      );
+
+      if (retryResult) {
+        let country = "Unknown";
+        let locality = "Unknown";
+        for (const result of retryResult) {
+          const comps: any[] = result.address_components || [];
+          if (country === "Unknown") {
+            const countryComp = comps.find((c: any) => c.types.includes("country"));
+            if (countryComp) country = countryComp.long_name;
+          }
+          if (locality === "Unknown") {
+            const loc = comps.find((c: any) =>
+              c.types.includes("locality") || c.types.includes("sublocality") || c.types.includes("postal_town"),
+            );
+            if (loc) locality = loc.long_name;
+          }
+          if (country !== "Unknown" && locality !== "Unknown") break;
+        }
+
+        const exactRetryMatch = pickExactGoogleGeocodeMatch(retryResult, lat, lng, locality, country);
+        if (exactRetryMatch) return exactRetryMatch;
+
+        if (locality !== "Unknown") {
+          return { name: locality, country, locality, placeTypes: ["locality"] };
+        }
+
+        if (retryResult[0]?.formatted_address) {
+          const name = retryResult[0].formatted_address.split(",")[0].trim();
+          return { name, country, locality, placeTypes: getGoogleResultTypes(retryResult[0]) };
+        }
+      }
+    }
 
     let country = "Unknown";
     let locality = "Unknown";
