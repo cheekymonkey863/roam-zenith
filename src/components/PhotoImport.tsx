@@ -246,7 +246,9 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
     toast.info(`Processing ${mediaFiles.length} file(s) with metadata + visual recognition...`);
 
     try {
-      const result = await processImportedMediaFiles(mediaFiles);
+      const result = await processImportedMediaFiles(mediaFiles, (phase, current, total) => {
+        setProcessingStatus({ phase, current, total });
+      });
       const nextSuggestions: SuggestedStep[] = result.steps.map((step) => ({ ...step }));
       setNoGpsPhotos(result.noGpsPhotos);
       setSuggestions(nextSuggestions);
