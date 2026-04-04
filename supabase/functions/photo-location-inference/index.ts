@@ -25,6 +25,8 @@ interface LocationGroupInput {
 interface PhotoCaptionResult {
   captionId: string;
   caption: string;
+  sceneDescription?: string;
+  richTags?: string[];
 }
 
 interface InferenceResult {
@@ -54,6 +56,19 @@ function normalizeConfidence(value: unknown): Confidence {
   return value === "high" || value === "medium" || value === "low" ? value : "low";
 }
 
+function normalizeRichTags(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+
+  return Array.from(
+    new Set(
+      value
+        .filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+        .map((item) => item.trim().toLowerCase())
+        .slice(0, 12)
+    )
+  );
+}
+
 function normalizePhotoCaptions(value: unknown): PhotoCaptionResult[] {
   if (!Array.isArray(value)) return [];
 
@@ -61,6 +76,8 @@ function normalizePhotoCaptions(value: unknown): PhotoCaptionResult[] {
     .map((item: any) => ({
       captionId: normalizeString(item?.captionId, ""),
       caption: normalizeString(item?.caption, ""),
+      sceneDescription: normalizeString(item?.sceneDescription, ""),
+      richTags: normalizeRichTags(item?.richTags),
     }))
     .filter((item: PhotoCaptionResult) => item.captionId.length > 0 && item.caption.length > 0);
 }
@@ -181,8 +198,12 @@ Deno.serve(async (req) => {
 - The "locationName" MUST be a specific landmark, beach, park, or point of interest — NOT a generic city name. Example: "Boulders Beach" not "Simon's Town", "Table Mountain" not "Cape Town".
 - The "summary" MUST describe what is consistently visible across the full group: scenery, landmarks, wildlife, or activities. Do NOT mention people. Do NOT reference GPS metadata.
 - The "eventDescription" MUST describe the travel stop as a whole based on the location and combined media, not any one image. Keep it to one concise sentence.
-- The "photoCaptions" array MUST include one caption for every media item using the exact "captionId" provided. Each caption must describe only that specific image or video frame.
-Keep summaries under 18 words. Keep photo captions under 14 words.`,
+- The "photoCaptions" array MUST include one entry for every media item using the exact "captionId" provided.
+- Each photoCaptions entry must contain:
+  - "caption": a concise label for that frame
+  - "sceneDescription": one richer sentence describing what is happening in the frame
+  - "richTags": 3-8 lowercase descriptive tags about place, activity, scenery, wildlife, weather, transport, architecture, or event type
+Keep summaries under 18 words. Keep captions under 14 words. Keep sceneDescription to one sentence.`,
       },
     ];
 
@@ -221,7 +242,7 @@ Keep summaries under 18 words. Keep photo captions under 14 words.`,
         messages: [
           {
             role: "system",
-            content: "You analyze travel photos and representative video frames to identify locations, caption each media item, and describe the overall stop. For locationName, always use specific landmark/POI names (e.g. 'Boulders Beach', 'Table Mountain') not generic city names. For summary, describe what is consistently visible across the group. For eventDescription, describe the stop as a whole based on the location and combined media, not any single image. For photoCaptions, return one concise caption for every captionId. Never mention GPS metadata or people.",
+            content: "You analyze travel photos and representative video frames to identify locations, caption each media item, and describe the overall stop. For locationName, always use specific landmark/POI names (e.g. 'Boulders Beach', 'Table Mountain') not generic city names. For summary, describe what is consistently visible across the group. For eventDescription, describe the stop as a whole based on the location and combined media, not any single image. For photoCaptions, return one concise caption, one richer sceneDescription sentence, and 3-8 lowercase richTags for every captionId. Never mention GPS metadata or people.",
           },
           { role: "user", content },
         ],
@@ -254,6 +275,11 @@ Keep summaries under 18 words. Keep photo captions under 14 words.`,
                             properties: {
                               captionId: { type: "string" },
                               caption: { type: "string" },
+                              sceneDescription: { type: "string" },
+                              richTags: {
+                                type: "array",
+                                items: { type: "string" },
+                              },
                             },
                             required: ["captionId", "caption"],
                             additionalProperties: false,

@@ -320,6 +320,38 @@ function extractMetadataFromBuffer(buffer: ArrayBuffer): VideoMetadata {
   return metadata;
 }
 
+function createEmptyMetadata(): VideoMetadata {
+  return {
+    latitude: null,
+    longitude: null,
+    altitude: null,
+    creationDate: null,
+    duration: null,
+    cameraMake: null,
+    cameraModel: null,
+  };
+}
+
+function mergeMetadata(target: VideoMetadata, source: VideoMetadata): VideoMetadata {
+  if (target.latitude === null && source.latitude !== null) target.latitude = source.latitude;
+  if (target.longitude === null && source.longitude !== null) target.longitude = source.longitude;
+  if (target.altitude === null && source.altitude !== null) target.altitude = source.altitude;
+  if (target.creationDate === null && source.creationDate !== null) target.creationDate = source.creationDate;
+  if (target.duration === null && source.duration !== null) target.duration = source.duration;
+  if (target.cameraMake === null && source.cameraMake !== null) target.cameraMake = source.cameraMake;
+  if (target.cameraModel === null && source.cameraModel !== null) target.cameraModel = source.cameraModel;
+  return target;
+}
+
+function decodeBase64Chunk(raw: string): ArrayBuffer {
+  const binaryString = atob(raw.includes(",") ? raw.split(",")[1] : raw);
+  const bytes = new Uint8Array(binaryString.length);
+  for (let i = 0; i < binaryString.length; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  return bytes.buffer;
+}
+
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
@@ -339,33 +371,36 @@ Deno.serve(async (req) => {
     const contentType = req.headers.get("content-type") || "";
 
     // Accept either JSON with base64 data or raw binary
-    let buffer: ArrayBuffer;
+    let buffers: ArrayBuffer[];
 
     if (contentType.includes("application/json")) {
       const body = await req.json();
 
-      if (typeof body?.videoBase64 === "string") {
-        // Base64-encoded first chunk of video (up to ~2MB recommended)
-        const raw = body.videoBase64;
-        const binaryString = atob(raw.includes(",") ? raw.split(",")[1] : raw);
-        const bytes = new Uint8Array(binaryString.length);
-        for (let i = 0; i < binaryString.length; i++) {
-          bytes[i] = binaryString.charCodeAt(i);
-        }
-        buffer = bytes.buffer;
+      if (Array.isArray(body?.videoPartsBase64) && body.videoPartsBase64.length > 0) {
+        buffers = body.videoPartsBase64
+          .filter((part: unknown): part is string => typeof part === "string" && part.length > 0)
+          .slice(0, 4)
+          .map(decodeBase64Chunk);
+      } else if (typeof body?.videoBase64 === "string") {
+        buffers = [decodeBase64Chunk(body.videoBase64)];
       } else {
-        return jsonResponse({ error: "Missing videoBase64 field" }, 400);
+        return jsonResponse({ error: "Missing videoBase64 or videoPartsBase64 field" }, 400);
       }
     } else {
       // Raw binary body
-      buffer = await req.arrayBuffer();
+      buffers = [await req.arrayBuffer()];
     }
 
-    if (buffer.byteLength < 8) {
+    const validBuffers = buffers.filter((buffer) => buffer.byteLength >= 8);
+    if (validBuffers.length === 0) {
       return jsonResponse({ error: "File too small to be a valid video" }, 400);
     }
 
-    const metadata = extractMetadataFromBuffer(buffer);
+    const metadata = validBuffers.reduce(
+      (merged, buffer) => mergeMetadata(merged, extractMetadataFromBuffer(buffer)),
+      createEmptyMetadata(),
+    );
+
     return jsonResponse(metadata);
   } catch (error) {
     console.error("extract-video-metadata error:", error);

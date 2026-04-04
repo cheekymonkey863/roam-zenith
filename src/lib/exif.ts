@@ -1,12 +1,15 @@
 import exifr from "exifr";
 import heic2any from "heic2any";
 import { supabase } from "@/integrations/supabase/client";
+import { createVideoPreviews, type VideoPreviewSource } from "@/lib/videoFrames";
 
 export interface PhotoExifData {
   file: File;
   uploadFile?: File;
   captionId: string;
   caption?: string;
+  sceneDescription?: string;
+  aiTags?: string[];
   latitude: number | null;
   longitude: number | null;
   takenAt: Date | null;
@@ -14,6 +17,9 @@ export interface PhotoExifData {
   analysisImage?: string;
   cameraMake?: string;
   cameraModel?: string;
+  duration?: number | null;
+  metadataSources?: string[];
+  previewSource?: VideoPreviewSource;
   exifRaw?: Record<string, unknown>;
 }
 
@@ -212,26 +218,50 @@ async function parseVideoGPS(file: File): Promise<{ latitude: number; longitude:
   return null;
 }
 
+function arrayBufferToBase64(buffer: ArrayBuffer) {
+  const bytes = new Uint8Array(buffer);
+  let binary = "";
+  const chunkSize = 0x8000;
+
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const chunk = bytes.subarray(i, i + chunkSize);
+    binary += String.fromCharCode(...chunk);
+  }
+
+  return btoa(binary);
+}
+
 /**
  * Send the first ~2MB of a video file to the server-side metadata extraction
  * edge function for robust MP4/MOV atom tree parsing.
  */
 async function extractVideoMetadataServerSide(
   file: File
-): Promise<{ latitude: number | null; longitude: number | null; creationDate: string | null; cameraMake: string | null; cameraModel: string | null } | null> {
+): Promise<{
+  latitude: number | null;
+  longitude: number | null;
+  creationDate: string | null;
+  duration: number | null;
+  cameraMake: string | null;
+  cameraModel: string | null;
+} | null> {
   try {
-    const CHUNK_SIZE = 2 * 1024 * 1024; // 2MB — enough for all metadata atoms
-    const chunk = file.slice(0, Math.min(file.size, CHUNK_SIZE));
-    const arrayBuffer = await chunk.arrayBuffer();
-    const bytes = new Uint8Array(arrayBuffer);
-    let binary = "";
-    for (let i = 0; i < bytes.length; i++) {
-      binary += String.fromCharCode(bytes[i]);
+    const CHUNK_SIZE = 2 * 1024 * 1024;
+    const headBuffer = await file.slice(0, Math.min(file.size, CHUNK_SIZE)).arrayBuffer();
+    const buffers = [headBuffer];
+
+    if (file.size > CHUNK_SIZE) {
+      const tailStart = Math.max(file.size - CHUNK_SIZE, 0);
+      const tailBuffer = await file.slice(tailStart, file.size).arrayBuffer();
+      if (tailBuffer.byteLength > 0) {
+        buffers.push(tailBuffer);
+      }
     }
-    const base64 = btoa(binary);
+
+    const videoPartsBase64 = buffers.map(arrayBufferToBase64);
 
     const { data, error } = await supabase.functions.invoke("extract-video-metadata", {
-      body: { videoBase64: base64 },
+      body: { videoPartsBase64 },
     });
 
     if (error) {
@@ -239,7 +269,14 @@ async function extractVideoMetadataServerSide(
       return null;
     }
 
-    return data as { latitude: number | null; longitude: number | null; creationDate: string | null; cameraMake: string | null; cameraModel: string | null };
+    return data as {
+      latitude: number | null;
+      longitude: number | null;
+      creationDate: string | null;
+      duration: number | null;
+      cameraMake: string | null;
+      cameraModel: string | null;
+    };
   } catch (e) {
     console.warn("[video-metadata] Server-side extraction error:", e);
     return null;
@@ -249,20 +286,46 @@ async function extractVideoMetadataServerSide(
 export async function extractExifFromFile(file: File): Promise<PhotoExifData> {
   const isVideo = file.type.startsWith("video/");
 
-  const [uploadFile, exif] = await Promise.all([
+  const [uploadFile, exif, videoPreviews] = await Promise.all([
     isVideo ? Promise.resolve(file) : normalizeImageFileForBrowser(file),
     parseMediaExif(file),
+    isVideo ? createVideoPreviews(file) : Promise.resolve(null),
   ]);
 
-  const [thumbnail, analysisImage] = await Promise.all([
-    isVideo ? createVideoThumbnail(file, 120, 0.6) : createImagePreview(uploadFile, 120, 0.6),
-    isVideo ? createVideoThumbnail(file, 768, 0.76) : createImagePreview(uploadFile, 768, 0.76),
-  ]);
+  const [thumbnail, analysisImage] = isVideo && videoPreviews
+    ? [videoPreviews.thumbnail, videoPreviews.analysisImage]
+    : await Promise.all([
+        createImagePreview(uploadFile, 120, 0.6),
+        createImagePreview(uploadFile, 768, 0.76),
+      ]);
 
-  let { latitude, longitude } = extractCoordinatesFromExif(exif);
-  let takenAt = extractTakenAtFromExif(exif, file.lastModified);
+  const metadataSources = new Set<string>();
+  const previewSource = videoPreviews?.previewSource;
+  if (previewSource && previewSource !== "none") {
+    metadataSources.add(`preview_${previewSource}`);
+  }
+
+  const embeddedCoordinates = extractCoordinatesFromExif(exif);
+  let { latitude, longitude } = embeddedCoordinates;
+  if (latitude !== null && longitude !== null) {
+    metadataSources.add("embedded_gps");
+  }
+
+  const embeddedDate = normalizeDate(exif?.DateTimeOriginal) ?? normalizeDate(exif?.CreateDate);
+  let takenAt = embeddedDate ?? normalizeDate(file.lastModified);
+  if (embeddedDate) {
+    metadataSources.add("embedded_capture_time");
+  } else if (takenAt) {
+    metadataSources.add("file_modified_time");
+  }
+
   let cameraMake: string | undefined = typeof exif?.Make === "string" ? exif.Make : undefined;
   let cameraModel: string | undefined = typeof exif?.Model === "string" ? exif.Model : undefined;
+  let duration: number | null = null;
+
+  if (cameraMake || cameraModel) {
+    metadataSources.add("embedded_camera");
+  }
 
   // For videos: use server-side metadata extraction for robust MP4/MOV parsing
   if (isVideo) {
@@ -271,18 +334,32 @@ export async function extractExifFromFile(file: File): Promise<PhotoExifData> {
       if ((latitude === null || longitude === null) && serverMeta.latitude !== null && serverMeta.longitude !== null) {
         latitude = serverMeta.latitude;
         longitude = serverMeta.longitude;
+        metadataSources.add("video_container_gps");
       }
-      if (!takenAt && serverMeta.creationDate) {
+
+      if (!embeddedDate && serverMeta.creationDate) {
         const serverDate = new Date(serverMeta.creationDate);
         if (!isNaN(serverDate.getTime())) {
           takenAt = serverDate;
+          metadataSources.delete("file_modified_time");
+          metadataSources.add("video_container_time");
         }
       }
+
+      if (duration === null && typeof serverMeta.duration === "number" && Number.isFinite(serverMeta.duration)) {
+        duration = serverMeta.duration;
+        metadataSources.add("video_container_duration");
+      }
+
       if (!cameraMake && serverMeta.cameraMake) {
         cameraMake = serverMeta.cameraMake;
       }
       if (!cameraModel && serverMeta.cameraModel) {
         cameraModel = serverMeta.cameraModel;
+      }
+
+      if ((serverMeta.cameraMake || serverMeta.cameraModel) && (!exif?.Make || !exif?.Model)) {
+        metadataSources.add("video_container_camera");
       }
     }
 
@@ -292,15 +369,17 @@ export async function extractExifFromFile(file: File): Promise<PhotoExifData> {
       if (videoGPS) {
         latitude = videoGPS.latitude;
         longitude = videoGPS.longitude;
+        metadataSources.add("video_gps_fallback");
       }
     }
     
     // Client-side fallback for date
-    const exifDate = normalizeDate(exif?.DateTimeOriginal) ?? normalizeDate(exif?.CreateDate);
-    if (!exifDate && !takenAt) {
+    if (!embeddedDate && (!takenAt || metadataSources.has("file_modified_time"))) {
       const videoDate = await parseVideoCreationDate(file);
       if (videoDate) {
         takenAt = videoDate;
+        metadataSources.delete("file_modified_time");
+        metadataSources.add("video_time_fallback");
       }
     }
   }
@@ -316,6 +395,10 @@ export async function extractExifFromFile(file: File): Promise<PhotoExifData> {
     analysisImage,
     cameraMake,
     cameraModel,
+    duration,
+    metadataSources: Array.from(metadataSources),
+    previewSource: previewSource ?? "none",
+    aiTags: [],
     exifRaw: exif ? { ...exif } : undefined,
   };
 }
