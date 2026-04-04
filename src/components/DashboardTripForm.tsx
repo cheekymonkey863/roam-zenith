@@ -511,15 +511,31 @@ import { ImportPreview } from "@/components/ImportPreview";
          )
        )}
  
-       {/* Processing spinner */}
-       {importProcessing && (
-         <div className="flex items-center justify-center gap-3 rounded-xl bg-muted/30 p-6">
-           <Loader2 className="h-5 w-5 animate-spin text-primary" />
-           <p className="text-sm text-muted-foreground">
-             {importMode === "photo" ? "Processing media…" : "Parsing itinerary…"}
-           </p>
-         </div>
-       )}
+        {/* Processing spinner */}
+        {importProcessing && (
+          <div className="flex flex-col items-center gap-3 rounded-xl bg-muted/30 p-6">
+            <div className="flex items-center gap-3">
+              <Loader2 className="h-5 w-5 animate-spin text-primary" />
+              <p className="text-sm font-medium text-foreground">
+                {importMode === "photo"
+                  ? processingStatus.phase
+                    ? `${processingStatus.phase}${processingStatus.total > 0 ? ` (${processingStatus.current}/${processingStatus.total})` : ""}`
+                    : "Processing media…"
+                  : "Parsing itinerary…"}
+              </p>
+            </div>
+            {importMode === "photo" && processingStatus.total > 1 && (
+              <div className="w-full max-w-xs">
+                <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+                  <div
+                    className="h-full rounded-full bg-primary transition-all duration-300 ease-out"
+                    style={{ width: `${(processingStatus.current / processingStatus.total) * 100}%` }}
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+        )}
  
         {/* Pending import preview */}
         {pendingPhotoSteps.length > 0 && (
