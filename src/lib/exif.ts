@@ -667,7 +667,7 @@ export async function extractExifFromFile(file: File): Promise<PhotoExifData> {
         metadataSources.add("video_quicktime_text_time");
       }
 
-      if (latitude === null || longitude === null || !takenAt || duration === null || !cameraMake || !cameraModel) {
+      if (latitude === null || longitude === null || !takenAt) {
         const serverMeta = await extractVideoMetadataServerSide(file);
         if (serverMeta) {
           applyServerVideoMetadata(serverMeta);
@@ -693,9 +693,9 @@ export async function extractExifFromFile(file: File): Promise<PhotoExifData> {
         }
       }
 
-      if (latitude === null || longitude === null || !takenAt || duration === null || !cameraMake || !cameraModel) {
-      const serverMeta = await extractVideoMetadataServerSide(file);
-      if (serverMeta) {
+      if (latitude === null || longitude === null || !takenAt) {
+        const serverMeta = await extractVideoMetadataServerSide(file);
+        if (serverMeta) {
           applyServerVideoMetadata(serverMeta);
         }
       }
