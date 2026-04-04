@@ -1,4 +1,4 @@
-import { useEffect, useRef, useImperativeHandle, forwardRef, useCallback } from "react";
+import { useEffect, useRef, useImperativeHandle, forwardRef, useCallback, type CSSProperties } from "react";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 import { inferStepVisualType, type StepVisualType } from "@/lib/stepVisuals";
