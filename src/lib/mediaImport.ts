@@ -405,6 +405,7 @@ export async function processImportedMediaFiles(
     matchedStep.photos = applyMediaInsights(
       [...matchedStep.photos, media],
       undefined,
+      undefined,
       matchedStep.locationName,
       matchedStep.eventType,
     );
