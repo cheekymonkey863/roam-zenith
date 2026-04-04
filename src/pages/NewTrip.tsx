@@ -123,7 +123,7 @@ const NewTrip = () => {
                   selected={endDate ? parse(endDate, "yyyy-MM-dd", new Date()) : undefined}
                   onSelect={(d) => setEndDate(d ? format(d, "yyyy-MM-dd") : "")}
                   defaultMonth={startDate ? parse(startDate, "yyyy-MM-dd", new Date()) : undefined}
-                  disabled={(date) => startDate ? date < parse(startDate, "yyyy-MM-dd", new Date()) : false}
+                  disabled={(date) => startDate ? date <= parse(startDate, "yyyy-MM-dd", new Date()) : false}
                   initialFocus
                   className="p-3 pointer-events-auto"
                 />
