@@ -219,18 +219,21 @@ Deno.serve(async (req) => {
     const content: Array<Record<string, unknown>> = [
       {
         type: "text",
-        text: `You analyze travel photos. For each group:
-- If EXIF coordinates are provided, they are the geographic source of truth. Use visuals to refine the human-readable location/activity name and understand the stop overall.
-- If NO EXIF coordinates are provided, use the photo contents to identify the location. Return your best estimate of the city/landmark/country and approximate latitude/longitude.
-- The "locationName" MUST be a specific landmark, beach, park, or point of interest — NOT a generic city name. Example: "Boulders Beach" not "Simon's Town", "Table Mountain" not "Cape Town".
-- The "summary" MUST describe what is consistently visible across the full group: scenery, landmarks, wildlife, or activities. Do NOT mention people. Do NOT reference GPS metadata.
-- The "eventDescription" MUST describe the travel stop as a whole based on the location and combined media, not any one image. Keep it to one concise sentence.
-- The "photoCaptions" array MUST include one entry for every media item using the exact "captionId" provided.
-- Each photoCaptions entry must contain:
-  - "caption": a concise label for that frame
-  - "sceneDescription": one richer sentence describing what is happening in the frame
-  - "richTags": 3-8 lowercase descriptive tags about place, activity, scenery, wildlife, weather, transport, architecture, or event type
-Keep summaries under 18 words. Keep captions under 14 words. Keep sceneDescription to one sentence.`,
+        text: `You analyze travel photos and video frames. Your job is to describe ONLY what is literally visible in each image or frame. Do NOT speculate, infer narratives, or make up activities that are not clearly shown.
+
+RULES:
+- If EXIF coordinates are provided, they are the geographic source of truth. Use visuals ONLY to refine the venue/landmark name.
+- If NO EXIF coordinates, identify the location from photo contents. Return city/landmark/country and approximate lat/lng.
+- "locationName" MUST be a specific venue, landmark, beach, park, or POI — NOT a generic city name. Example: "Ibrox Stadium" not "Glasgow".
+- "summary": describe ONLY what is consistently, literally visible across the group (e.g. "Football match at a stadium", "Band performing on stage"). Max 18 words. No speculation.
+- "eventDescription": one factual sentence about the stop based on what the media literally shows. No narratives.
+- "photoCaptions" MUST include one entry per media item using the exact "captionId".
+- For each caption:
+  - "caption": describe ONLY what is literally visible in that specific frame. Max 14 words. Example: "Band performing on stage with crowd" NOT "Navigating through the city at night".
+  - "sceneDescription": one sentence describing what is literally visible. NO speculation about what happened before/after.
+  - "richTags": 3-8 lowercase tags about what is visible (place, activity, scenery, objects, weather, architecture).
+- For video frames: describe the literal frame content. If multiple videos show the same scene (e.g. a band performing), say so consistently — do NOT invent different descriptions for each.
+- NEVER mention GPS metadata or people's identities.`,
       },
     ];
 
