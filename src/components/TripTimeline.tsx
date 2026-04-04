@@ -73,7 +73,13 @@ export function TripTimeline({ steps, onUpdated }: { steps: TripStep[]; onUpdate
       <div className="flex flex-col gap-0">
         {steps.map((step, index) => {
           const photos = photosByStep[step.id] || [];
-          const config = EVENT_TYPE_CONFIG[step.event_type] || DEFAULT_CONFIG;
+          // For arrival/departure, determine icon by location name context
+          let effectiveType = step.event_type;
+          if (step.event_type === "arrival" || step.event_type === "departure") {
+            const isAirport = /airport|airfield|\bair\b|flight|\([a-z]{3}\)|station|terminal/i.test(step.location_name || "");
+            effectiveType = isAirport ? step.event_type : "accommodation";
+          }
+          const config = EVENT_TYPE_CONFIG[effectiveType] || DEFAULT_CONFIG;
           const StepIcon = config.icon;
           return (
             <div key={step.id} className="relative flex gap-5 pb-8 last:pb-0">
