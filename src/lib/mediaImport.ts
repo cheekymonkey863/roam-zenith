@@ -182,7 +182,7 @@ function prepareMediaForInference(photos: PhotoExifData[]) {
       captionId: photo.captionId,
       fileName: photo.file.name,
       takenAt: photo.takenAt?.toISOString() ?? null,
-      analysisImage: includeImage ? photo.analysisImage ?? null : null,
+      analysisImage: includeImage ? photo.analysisImage ?? photo.thumbnail ?? null : null,
     };
   });
 }
@@ -210,7 +210,7 @@ async function inferLocationsWithVision(
       },
       photos: prepareMediaForInference(step.photos),
     }))
-    .filter((group) => group.photos.length > 0);
+    .filter((group) => group.photos.some((photo) => Boolean(photo.analysisImage)));
 
   const allGroups = [...preparedNoGpsGroups, ...gpsGroups];
   if (allGroups.length === 0) return new Map();

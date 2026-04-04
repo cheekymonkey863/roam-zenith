@@ -82,6 +82,33 @@ function normalizePhotoCaptions(value: unknown): PhotoCaptionResult[] {
     .filter((item: PhotoCaptionResult) => item.captionId.length > 0 && item.caption.length > 0);
 }
 
+function parseStructuredOutput(raw: string) {
+  const candidates = [raw.trim()];
+
+  if (raw.includes("```")) {
+    for (const match of raw.matchAll(/```(?:json)?\s*([\s\S]*?)\s*```/gi)) {
+      candidates.push(match[1].trim());
+    }
+  }
+
+  const firstBrace = raw.indexOf("{");
+  const lastBrace = raw.lastIndexOf("}");
+  if (firstBrace >= 0 && lastBrace > firstBrace) {
+    candidates.push(raw.slice(firstBrace, lastBrace + 1).trim());
+  }
+
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    try {
+      return JSON.parse(candidate);
+    } catch {
+      continue;
+    }
+  }
+
+  return null;
+}
+
 function buildFallbackSummary(locationName: string) {
   return locationName !== "Unknown" && locationName !== "Unknown Location"
     ? `Grouped media around ${locationName}.`
@@ -321,7 +348,12 @@ Keep summaries under 18 words. Keep captions under 14 words. Keep sceneDescripti
       return jsonResponse({ results: Array.from(fallbackResults.values()) });
     }
 
-    const parsed = JSON.parse(rawStructuredOutput);
+    const parsed = parseStructuredOutput(rawStructuredOutput);
+    if (!parsed) {
+      console.warn("photo-location-inference: failed to parse structured output", rawStructuredOutput);
+      return jsonResponse({ results: Array.from(fallbackResults.values()) });
+    }
+
     const results = Array.isArray(parsed?.results) ? parsed.results : [];
 
     for (const result of results) {

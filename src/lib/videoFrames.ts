@@ -195,7 +195,10 @@ async function captureFrameWithFfmpeg(file: File): Promise<string> {
       const output = await ffmpeg.readFile(outputName);
       if (typeof output === "string" || !output.byteLength) return "";
 
-      const dataUrl = await blobToDataUrl(new Blob([output.buffer as ArrayBuffer], { type: "image/jpeg" }));
+      const bytes = new Uint8Array(output.byteLength);
+      bytes.set(output);
+
+      const dataUrl = await blobToDataUrl(new Blob([bytes], { type: "image/jpeg" }));
       return resizeImageDataUrl(dataUrl, ANALYSIS_IMAGE_SIZE, ANALYSIS_IMAGE_QUALITY);
     } catch (error) {
       console.warn(`[video-preview] FFmpeg fallback failed for "${file.name}"`, error);
@@ -217,21 +220,24 @@ export async function createVideoPreviews(file: File): Promise<VideoPreviewSet> 
   let analysisImage = "";
   let previewSource: VideoPreviewSource = "none";
 
-  // Try HTML5 video element first (works for MP4, WebM, etc.)
-  analysisImage = await captureFrameWithVideoElement(file);
-  if (analysisImage) {
-    previewSource = "html-video";
-  }
-
-  // For MOV files that failed HTML5 playback, fall back to ffmpeg.wasm extraction.
-  if (!analysisImage && isMov) {
+  if (isMov) {
     console.info(`[video-preview] MOV file "${file.name}" — trying ffmpeg fallback...`);
     analysisImage = await captureFrameWithFfmpeg(file);
     if (analysisImage) {
       previewSource = "ffmpeg";
-    } else {
-      console.info(`[video-preview] MOV file "${file.name}" — no frame available, AI will use filename context.`);
     }
+  }
+
+  // Try HTML5 video element for non-MOV files, or as a fallback if ffmpeg didn't produce a frame.
+  if (!analysisImage) {
+    analysisImage = await captureFrameWithVideoElement(file);
+    if (analysisImage) {
+      previewSource = "html-video";
+    }
+  }
+
+  if (!analysisImage && isMov) {
+    console.info(`[video-preview] MOV file "${file.name}" — no frame available, AI will use filename context.`);
   }
 
   if (!analysisImage) {
