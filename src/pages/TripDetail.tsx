@@ -90,7 +90,8 @@ const TripDetail = () => {
               <span className={`rounded-full px-3 py-1 text-xs font-medium ${getTripStatusStyle(getTripStatus(trip.start_date, trip.end_date))}`}>
                 {getTripStatusLabel(getTripStatus(trip.start_date, trip.end_date))}
               </span>
-              <EditTripDialog trip={trip} onUpdated={fetchData} />
+              {isOwner && <ShareTripDialog tripId={trip.id} tripTitle={trip.title} />}
+              {isOwner && <EditTripDialog trip={trip} onUpdated={fetchData} />}
             </div>
           </div>
 
