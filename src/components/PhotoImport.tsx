@@ -189,7 +189,7 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
           latitude: step.latitude, longitude: step.longitude,
           recorded_at: step.earliestDate?.toISOString() || new Date().toISOString(),
           source: "photo_import", event_type: "activity", is_confirmed: true,
-          notes: step.summary, description: step.description || null,
+          notes: null, description: step.description || step.summary || null,
         }).select().single();
 
         if (stepError || !stepData) { console.error("Step insert error:", stepError); toast.error(`Failed to create step for ${step.locationName}`); continue; }
