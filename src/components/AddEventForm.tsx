@@ -81,7 +81,7 @@ export function AddEventForm({ tripId, onEventAdded }: AddEventFormProps) {
   if (!open) {
     return (
       <button onClick={() => setOpen(true)} className="flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors">
-        <Plus className="h-4 w-4" /> Add Activity
+        <Plus className="h-4 w-4" /> Add Travel Event
       </button>
     );
   }
@@ -91,7 +91,7 @@ export function AddEventForm({ tripId, onEventAdded }: AddEventFormProps) {
   return (
     <div className="rounded-2xl bg-card p-6 shadow-card">
       <div className="mb-5 flex items-center justify-between">
-        <h3 className="font-display text-lg font-semibold text-foreground">Add Activity</h3>
+        <h3 className="font-display text-lg font-semibold text-foreground">Add Travel Event</h3>
         <button onClick={() => { setOpen(false); resetForm(); }} className="rounded-lg p-1.5 text-muted-foreground hover:bg-secondary transition-colors">
           <X className="h-4 w-4" />
         </button>
@@ -100,7 +100,7 @@ export function AddEventForm({ tripId, onEventAdded }: AddEventFormProps) {
       <form onSubmit={handleSubmit} className="flex flex-col gap-5">
         {/* Event type selector */}
         <div className="flex flex-col gap-2">
-          <label className="text-sm font-medium text-foreground">Activity Type</label>
+          <label className="text-sm font-medium text-foreground">Event Type</label>
           <EventTypeSelect value={eventType} onValueChange={setEventType} />
         </div>
 

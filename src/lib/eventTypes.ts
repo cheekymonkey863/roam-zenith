@@ -40,7 +40,7 @@ export const EVENT_TYPE_GROUPS = [
     ],
   },
   {
-    label: "Event",
+    label: "Activity",
     options: [
       { value: "tour", label: "Tour", icon: Map },
       { value: "sightseeing", label: "Sightseeing", icon: Camera },
