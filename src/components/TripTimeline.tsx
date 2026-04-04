@@ -73,11 +73,12 @@ export function TripTimeline({ steps, onUpdated }: { steps: TripStep[]; onUpdate
       <div className="flex flex-col gap-0">
         {steps.map((step, index) => {
           const photos = photosByStep[step.id] || [];
-          // For arrival/departure, determine icon by location name context
+          // Determine effective type from context
           let effectiveType = step.event_type;
           if (step.event_type === "arrival" || step.event_type === "departure") {
-            const isAirport = /airport|airfield|\bair\b|flight|\([a-z]{3}\)|station|terminal/i.test(step.location_name || "");
-            effectiveType = isAirport ? step.event_type : "accommodation";
+            const text = `${step.location_name || ""} ${step.description || ""} ${step.notes || ""}`;
+            const isHotel = /hotel|resort|lodge|hostel|airbnb|check.?in|check.?out|inn\b|suites|marriott|hilton|hyatt|radisson|pullman|fairmont|sheraton|collection|vignette|sanctuary|palace|palacio/i.test(text);
+            effectiveType = isHotel ? "accommodation" : "transport";
           }
           const config = EVENT_TYPE_CONFIG[effectiveType] || DEFAULT_CONFIG;
           const StepIcon = config.icon;
