@@ -8,17 +8,18 @@ import type { Tables } from "@/integrations/supabase/types";
 type TripStep = Tables<"trip_steps">;
 type StepPhoto = Tables<"step_photos">;
 
-const EVENT_TYPE_ICONS: Record<string, React.ElementType> = {
-  arrival: Plane,
-  departure: Plane,
-  accommodation: Hotel,
-  transport: ArrowRightLeft,
-  activity: Flag,
-  food: Utensils,
-  sightseeing: Camera,
-  border_crossing: MapPin,
-  other: CircleDot,
+const EVENT_TYPE_CONFIG: Record<string, { icon: React.ElementType; bg: string; text: string }> = {
+  arrival: { icon: Plane, bg: "bg-blue-500", text: "text-white" },
+  departure: { icon: Plane, bg: "bg-blue-500", text: "text-white" },
+  accommodation: { icon: Hotel, bg: "bg-violet-500", text: "text-white" },
+  transport: { icon: ArrowRightLeft, bg: "bg-blue-500", text: "text-white" },
+  activity: { icon: Flag, bg: "bg-primary", text: "text-primary-foreground" },
+  food: { icon: Utensils, bg: "bg-orange-500", text: "text-white" },
+  sightseeing: { icon: Camera, bg: "bg-emerald-500", text: "text-white" },
+  border_crossing: { icon: MapPin, bg: "bg-amber-500", text: "text-white" },
+  other: { icon: CircleDot, bg: "bg-muted", text: "text-muted-foreground" },
 };
+const DEFAULT_CONFIG = { icon: MapPin, bg: "bg-card", text: "text-primary" };
 
 function formatStepDate(dateStr: string) {
   return new Date(dateStr).toLocaleDateString("en-US", {
