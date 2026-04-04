@@ -47,7 +47,9 @@ const FOOD_PATTERN = /\b(restaurant|cafe|bar|bistro|breakfast|lunch|dinner|brunc
 const BORDER_PATTERN = /\b(border|immigration|passport|customs|checkpoint|crossing)\b/i;
 const TRAIN_PATTERN = /\b(train|rail|railway|metro|subway|tram|light.?rail)\b/i;
 const BUS_PATTERN = /\b(bus|coach|shuttle)\b/i;
-const FERRY_PATTERN = /\b(ferry|boat|cruise|port|harbor|harbour|pier|dock|sailing|catamaran)\b/i;
+const FERRY_PATTERN = /\b(ferry|port|harbor|harbour|pier|dock)\b/i;
+const YACHT_PATTERN = /\b(yacht|sailboat|sailing|catamaran|boat(?!ing)|charter)\b/i;
+const CRUISE_PATTERN = /\b(cruise|cruising|cruise\s*ship|ocean\s*liner)\b/i;
 const CAR_PATTERN = /\b(car|drive|driving|rental|uber|taxi|cab|lyft|transfer|road.?trip)\b/i;
 const SIGHTSEEING_PATTERN = /\b(museum|beach|mountain|park|falls|waterfall|trail|viewpoint|tower|temple|church|cathedral|plaza|square|landmark|safari|penguin|monument|gallery|tour|visit)\b/i;
 
