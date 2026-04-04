@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useImperativeHandle, forwardRef, useCallback } from "react";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 import { inferStepVisualType, type StepVisualType } from "@/lib/stepVisuals";
@@ -30,26 +30,81 @@ const VISUAL_CONFIG: Record<StepVisualType, { bg: string; svg: string }> = {
 
 function getOffsetCoordinates(longitude: number, latitude: number, index: number, total: number): [number, number] {
   if (total <= 1) return [longitude, latitude];
-
   const radiusMeters = total <= 4 ? 220 : total <= 8 ? 320 : 420;
   const angle = (2 * Math.PI * index) / total;
   const latOffset = (radiusMeters * Math.sin(angle)) / 111320;
   const lngOffset = (radiusMeters * Math.cos(angle)) / (111320 * Math.cos((latitude * Math.PI) / 180) || 1);
-
   return [longitude + lngOffset, latitude + latOffset];
 }
 
-export function WorldMap({
-  steps,
-  singleTrip = false,
-  visualTypes = {},
-}: {
+export interface WorldMapHandle {
+  flyToStep: (step: TripStep) => void;
+  fitAllSteps: () => void;
+  highlightStep: (stepId: string | null) => void;
+}
+
+interface WorldMapProps {
   steps: TripStep[];
   singleTrip?: boolean;
   visualTypes?: Record<string, StepVisualType>;
-}) {
+  activeStepId?: string | null;
+  className?: string;
+  style?: React.CSSProperties;
+}
+
+export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function WorldMap(
+  { steps, singleTrip = false, visualTypes = {}, activeStepId, className, style },
+  ref
+) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
+  const markersRef = useRef<Map<string, { marker: mapboxgl.Marker; el: HTMLDivElement }>>(new Map());
+  const stepsRef = useRef<TripStep[]>(steps);
+  stepsRef.current = steps;
+
+  const flyToStep = useCallback((step: TripStep) => {
+    const map = mapRef.current;
+    if (!map) return;
+    map.flyTo({
+      center: [step.longitude, step.latitude],
+      zoom: Math.max(map.getZoom(), 10),
+      duration: 1200,
+      essential: true,
+    });
+  }, []);
+
+  const fitAllSteps = useCallback(() => {
+    const map = mapRef.current;
+    if (!map || stepsRef.current.length === 0) return;
+    const bounds = new mapboxgl.LngLatBounds();
+    stepsRef.current.forEach((s) => bounds.extend([s.longitude, s.latitude]));
+    if (!bounds.isEmpty()) {
+      map.fitBounds(bounds, { padding: 60, maxZoom: 14, duration: 800 });
+    }
+  }, []);
+
+  const highlightStep = useCallback((stepId: string | null) => {
+    markersRef.current.forEach(({ el }, id) => {
+      if (id === stepId) {
+        el.style.transform = "scale(1.4)";
+        el.style.zIndex = "10";
+        el.style.boxShadow = "0 0 0 3px rgba(255,255,255,0.9), 0 0 12px rgba(231,76,94,0.6)";
+      } else {
+        el.style.transform = "scale(1)";
+        el.style.zIndex = "1";
+        el.style.boxShadow = "0 2px 6px rgba(0,0,0,0.3)";
+      }
+    });
+  }, []);
+
+  useImperativeHandle(ref, () => ({ flyToStep, fitAllSteps, highlightStep }), [flyToStep, fitAllSteps, highlightStep]);
+
+  // Highlight active step when activeStepId prop changes
+  useEffect(() => {
+    if (activeStepId !== undefined) {
+      highlightStep(activeStepId);
+    }
+  }, [activeStepId, highlightStep]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -58,6 +113,7 @@ export function WorldMap({
       mapRef.current.remove();
       mapRef.current = null;
     }
+    markersRef.current.clear();
 
     const map = new mapboxgl.Map({
       container: containerRef.current,
@@ -109,12 +165,7 @@ export function WorldMap({
             type: "line",
             source: `route-${tripId}`,
             layout: { "line-join": "round", "line-cap": "round" },
-            paint: {
-              "line-color": color,
-              "line-width": singleTrip ? 6 : 5,
-              "line-opacity": 0.2,
-              "line-blur": 3,
-            },
+            paint: { "line-color": color, "line-width": singleTrip ? 6 : 5, "line-opacity": 0.2, "line-blur": 3 },
           });
 
           map.addLayer({
@@ -122,11 +173,7 @@ export function WorldMap({
             type: "line",
             source: `route-${tripId}`,
             layout: { "line-join": "round", "line-cap": "round" },
-            paint: {
-              "line-color": color,
-              "line-width": singleTrip ? 3.5 : 2.5,
-              "line-opacity": 1,
-            },
+            paint: { "line-color": color, "line-width": singleTrip ? 3.5 : 2.5, "line-opacity": 1 },
           });
         }
 
@@ -147,10 +194,7 @@ export function WorldMap({
           clusterIndexes.set(clusterKey, clusterIndex + 1);
 
           const [displayLongitude, displayLatitude] = getOffsetCoordinates(
-            step.longitude,
-            step.latitude,
-            clusterIndex,
-            clusterSize
+            step.longitude, step.latitude, clusterIndex, clusterSize
           );
 
           const el = document.createElement("div");
@@ -161,32 +205,20 @@ export function WorldMap({
           el.style.display = "flex";
           el.style.alignItems = "center";
           el.style.justifyContent = "center";
-          el.style.boxShadow = clusterSize > 1 ? "0 0 0 2px rgba(255,255,255,0.9), 0 2px 6px rgba(0,0,0,0.3)" : "0 2px 6px rgba(0,0,0,0.3)";
+          el.style.boxShadow = "0 2px 6px rgba(0,0,0,0.3)";
           el.style.cursor = "pointer";
-          el.style.transition = "transform 0.15s ease";
+          el.style.transition = "transform 0.2s ease, box-shadow 0.2s ease";
           el.innerHTML = iconCfg.svg;
-          el.addEventListener("mouseenter", () => {
-            el.style.transform = "scale(1.15)";
-          });
-          el.addEventListener("mouseleave", () => {
-            el.style.transform = "scale(1)";
-          });
 
           const label = step.location_name || step.country || `Step ${index + 1}`;
           const dateStr = new Date(step.recorded_at).toLocaleDateString("en-US", {
-            month: "short",
-            day: "numeric",
-            year: "numeric",
+            month: "short", day: "numeric", year: "numeric",
           });
 
-          new mapboxgl.Marker({ element: el, anchor: "center" })
+          const marker = new mapboxgl.Marker({ element: el, anchor: "center" })
             .setLngLat([displayLongitude, displayLatitude])
             .setPopup(
-              new mapboxgl.Popup({
-                offset: 12,
-                closeButton: false,
-                className: "ps-popup",
-              }).setHTML(
+              new mapboxgl.Popup({ offset: 12, closeButton: false, className: "ps-popup" }).setHTML(
                 `<div style="font-family:system-ui,-apple-system,sans-serif;padding:4px 2px;">
                   <div style="font-weight:600;font-size:14px;color:#1a1a2e;margin-bottom:2px;">${label}</div>
                   <div style="font-size:12px;color:#888;">${dateStr}</div>
@@ -195,6 +227,8 @@ export function WorldMap({
               )
             )
             .addTo(map);
+
+          markersRef.current.set(step.id, { marker, el });
         });
       });
 
@@ -210,14 +244,15 @@ export function WorldMap({
     return () => {
       map.remove();
       mapRef.current = null;
+      markersRef.current.clear();
     };
   }, [steps, singleTrip, visualTypes]);
 
   return (
     <div
       ref={containerRef}
-      className="relative w-full overflow-hidden rounded-2xl shadow-card"
-      style={{ minHeight: singleTrip ? 420 : 340 }}
+      className={className ?? "relative w-full overflow-hidden rounded-2xl shadow-card"}
+      style={style ?? { minHeight: singleTrip ? 420 : 340 }}
     />
   );
-}
+});
