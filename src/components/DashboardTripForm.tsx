@@ -601,13 +601,33 @@ import { ImportPreview } from "@/components/ImportPreview";
          <Switch checked={trackInBackground && !isPastTrip} onCheckedChange={setTrackInBackground} disabled={isPastTrip} />
        </div>
  
-       <button
-         type="submit"
-         disabled={creating || !title.trim()}
-         className="rounded-xl bg-primary py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
-       >
-         {creating ? (hasPendingImport ? "Creating & Importing…" : "Creating…") : "Add Trip"}
-       </button>
-     </form>
-   );
- }
+        {/* Import progress bar */}
+        {creating && importProgress.total > 0 && (
+          <div className="flex flex-col gap-1.5">
+            <div className="flex items-center justify-between text-xs text-muted-foreground">
+              <span>Uploading media…</span>
+              <span>{Math.round((importProgress.current / importProgress.total) * 100)}%</span>
+            </div>
+            <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+              <div
+                className="h-full rounded-full bg-primary transition-all duration-300 ease-out"
+                style={{ width: `${(importProgress.current / importProgress.total) * 100}%` }}
+              />
+            </div>
+          </div>
+        )}
+
+        <button
+          type="submit"
+          disabled={creating || !title.trim()}
+          className="rounded-xl bg-primary py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
+        >
+          {creating
+            ? hasPendingImport
+              ? `Creating & Importing… ${importProgress.total > 0 ? `(${Math.round((importProgress.current / importProgress.total) * 100)}%)` : ""}`
+              : "Creating…"
+            : "Add Trip"}
+        </button>
+      </form>
+    );
+  }
