@@ -131,74 +131,194 @@ import type { Json } from "@/integrations/supabase/types";
      setTitle(buildSuggestedTitle(unique));
    };
  
-   // ─── Photo import ───
-   const processPhotoFiles = async (files: File[]) => {
-     const mediaFiles = files.filter((f) => f.type.startsWith("image/") || f.type.startsWith("video/"));
-     if (mediaFiles.length === 0) {
-       toast.error("No image or video files found");
-       return;
-     }
- 
-     setImportProcessing(true);
-     toast.info(`Processing ${mediaFiles.length} file(s)…`);
- 
-     try {
-       const exifResults = await extractExifFromFiles(mediaFiles);
-       const groups = groupPhotosByLocation(exifResults, 500, 6);
- 
-       const allDates: Date[] = [];
-       const allCountries: string[] = [];
-       const steps: PendingPhotoStep[] = [];
- 
-       for (const [key, photos] of groups.entries()) {
-         const geoPhotos = photos.filter((p) => p.latitude !== null && p.longitude !== null);
-         if (geoPhotos.length === 0) continue;
- 
-         const lats = geoPhotos.map((p) => p.latitude!).sort((a, b) => a - b);
-         const lngs = geoPhotos.map((p) => p.longitude!).sort((a, b) => a - b);
-         const lat = lats[Math.floor(lats.length / 2)];
-         const lng = lngs[Math.floor(lngs.length / 2)];
- 
-         const geo = await reverseGeocode(lat, lng);
-         const dates = photos.map((p) => p.takenAt).filter(Boolean) as Date[];
-         allDates.push(...dates);
-         if (geo.country && geo.country !== "Unknown") allCountries.push(geo.country);
- 
-         const earliestDate = dates.length > 0 ? new Date(Math.min(...dates.map((d) => d.getTime()))) : null;
- 
-         steps.push({
-           key,
-           locationName: geo.name,
-           country: geo.country,
-           latitude: lat,
-           longitude: lng,
-           earliestDate,
-           description: `Visit to ${geo.name}`,
-           photos,
-         });
-       }
- 
-       // Also count no-GPS dates
-       for (const media of exifResults) {
-         if ((media.latitude === null || media.longitude === null) && media.takenAt) {
-           allDates.push(media.takenAt);
-         }
-       }
- 
-       setPendingPhotoSteps(steps);
-       setPendingActivities([]);
-       populateFromDates(allDates);
-       populateFromCountries(allCountries);
- 
-       toast.success(`Detected ${steps.length} location(s) from ${mediaFiles.length} files`);
-       setImportMode("none");
-     } catch (err) {
-       console.error("Photo processing error:", err);
-       toast.error("Failed to process media");
-     } finally {
-       setImportProcessing(false);
-     }
-   };
+  // ─── Photo import ───
+  const processPhotoFiles = async (files: File[]) => {
+    const mediaFiles = files.filter((f) => f.type.startsWith("image/") || f.type.startsWith("video/"));
+    if (mediaFiles.length === 0) {
+      toast.error("No image or video files found");
+      return;
+    }
+
+    setImportProcessing(true);
+    toast.info(`Processing ${mediaFiles.length} file(s) with metadata + visual recognition…`);
+
+    try {
+      const exifResults = await extractExifFromFiles(mediaFiles);
+      const groups = groupPhotosByLocation(exifResults, 500, 6);
+
+      const allDates: Date[] = [];
+      const allCountries: string[] = [];
+      const steps: PendingPhotoStep[] = [];
+
+      // Build base steps from GPS-grouped media
+      for (const [key, photos] of groups.entries()) {
+        const geoPhotos = photos.filter((p) => p.latitude !== null && p.longitude !== null);
+        const lats = geoPhotos.map((p) => p.latitude!).sort((a, b) => a - b);
+        const lngs = geoPhotos.map((p) => p.longitude!).sort((a, b) => a - b);
+        const lat = lats.length > 0 ? lats[Math.floor(lats.length / 2)] : null;
+        const lng = lngs.length > 0 ? lngs[Math.floor(lngs.length / 2)] : null;
+
+        const geo = lat !== null && lng !== null ? await reverseGeocode(lat, lng) : { name: "Unknown Location", country: "Unknown" };
+        const dates = photos.map((p) => p.takenAt).filter(Boolean) as Date[];
+        allDates.push(...dates);
+        if (geo.country && geo.country !== "Unknown") allCountries.push(geo.country);
+
+        const earliestDate = dates.length > 0 ? new Date(Math.min(...dates.map((d) => d.getTime()))) : null;
+
+        steps.push({
+          key,
+          locationName: geo.name,
+          country: geo.country,
+          latitude: lat ?? 0,
+          longitude: lng ?? 0,
+          earliestDate,
+          description: `Visit to ${geo.name}`,
+          photos,
+        });
+      }
+
+      // Collect ungrouped no-GPS media
+      const ungroupedNoGps = exifResults.filter((p) => p.latitude === null || p.longitude === null);
+      const unresolvedNoGps: PhotoExifData[] = [];
+
+      // Try to match no-GPS media to existing steps by time
+      for (const media of ungroupedNoGps) {
+        if (media.takenAt) allDates.push(media.takenAt);
+        let matched = false;
+        if (media.takenAt) {
+          for (const step of steps) {
+            const stepDates = step.photos.map((p) => p.takenAt).filter(Boolean) as Date[];
+            const sameDay = stepDates.some((d) =>
+              d.getFullYear() === media.takenAt!.getFullYear() &&
+              d.getMonth() === media.takenAt!.getMonth() &&
+              d.getDate() === media.takenAt!.getDate()
+            );
+            if (sameDay) {
+              const closest = Math.min(...stepDates.map((d) => Math.abs(d.getTime() - media.takenAt!.getTime())));
+              if (closest <= 6 * 60 * 60 * 1000) {
+                step.photos.push(media);
+                matched = true;
+                break;
+              }
+            }
+          }
+        }
+        if (!matched) unresolvedNoGps.push(media);
+      }
+
+      // Group remaining no-GPS media by time and use AI inference
+      const noGpsGroups = Array.from(groupMediaByTime(unresolvedNoGps, 6).values()).map((photos, i) => ({
+        key: `no-gps-${i}`,
+        photos,
+      }));
+
+      // Prepare all groups for AI inference (both GPS and no-GPS)
+      const allInferenceGroups = [
+        ...noGpsGroups.map((g) => ({
+          key: g.key,
+          exifLocation: null,
+          photos: g.photos
+            .filter((p) => Boolean(p.analysisImage))
+            .slice(0, 4)
+            .map((p) => ({ captionId: p.captionId, fileName: p.file.name, takenAt: p.takenAt?.toISOString() ?? null, analysisImage: p.analysisImage ?? null })),
+        })).filter((g) => g.photos.length > 0),
+        ...steps.filter((s) => s.photos.some((p) => Boolean(p.analysisImage))).map((s) => ({
+          key: s.key,
+          exifLocation: { latitude: s.latitude, longitude: s.longitude, name: s.locationName, country: s.country },
+          photos: s.photos
+            .filter((p) => Boolean(p.analysisImage))
+            .slice(0, 4)
+            .map((p) => ({ captionId: p.captionId, fileName: p.file.name, takenAt: p.takenAt?.toISOString() ?? null, analysisImage: p.analysisImage ?? null })),
+        })).filter((g) => g.photos.length > 0),
+      ];
+
+      // Call AI inference
+      let inferredMap = new Map<string, any>();
+      if (allInferenceGroups.length > 0) {
+        try {
+          const batches = Array.from({ length: Math.ceil(allInferenceGroups.length / 12) }, (_, i) =>
+            allInferenceGroups.slice(i * 12, i * 12 + 12)
+          );
+          const batchResults = await Promise.all(
+            batches.map(async (batch) => {
+              const { data, error } = await supabase.functions.invoke("photo-location-inference", { body: { groups: batch } });
+              if (error) { console.error("Inference error:", error); return []; }
+              return Array.isArray(data?.results) ? data.results : [];
+            })
+          );
+          for (const r of batchResults.flat()) {
+            if (r?.key) inferredMap.set(r.key, r);
+          }
+        } catch (e) {
+          console.error("AI inference error:", e);
+        }
+      }
+
+      // Update existing steps with AI data
+      for (const step of steps) {
+        const inferred = inferredMap.get(step.key);
+        if (inferred) {
+          step.locationName = inferred.locationName || step.locationName;
+          step.country = inferred.country || step.country;
+          step.description = inferred.eventDescription || step.description;
+          if (step.country && step.country !== "Unknown" && !allCountries.includes(step.country)) {
+            allCountries.push(step.country);
+          }
+        }
+      }
+
+      // Create steps from no-GPS groups that AI resolved
+      for (const group of noGpsGroups) {
+        const inferred = inferredMap.get(group.key);
+        if (!inferred) continue;
+
+        let lat = inferred.latitude;
+        let lng = inferred.longitude;
+        if ((lat === null || lng === null) && inferred.locationName) {
+          const geocoded = await geocodeLocationName(inferred.locationName, inferred.country);
+          lat = geocoded?.latitude ?? null;
+          lng = geocoded?.longitude ?? null;
+        }
+        if (lat === null || lng === null) continue;
+
+        const dates = group.photos.map((p) => p.takenAt).filter(Boolean) as Date[];
+        const earliestDate = dates.length > 0 ? new Date(Math.min(...dates.map((d) => d.getTime()))) : null;
+        const country = inferred.country || "Unknown";
+        if (country !== "Unknown" && !allCountries.includes(country)) allCountries.push(country);
+
+        steps.push({
+          key: group.key,
+          locationName: inferred.locationName || "Identified Location",
+          country,
+          latitude: lat,
+          longitude: lng,
+          earliestDate,
+          description: inferred.eventDescription || `Visit to ${inferred.locationName || "location"}`,
+          photos: group.photos,
+        });
+      }
+
+      // Remove steps with no valid coordinates
+      const validSteps = steps.filter((s) => s.latitude !== 0 || s.longitude !== 0);
+      validSteps.sort((a, b) => (a.earliestDate?.getTime() ?? Infinity) - (b.earliestDate?.getTime() ?? Infinity));
+
+      setPendingPhotoSteps(validSteps);
+      setPendingActivities([]);
+      populateFromDates(allDates);
+      populateFromCountries(allCountries);
+
+      const totalMedia = mediaFiles.length;
+      const importedMedia = validSteps.reduce((n, s) => n + s.photos.length, 0);
+      const msg = `Detected ${validSteps.length} location(s) with ${importedMedia}/${totalMedia} files`;
+      toast.success(msg);
+      setImportMode("none");
+    } catch (err) {
+      console.error("Photo processing error:", err);
+      toast.error("Failed to process media");
+    } finally {
+      setImportProcessing(false);
+    }
+  };
  
    // ─── Itinerary import ───
    const processItineraryText = async (text: string) => {
