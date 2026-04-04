@@ -5,6 +5,7 @@ import { getTripStatus, getTripStatusLabel, getTripStatusStyle, formatTripDateRa
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useStepVisualTypes } from "@/hooks/useStepVisualTypes";
+import { useResolvedCities } from "@/hooks/useResolvedCities";
 import { TripTimeline } from "@/components/TripTimeline";
 
 import { PhotoImport } from "@/components/PhotoImport";
@@ -39,6 +40,7 @@ const TripDetail = () => {
   const [showItineraryImport, setShowItineraryImport] = useState(false);
   const [activeStepId, setActiveStepId] = useState<string | null>(null);
   const visualTypes = useStepVisualTypes(steps);
+  const { cityCount, isResolvingCities } = useResolvedCities(steps);
   const mapRef = useRef<WorldMapHandle>(null);
 
   const fetchData = async () => {
@@ -121,15 +123,12 @@ const TripDetail = () => {
                 {countries.join(", ")}
               </span>
             )}
-            {(() => {
-              const cities = [...new Set(steps.map((s) => s.location_name).filter(Boolean))];
-              return cities.length > 0 ? (
-                <span className="flex items-center gap-1.5">
-                  <Route className="h-4 w-4" />
-                  {cities.length} {cities.length === 1 ? "city" : "cities"}
-                </span>
-              ) : null;
-            })()}
+            {!isResolvingCities && cityCount > 0 && (
+              <span className="flex items-center gap-1.5">
+                <Route className="h-4 w-4" />
+                {cityCount} {cityCount === 1 ? "city" : "cities"}
+              </span>
+            )}
           </div>
         </div>
       </div>

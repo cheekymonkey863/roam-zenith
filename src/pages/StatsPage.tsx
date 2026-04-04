@@ -3,6 +3,7 @@ import { Globe, MapPin, Route, Calendar, Compass, Flag } from "lucide-react";
 import { StatCard } from "@/components/StatCard";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { useResolvedCities } from "@/hooks/useResolvedCities";
 import type { Tables } from "@/integrations/supabase/types";
 
 type Trip = Tables<"trips">;
@@ -25,7 +26,7 @@ const StatsPage = () => {
   }, [user]);
 
   const countries = [...new Set(steps.map((s) => s.country).filter(Boolean))];
-  const cities = [...new Set(steps.map((s) => s.location_name).filter(Boolean))];
+  const { cityCount, isResolvingCities } = useResolvedCities(steps);
 
   return (
     <div className="flex flex-col gap-8 py-8">
@@ -36,7 +37,7 @@ const StatsPage = () => {
 
       <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-5">
         <StatCard icon={Globe} label="Countries" value={countries.length} />
-        <StatCard icon={MapPin} label="Cities" value={cities.length} />
+        <StatCard icon={MapPin} label="Cities" value={isResolvingCities && steps.length > 0 ? "…" : cityCount} />
         <StatCard icon={Route} label="Steps" value={steps.length} />
         <StatCard icon={Compass} label="Trips" value={trips.length} />
         <StatCard icon={Calendar} label="Active" value={trips.filter((t) => t.is_active).length} />
