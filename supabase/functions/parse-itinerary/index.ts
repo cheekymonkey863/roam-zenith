@@ -5,7 +5,7 @@ const corsHeaders = {
 };
 
 const VALID_EVENT_TYPES = [
-  "flight", "train", "bus", "ferry", "car", "on_foot", "cycling",
+  "flight", "train", "bus", "ferry", "yacht_boat", "cruise", "car", "on_foot", "cycling",
   "hotel", "apartment_flat", "private_home", "villa", "safari", "glamping", "camping", "resort", "ski_lodge",
   "tour", "sightseeing", "dining", "meeting", "concert", "theatre", "live_show", "wellness", "sport",
 ];
