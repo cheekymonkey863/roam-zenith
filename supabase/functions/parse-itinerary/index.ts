@@ -79,13 +79,15 @@ For each item determine:
     "cycling" - bicycle travel
 
   ACCOMMODATION types (for stays/lodging):
-    "hotel" - hotel, resort, lodge, hostel, inn
+    "hotel" - hotel, lodge, hostel, inn
     "apartment_flat" - apartment, flat, Airbnb rental
     "private_home" - staying at someone's home
     "villa" - villa or large private rental
     "safari" - safari lodge or camp
     "glamping" - glamping accommodation
     "camping" - camping, tent
+    "resort" - ANY place with "resort" in the name, beach resort, spa resort, mountain resort
+    "ski_lodge" - ski lodge, ski chalet, ski resort (when skiing is the focus)
 
   EVENT types (for activities/experiences):
     "tour" - guided tours, walking tours, excursions
@@ -96,6 +98,7 @@ For each item determine:
     "theatre" - theatre, opera, ballet performances
     "live_show" - live shows, comedy, performances
     "wellness" - spa, massage, yoga, wellness activities
+    "sport" - sports events, sporting activities, gym, golf, tennis, surfing, diving, skiing
 
 - date: ISO date string (YYYY-MM-DD) if mentioned, null otherwise
 - time: time string (HH:MM) if mentioned, null otherwise
