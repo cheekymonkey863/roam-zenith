@@ -49,7 +49,7 @@ interface WorldMapProps {
   visualTypes?: Record<string, StepVisualType>;
   activeStepId?: string | null;
   className?: string;
-  style?: React.CSSProperties;
+  style?: CSSProperties;
 }
 
 export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function WorldMap(
