@@ -76,22 +76,13 @@ interface WorldMapProps {
   style?: CSSProperties;
 }
 
-interface AnimatedSegment {
-  from: [number, number];
-  to: [number, number];
-  marker: mapboxgl.Marker;
-  el: HTMLDivElement;
-  bearing: number;
-}
-
 export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function WorldMap(
   { steps, singleTrip = false, visualTypes = {}, activeStepId, className, style },
   ref
 ) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
-  const animFrameRef = useRef<number>(0);
-  const segmentsRef = useRef<AnimatedSegment[]>([]);
+  const scrollMarkerRef = useRef<{ marker: mapboxgl.Marker; el: HTMLDivElement } | null>(null);
   const stepsRef = useRef<TripStep[]>(steps);
   stepsRef.current = steps;
 
@@ -116,12 +107,11 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
     }
   }, []);
 
-  const highlightStep = useCallback((_stepId: string | null) => {
-    // No static markers to highlight anymore
-  }, []);
+  const highlightStep = useCallback((_stepId: string | null) => {}, []);
 
   useImperativeHandle(ref, () => ({ flyToStep, fitAllSteps, highlightStep }), [flyToStep, fitAllSteps, highlightStep]);
 
+  // Initialize map and draw routes
   useEffect(() => {
     if (!containerRef.current) return;
 
@@ -129,8 +119,7 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
       mapRef.current.remove();
       mapRef.current = null;
     }
-    cancelAnimationFrame(animFrameRef.current);
-    segmentsRef.current = [];
+    scrollMarkerRef.current = null;
 
     const map = new mapboxgl.Map({
       container: containerRef.current,
@@ -159,7 +148,6 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
 
       const bounds = new mapboxgl.LngLatBounds();
       let colorIdx = 0;
-      const animatedSegments: AnimatedSegment[] = [];
 
       byTrip.forEach((tripSteps, tripId) => {
         const color = singleTrip ? ROUTE_COLOR : ROUTE_COLOR_ALT[colorIdx % ROUTE_COLOR_ALT.length];
@@ -194,66 +182,25 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
             paint: { "line-color": color, "line-width": singleTrip ? 3.5 : 2.5, "line-opacity": 1 },
           });
         }
-
-        // Create animated transport markers for each segment
-        for (let i = 0; i < tripSteps.length - 1; i++) {
-          const fromStep = tripSteps[i];
-          const toStep = tripSteps[i + 1];
-          const transportType = getSegmentTransport(fromStep, toStep, visualTypes);
-
-          if (!transportType) continue;
-
-          // Normalize to a known SVG key
-          const svgKey = transportType === "transport" ? "car" : transportType;
-          const svg = TRANSPORT_SVGS[svgKey];
-          if (!svg) continue;
-
-          const from: [number, number] = [fromStep.longitude, fromStep.latitude];
-          const to: [number, number] = [toStep.longitude, toStep.latitude];
-          const bearing = getBearing(from, to);
-
-          const el = document.createElement("div");
-          el.style.width = "32px";
-          el.style.height = "32px";
-          el.style.display = "flex";
-          el.style.alignItems = "center";
-          el.style.justifyContent = "center";
-          el.style.filter = "drop-shadow(0 2px 4px rgba(0,0,0,0.5))";
-          el.style.transition = "none";
-          el.style.transform = `rotate(${bearing - 90}deg)`;
-          el.innerHTML = svg;
-
-          const marker = new mapboxgl.Marker({ element: el, anchor: "center", rotationAlignment: "map" })
-            .setLngLat(from)
-            .addTo(map);
-
-          animatedSegments.push({ from, to, marker, el, bearing });
-        }
       });
 
-      segmentsRef.current = animatedSegments;
+      // Create a single scroll-driven marker (hidden until activeStepId is set)
+      const el = document.createElement("div");
+      el.style.width = "36px";
+      el.style.height = "36px";
+      el.style.display = "flex";
+      el.style.alignItems = "center";
+      el.style.justifyContent = "center";
+      el.style.filter = "drop-shadow(0 2px 6px rgba(0,0,0,0.6))";
+      el.style.transition = "transform 0.3s ease";
+      el.style.opacity = "0";
 
-      // Animation loop - each segment icon moves from start to end continuously
-      const CYCLE_DURATION = 6000; // ms for one full trip
-      const startTime = performance.now();
+      const firstStep = steps[0];
+      const marker = new mapboxgl.Marker({ element: el, anchor: "center", rotationAlignment: "map" })
+        .setLngLat([firstStep.longitude, firstStep.latitude])
+        .addTo(map);
 
-      const animate = (now: number) => {
-        const elapsed = now - startTime;
-        const t = (elapsed % CYCLE_DURATION) / CYCLE_DURATION;
-        // Smooth ease in-out
-        const eased = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
-
-        for (const seg of segmentsRef.current) {
-          const pos = interpolatePosition(seg.from, seg.to, eased);
-          seg.marker.setLngLat(pos);
-        }
-
-        animFrameRef.current = requestAnimationFrame(animate);
-      };
-
-      if (animatedSegments.length > 0) {
-        animFrameRef.current = requestAnimationFrame(animate);
-      }
+      scrollMarkerRef.current = { marker, el };
 
       if (!bounds.isEmpty()) {
         map.fitBounds(bounds, {
@@ -265,12 +212,53 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
     });
 
     return () => {
-      cancelAnimationFrame(animFrameRef.current);
-      segmentsRef.current = [];
+      scrollMarkerRef.current = null;
       map.remove();
       mapRef.current = null;
     };
-  }, [steps, singleTrip, visualTypes]);
+  }, [steps, singleTrip]);
+
+  // Move marker when activeStepId changes (scroll-driven)
+  useEffect(() => {
+    const sm = scrollMarkerRef.current;
+    if (!sm || !activeStepId || steps.length < 2) return;
+
+    const stepIndex = steps.findIndex((s) => s.id === activeStepId);
+    if (stepIndex < 0) return;
+
+    const currentStep = steps[stepIndex];
+    const pos: [number, number] = [currentStep.longitude, currentStep.latitude];
+
+    // Determine transport type for the icon
+    // Look at the segment the step belongs to (current→next, or prev→current)
+    let transportType: StepVisualType | null = null;
+    if (stepIndex < steps.length - 1) {
+      transportType = getSegmentTransport(currentStep, steps[stepIndex + 1], visualTypes);
+    }
+    if (!transportType && stepIndex > 0) {
+      transportType = getSegmentTransport(steps[stepIndex - 1], currentStep, visualTypes);
+    }
+
+    // Determine bearing
+    let bearing = 0;
+    if (stepIndex < steps.length - 1) {
+      const next = steps[stepIndex + 1];
+      bearing = getBearing(pos, [next.longitude, next.latitude]);
+    } else if (stepIndex > 0) {
+      const prev = steps[stepIndex - 1];
+      bearing = getBearing([prev.longitude, prev.latitude], pos);
+    }
+
+    // Update icon SVG
+    const svgKey = transportType === "transport" ? "car" : (transportType || "flight");
+    const svg = TRANSPORT_SVGS[svgKey] || TRANSPORT_SVGS.flight;
+    sm.el.innerHTML = svg;
+    sm.el.style.transform = `rotate(${bearing - 90}deg)`;
+    sm.el.style.opacity = "1";
+
+    // Move marker
+    sm.marker.setLngLat(pos);
+  }, [activeStepId, steps, visualTypes]);
 
   return (
     <div
