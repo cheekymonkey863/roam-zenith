@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { inferStepVisualType, type StepVisualType } from "@/lib/stepVisuals";
 import { getEventType } from "@/lib/eventTypes";
 import {
-  Plane, TrainFront, Bus, Ship, Car, Footprints, Bike,
+  Plane, TrainFront, Bus, Ship, Car, Footprints, Bike, Sailboat, Anchor,
   Hotel, Building, Home, Castle, Trees, Mountain, Tent, Palmtree, Snowflake,
   Map as MapIcon, Camera, UtensilsCrossed, Users, Music, Theater, Sparkles, Heart, Trophy,
   Flag, CircleDot, ArrowRightLeft,
