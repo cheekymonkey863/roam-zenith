@@ -31,6 +31,7 @@ const TripDetail = () => {
   const [trip, setTrip] = useState<Trip | null>(null);
   const [steps, setSteps] = useState<TripStep[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isOwner, setIsOwner] = useState(false);
   const [showPhotoImport, setShowPhotoImport] = useState(false);
   const [showItineraryImport, setShowItineraryImport] = useState(false);
   const [activeStepId, setActiveStepId] = useState<string | null>(null);
