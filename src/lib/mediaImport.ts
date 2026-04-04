@@ -160,6 +160,7 @@ function applyMediaInsights(
         ...photo,
         caption: videoInsight.caption?.trim() || photo.caption || fallbackCaption,
         sceneDescription: videoInsight.sceneDescription?.trim() || photo.sceneDescription,
+        essence: videoInsight.essence?.trim() || photo.essence,
         aiTags: dedupeTags([...(photo.aiTags ?? []), ...((videoInsight.richTags ?? []).map((tag) => tag.trim()))]),
       };
     }

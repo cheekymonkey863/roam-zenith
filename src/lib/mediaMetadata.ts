@@ -99,10 +99,11 @@ export function buildStoredMediaMetadata(
     ai_enrichment: {
       caption: photo.caption ?? null,
       scene_description: photo.sceneDescription ?? null,
+      essence: photo.essence ?? null,
       rich_tags: aiTags,
       model:
-        photo.caption || photo.sceneDescription || aiTags.length > 0
-          ? "google/gemini-3-flash-preview"
+        photo.caption || photo.sceneDescription || photo.essence || aiTags.length > 0
+          ? "google/gemini-2.5-flash"
           : null,
     },
     raw_exif: photo.exifRaw ?? null,

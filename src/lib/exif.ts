@@ -9,6 +9,7 @@ export interface PhotoExifData {
   captionId: string;
   caption?: string;
   sceneDescription?: string;
+  essence?: string;
   aiTags?: string[];
   latitude: number | null;
   longitude: number | null;
