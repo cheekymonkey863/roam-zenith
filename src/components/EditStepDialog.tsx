@@ -1,29 +1,14 @@
 import { useState, useEffect } from "react";
-import { Pencil, Trash2, Search, Loader2, Plane, Hotel, Utensils, Camera, MapPin, Flag, CircleDot, TrainFront, Bus, Ship, Car, Footprints, Bike } from "lucide-react";
+import { Pencil, Trash2, Search, Loader2, MapPin } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { ActivityPhotoUpload } from "@/components/ActivityPhotoUpload";
 import { useGooglePlacesSearch } from "@/hooks/useGooglePlacesSearch";
+import { EventTypeSelect } from "@/components/EventTypeSelect";
 import type { Tables } from "@/integrations/supabase/types";
 
 type TripStep = Tables<"trip_steps">;
-
-const EVENT_TYPES = [
-  { value: "flight", label: "Flight", icon: Plane },
-  { value: "train", label: "Train", icon: TrainFront },
-  { value: "bus", label: "Bus", icon: Bus },
-  { value: "ferry", label: "Ferry", icon: Ship },
-  { value: "car", label: "Car", icon: Car },
-  { value: "on_foot", label: "On Foot", icon: Footprints },
-  { value: "cycling", label: "Cycling", icon: Bike },
-  { value: "accommodation", label: "Accommodation", icon: Hotel },
-  { value: "activity", label: "Activity", icon: Flag },
-  { value: "food", label: "Food & Drink", icon: Utensils },
-  { value: "sightseeing", label: "Sightseeing", icon: Camera },
-  { value: "border_crossing", label: "Border Crossing", icon: MapPin },
-  { value: "other", label: "Other", icon: CircleDot },
-] as const;
 
 interface EditStepDialogProps {
   step: TripStep;
@@ -118,20 +103,7 @@ export function EditStepDialog({ step, onUpdated }: EditStepDialogProps) {
           {/* Event type selector */}
           <div className="flex flex-col gap-2">
             <label className="text-sm font-medium text-foreground">Activity Type</label>
-            <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
-              {EVENT_TYPES.map((type) => {
-                const Icon = type.icon;
-                const isSelected = eventType === type.value;
-                return (
-                  <button key={type.value} type="button" onClick={() => setEventType(type.value)}
-                    className={`flex flex-col items-center gap-1.5 rounded-xl border-2 px-2 py-3 text-xs font-medium transition-all ${
-                      isSelected ? "border-primary bg-primary/10 text-primary" : "border-border bg-background text-muted-foreground hover:border-primary/30 hover:bg-secondary"
-                    }`}>
-                    <Icon className="h-4 w-4" /> {type.label}
-                  </button>
-                );
-              })}
-            </div>
+            <EventTypeSelect value={eventType} onValueChange={setEventType} />
           </div>
 
           {/* Activity name */}

@@ -4,17 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 
-const EVENT_TYPES = [
-  { value: "arrival", label: "Arrival" },
-  { value: "departure", label: "Departure" },
-  { value: "accommodation", label: "Accommodation" },
-  { value: "transport", label: "Transport" },
-  { value: "activity", label: "Activity" },
-  { value: "food", label: "Food & Drink" },
-  { value: "sightseeing", label: "Sightseeing" },
-  { value: "border_crossing", label: "Border Crossing" },
-  { value: "other", label: "Other" },
-] as const;
+import { ALL_EVENT_TYPES } from "@/lib/eventTypes";
 
 interface ParsedActivity {
   locationName: string;
@@ -243,7 +233,7 @@ export function ItineraryImport({ tripId, onImportComplete, onCancel }: Itinerar
     }
   };
 
-  const eventTypeLabel = (val: string) => EVENT_TYPES.find((t) => t.value === val)?.label || val;
+  const eventTypeLabel = (val: string) => ALL_EVENT_TYPES.find((t) => t.value === val)?.label || val;
 
   return (
     <div className="flex flex-col gap-6">
@@ -398,7 +388,7 @@ export function ItineraryImport({ tripId, onImportComplete, onCancel }: Itinerar
                             onChange={(e) => updateActivity(index, { eventType: e.target.value })}
                             className="rounded-lg border border-border bg-background px-3 py-1.5 text-sm"
                           >
-                            {EVENT_TYPES.map((t) => (
+                            {ALL_EVENT_TYPES.map((t) => (
                               <option key={t.value} value={t.value}>{t.label}</option>
                             ))}
                           </select>

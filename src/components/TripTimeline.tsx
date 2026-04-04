@@ -1,9 +1,16 @@
 import { useEffect, useRef, useState } from "react";
-import { MapPin, Image as ImageIcon, Trash2, Plane, Hotel, Utensils, Camera, ArrowRightLeft, Flag, CircleDot, TrainFront, Bus, Ship, Car, Footprints, Bike } from "lucide-react";
+import { MapPin, Image as ImageIcon, Trash2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { EditStepDialog } from "@/components/EditStepDialog";
 import { toast } from "sonner";
 import { inferStepVisualType, type StepVisualType } from "@/lib/stepVisuals";
+import { getEventType } from "@/lib/eventTypes";
+import {
+  Plane, TrainFront, Bus, Ship, Car, Footprints, Bike,
+  Hotel, Building, Home, Castle, Trees, Mountain, Tent,
+  Map as MapIcon, Camera, UtensilsCrossed, Users, Music, Theater, Sparkles, Heart,
+  Flag, CircleDot, ArrowRightLeft,
+} from "lucide-react";
 import type { Tables } from "@/integrations/supabase/types";
 
 type TripStep = Tables<"trip_steps">;
@@ -18,8 +25,21 @@ const VISUAL_CONFIG: Record<StepVisualType, { icon: React.ElementType; bg: strin
   on_foot: { icon: Footprints, bg: "bg-lime-600", text: "text-white" },
   cycling: { icon: Bike, bg: "bg-green-600", text: "text-white" },
   hotel: { icon: Hotel, bg: "bg-violet-500", text: "text-white" },
-  food: { icon: Utensils, bg: "bg-orange-500", text: "text-white" },
+  apartment_flat: { icon: Building, bg: "bg-violet-400", text: "text-white" },
+  private_home: { icon: Home, bg: "bg-rose-400", text: "text-white" },
+  villa: { icon: Castle, bg: "bg-amber-600", text: "text-white" },
+  safari_accommodation: { icon: Trees, bg: "bg-yellow-600", text: "text-white" },
+  glamping: { icon: Mountain, bg: "bg-emerald-600", text: "text-white" },
+  camping: { icon: Tent, bg: "bg-green-700", text: "text-white" },
+  food: { icon: UtensilsCrossed, bg: "bg-orange-500", text: "text-white" },
   sightseeing: { icon: Camera, bg: "bg-emerald-500", text: "text-white" },
+  tour: { icon: MapIcon, bg: "bg-sky-500", text: "text-white" },
+  dining: { icon: UtensilsCrossed, bg: "bg-orange-500", text: "text-white" },
+  meeting: { icon: Users, bg: "bg-gray-500", text: "text-white" },
+  concert: { icon: Music, bg: "bg-pink-500", text: "text-white" },
+  theatre: { icon: Theater, bg: "bg-red-600", text: "text-white" },
+  live_show: { icon: Sparkles, bg: "bg-fuchsia-500", text: "text-white" },
+  wellness: { icon: Heart, bg: "bg-rose-500", text: "text-white" },
   border: { icon: MapPin, bg: "bg-amber-500", text: "text-white" },
   transport: { icon: ArrowRightLeft, bg: "bg-sky-600", text: "text-white" },
   activity: { icon: Flag, bg: "bg-primary", text: "text-primary-foreground" },

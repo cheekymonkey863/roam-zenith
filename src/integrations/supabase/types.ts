@@ -246,6 +246,20 @@ export type Database = {
         | "car"
         | "on_foot"
         | "cycling"
+        | "hotel"
+        | "apartment_flat"
+        | "private_home"
+        | "villa"
+        | "safari"
+        | "glamping"
+        | "camping"
+        | "tour"
+        | "dining"
+        | "meeting"
+        | "concert"
+        | "theatre"
+        | "live_show"
+        | "wellness"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -390,6 +404,20 @@ export const Constants = {
         "car",
         "on_foot",
         "cycling",
+        "hotel",
+        "apartment_flat",
+        "private_home",
+        "villa",
+        "safari",
+        "glamping",
+        "camping",
+        "tour",
+        "dining",
+        "meeting",
+        "concert",
+        "theatre",
+        "live_show",
+        "wellness",
       ],
     },
   },
