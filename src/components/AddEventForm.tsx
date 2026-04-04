@@ -8,10 +8,42 @@ import { useGooglePlacesSearch } from "@/hooks/useGooglePlacesSearch";
 import { EventTypeSelect } from "@/components/EventTypeSelect";
 import { getEventType } from "@/lib/eventTypes";
 import JSZip from "jszip";
+import pdfWorkerSrc from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 
 interface AddEventFormProps {
   tripId: string;
   onEventAdded: () => void;
+}
+
+async function extractTextFromPDF(file: File): Promise<string> {
+  const pdfjsLib = await import("pdfjs-dist");
+  const buffer = await file.arrayBuffer();
+
+  try {
+    pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerSrc;
+    const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
+    const textParts: string[] = [];
+
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const content = await page.getTextContent();
+      textParts.push(content.items.map((item: any) => item.str).join(" "));
+    }
+
+    return textParts.join("\n\n");
+  } catch (workerError) {
+    console.error("PDF worker extraction failed, retrying without worker:", workerError);
+    const pdf = await pdfjsLib.getDocument({ data: buffer, disableWorker: true }).promise;
+    const textParts: string[] = [];
+
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const content = await page.getTextContent();
+      textParts.push(content.items.map((item: any) => item.str).join(" "));
+    }
+
+    return textParts.join("\n\n");
+  }
 }
 
 async function extractTextFromFile(file: File): Promise<string> {
@@ -20,17 +52,7 @@ async function extractTextFromFile(file: File): Promise<string> {
     return file.text();
   }
   if (name.endsWith(".pdf")) {
-    const pdfjsLib = await import("pdfjs-dist");
-    pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
-    const buf = await file.arrayBuffer();
-    const doc = await pdfjsLib.getDocument({ data: buf }).promise;
-    const pages: string[] = [];
-    for (let i = 1; i <= doc.numPages; i++) {
-      const page = await doc.getPage(i);
-      const content = await page.getTextContent();
-      pages.push(content.items.map((it: any) => it.str).join(" "));
-    }
-    return pages.join("\n\n");
+    return extractTextFromPDF(file);
   }
   if (name.endsWith(".docx")) {
     const zip = await JSZip.loadAsync(await file.arrayBuffer());
