@@ -216,7 +216,25 @@ Deno.serve(async (req) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const videoUrl = `${supabaseUrl}/storage/v1/object/public/trip-photos/${storagePath}`;
 
-    console.log(`Analyzing "${fileName}" via Lovable AI. Video URL: ${videoUrl}`);
+    console.log(`Analyzing "${fileName}" via Lovable AI. Fetching video for base64 encoding...`);
+
+    // Fetch video and convert to base64 data URL — the gateway rejects video URLs directly
+    const videoResponse = await fetch(videoUrl);
+    if (!videoResponse.ok) {
+      throw createHttpError(videoResponse.status, `Failed to fetch video from storage: ${videoResponse.statusText}`);
+    }
+    const videoBuffer = await videoResponse.arrayBuffer();
+    const videoBytes = new Uint8Array(videoBuffer);
+
+    // Encode to base64
+    let binary = "";
+    for (let i = 0; i < videoBytes.length; i++) {
+      binary += String.fromCharCode(videoBytes[i]);
+    }
+    const base64Video = btoa(binary);
+    const dataUrl = `data:${mimeType};base64,${base64Video}`;
+
+    console.log(`Video fetched (${(videoBytes.length / 1024 / 1024).toFixed(1)}MB). Sending to AI...`);
 
     const prompt = buildPrompt({ takenAt, latitude, longitude, locationName, country, itinerarySteps });
     const data = await callLovableAiWithRetries(lovableApiKey, {
@@ -227,7 +245,7 @@ Deno.serve(async (req) => {
           content: [
             {
               type: "image_url",
-              image_url: { url: videoUrl },
+              image_url: { url: dataUrl },
             },
             {
               type: "text",
