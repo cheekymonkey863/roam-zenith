@@ -32,10 +32,12 @@ export function TripTimeline({
   steps,
   onUpdated,
   visualTypes = {},
+  onStepInView,
 }: {
   steps: TripStep[];
   onUpdated: () => void;
   visualTypes?: Record<string, StepVisualType>;
+  onStepInView?: (stepId: string) => void;
 }) {
   const [photosByStep, setPhotosByStep] = useState<Record<string, StepPhoto[]>>({});
   const [deletingId, setDeletingId] = useState<string | null>(null);
