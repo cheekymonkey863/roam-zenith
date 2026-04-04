@@ -322,9 +322,20 @@ async function inferLocationsWithVision(
   );
 }
 
+export interface ExistingTripStep {
+  location_name: string | null;
+  country: string | null;
+  latitude: number;
+  longitude: number;
+  recorded_at: string;
+  event_type: string;
+  description: string | null;
+}
+
 export async function processImportedMediaFiles(
   files: File[],
   onProgress?: ImportProgressCallback,
+  existingTripSteps?: ExistingTripStep[],
 ): Promise<ProcessedMediaImport> {
   const mediaFiles = files.filter((file) => file.type.startsWith("image/") || file.type.startsWith("video/"));
   if (mediaFiles.length === 0) {
