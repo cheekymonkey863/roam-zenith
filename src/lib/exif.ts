@@ -1003,6 +1003,7 @@ let _placesServiceHost: HTMLDivElement | null = null;
 export interface ReverseGeocodeResult {
   name: string;
   country: string;
+  locality: string;
   placeTypes: string[];
 }
 
