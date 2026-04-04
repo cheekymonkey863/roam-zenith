@@ -146,7 +146,7 @@ function sanitizeMetadataValue(value: unknown, depth = 0): unknown {
   }
 
   if (ArrayBuffer.isView(value)) {
-    return Array.from(value as ArrayLike<number>);
+    return Array.from(new Uint8Array(value.buffer, value.byteOffset, value.byteLength));
   }
 
   if (value instanceof ArrayBuffer) {
