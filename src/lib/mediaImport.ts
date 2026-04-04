@@ -453,102 +453,71 @@ export async function processImportedMediaFiles(
     onProgress?.("Analyzing videos", 0, allVideoMedia.length);
     let videoDone = 0;
 
-    // Serialize: 1-at-a-time with retry+backoff to respect API rate limits
-    let rateLimitHit = false;
+    // Serialize: 1-at-a-time to keep requests predictable on large imports.
     for (const { photo, step } of allVideoMedia) {
-      if (rateLimitHit) {
-        videoDone++;
-        onProgress?.("Analyzing videos", videoDone, allVideoMedia.length);
-        continue;
-      }
+      let storagePath: string | null = null;
 
       try {
-        // Upload raw video to Supabase Storage via TUS resumable protocol
-        // Path must be prefixed with user ID to satisfy storage RLS policies
-        const { data: { user } } = await supabase.auth.getUser();
+        // Upload raw video to Storage via TUS resumable protocol.
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
         if (!user) {
           console.error("No authenticated user for video upload");
-          videoDone++;
-          onProgress?.("Analyzing videos", videoDone, allVideoMedia.length);
           continue;
         }
-        const ext = photo.file.name.split(".").pop()?.toLowerCase() || "mp4";
-        const storagePath = `${user.id}/video-analysis/${crypto.randomUUID()}.${ext}`;
 
-        try {
-          await resumableUpload({
-            bucketName: "trip-photos",
-            objectName: storagePath,
-            file: photo.file,
-            contentType: photo.file.type || "video/mp4",
-          });
-        } catch (uploadError) {
-          console.error(`Storage upload failed for ${photo.file.name}:`, uploadError);
-          videoDone++;
-          onProgress?.("Analyzing videos", videoDone, allVideoMedia.length);
-          continue;
-        }
+        const ext = photo.file.name.split(".").pop()?.toLowerCase() || "mp4";
+        storagePath = `${user.id}/video-analysis/${crypto.randomUUID()}.${ext}`;
+
+        await resumableUpload({
+          bucketName: "trip-photos",
+          objectName: storagePath,
+          file: photo.file,
+          contentType: photo.file.type || "video/mp4",
+        });
 
         let mimeType = photo.file.type || "video/mp4";
         if (mimeType === "video/quicktime" || mimeType === "video/mov") {
           mimeType = "video/mp4";
         }
 
-        let lastError: string | null = null;
-        for (let attempt = 0; attempt < 3; attempt++) {
-          const { data, error } = await supabase.functions.invoke("analyze-video", {
-            body: {
-              storagePath,
-              mimeType,
-              captionId: photo.captionId,
-              fileName: photo.file.name,
-              takenAt: photo.takenAt?.toISOString() ?? null,
-              latitude: step?.latitude ?? photo.latitude ?? null,
-              longitude: step?.longitude ?? photo.longitude ?? null,
-              locationName: step?.locationName ?? null,
-              country: step?.country ?? null,
-            },
+        const { data, error } = await supabase.functions.invoke("analyze-video", {
+          body: {
+            storagePath,
+            mimeType,
+            captionId: photo.captionId,
+            fileName: photo.file.name,
+            takenAt: photo.takenAt?.toISOString() ?? null,
+            latitude: step?.latitude ?? photo.latitude ?? null,
+            longitude: step?.longitude ?? photo.longitude ?? null,
+            locationName: step?.locationName ?? null,
+            country: step?.country ?? null,
+          },
+        });
+
+        if (!error && data?.result) {
+          videoInsights.set(photo.captionId, {
+            captionId: data.result.captionId,
+            caption: data.result.caption,
+            sceneDescription: data.result.sceneDescription,
+            essence: data.result.essence,
+            richTags: data.result.richTags,
           });
-
-          if (!error && data?.result) {
-            videoInsights.set(photo.captionId, {
-              captionId: data.result.captionId,
-              caption: data.result.caption,
-              sceneDescription: data.result.sceneDescription,
-              essence: data.result.essence,
-              richTags: data.result.richTags,
-            });
-            lastError = null;
-            break;
-          }
-
-          const errMsg = error?.message || data?.error || "";
-          if (errMsg.includes("429") || errMsg.includes("Rate limited") || errMsg.includes("RESOURCE_EXHAUSTED")) {
-            const delaySec = Math.min(30 * (attempt + 1), 90);
-            console.warn(`[video-analysis] Rate limited on "${photo.file.name}", waiting ${delaySec}s (attempt ${attempt + 1}/3)...`);
-            await new Promise((r) => setTimeout(r, delaySec * 1000));
-            lastError = errMsg;
-            continue;
-          }
-
+        } else {
+          const errMsg = error?.message || data?.error || "Unknown video analysis error";
           console.error(`Video analysis failed for ${photo.file.name}:`, errMsg);
-          lastError = null;
-          break;
         }
-
-        if (lastError) {
-          console.warn(`[video-analysis] Giving up after 3 retries, skipping remaining videos.`);
-          rateLimitHit = true;
-        }
-
-        // Clean up temp storage file after analysis
-        await supabase.storage.from("trip-photos").remove([storagePath]).catch(() => {});
       } catch (err) {
         console.error(`Video analysis failed for ${photo.file.name}:`, err);
-      }
+      } finally {
+        if (storagePath) {
+          await supabase.storage.from("trip-photos").remove([storagePath]).catch(() => {});
+        }
 
-      videoDone++;
-      onProgress?.("Analyzing videos", videoDone, allVideoMedia.length);
+        videoDone++;
+        onProgress?.("Analyzing videos", videoDone, allVideoMedia.length);
+      }
     }
   }
 
