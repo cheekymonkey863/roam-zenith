@@ -173,7 +173,13 @@ export async function createVideoPreviews(file: File): Promise<VideoPreviewSet> 
   // For MOV files that failed HTML5 playback, we note no preview but don't block
   // The AI inference will still work with filename/date context
   if (!analysisImage && isMov) {
-    console.info(`[video-preview] MOV file "${file.name}" — no browser-side frame available, AI will use filename context.`);
+    console.info(`[video-preview] MOV file "${file.name}" — trying server-side frame extraction...`);
+    analysisImage = await captureFrameServerSide(file);
+    if (analysisImage) {
+      previewSource = "ffmpeg";
+    } else {
+      console.info(`[video-preview] MOV file "${file.name}" — no frame available, AI will use filename context.`);
+    }
   }
 
   if (!analysisImage) {
