@@ -160,8 +160,7 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
       );
 
       const ungroupedNoGps = exifResults.filter((p) => p.latitude === null || p.longitude === null);
-      const noGpsImagesForVision: PhotoExifData[] = [];
-      const unresolvedVideos: PhotoExifData[] = [];
+      const noGpsForVision: PhotoExifData[] = [];
 
       for (const media of ungroupedNoGps) {
         const matchedStep = findStepForUngroupedMedia(media, baseSteps);
@@ -173,18 +172,17 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
           continue;
         }
 
-        if (media.file.type.startsWith("image/")) {
-          noGpsImagesForVision.push(media);
-        } else {
-          unresolvedVideos.push(media);
+        // Send all no-GPS media (photos AND videos) to AI visual recognition
+        if (media.analysisImage) {
+          noGpsForVision.push(media);
         }
       }
 
-      setNoGpsPhotos([...noGpsImagesForVision, ...unresolvedVideos]);
+      setNoGpsPhotos(noGpsForVision);
 
       let inferredLocations = new Map<string, HybridLocationResult>();
       try {
-        inferredLocations = await inferLocationsWithVision(baseSteps, noGpsImagesForVision);
+        inferredLocations = await inferLocationsWithVision(baseSteps, noGpsForVision);
       } catch (e) {
         console.error("Visual location inference error:", e);
         toast.warning("Visual recognition was unavailable, so only GPS-matched media was grouped.");
@@ -204,7 +202,7 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
         };
       });
 
-      for (const [index, photo] of noGpsImagesForVision.entries()) {
+      for (const [index, media] of noGpsForVision.entries()) {
         const key = `no-gps-${index}`;
         const inferred = inferredLocations.get(key);
         if (inferred && inferred.latitude !== null && inferred.longitude !== null) {
@@ -214,11 +212,11 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
             country: inferred.country || "Unknown",
             latitude: inferred.latitude,
             longitude: inferred.longitude,
-            photos: [photo],
-            earliestDate: photo.takenAt,
+            photos: [media],
+            earliestDate: media.takenAt,
             selected: true,
             confidence: inferred.confidence,
-            summary: inferred.summary || "Location identified from photo contents.",
+            summary: inferred.summary || "Location identified visually.",
             description: inferred.summary || "",
           });
         }
@@ -227,15 +225,14 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
       steps.sort((a, b) => (a.earliestDate?.getTime() ?? Infinity) - (b.earliestDate?.getTime() ?? Infinity));
       setSuggestions(steps);
 
-      const visuallyInferredCount = noGpsImagesForVision.filter((_, i) => {
+      const visuallyInferredCount = noGpsForVision.filter((_, i) => {
         const result = inferredLocations.get(`no-gps-${i}`);
         return result && result.latitude !== null;
       }).length;
 
-      const unresolvedImages = noGpsImagesForVision.length - visuallyInferredCount;
+      const unresolvedCount = noGpsForVision.length - visuallyInferredCount;
       const issueParts: string[] = [];
-      if (unresolvedImages > 0) issueParts.push(`${unresolvedImages} image${unresolvedImages > 1 ? "s" : ""} couldn't be located.`);
-      if (unresolvedVideos.length > 0) issueParts.push(`${unresolvedVideos.length} video${unresolvedVideos.length > 1 ? "s" : ""} had no reliable GPS match, so ${unresolvedVideos.length > 1 ? "they were" : "it was"} skipped.`);
+      if (unresolvedCount > 0) issueParts.push(`${unresolvedCount} file${unresolvedCount > 1 ? "s" : ""} couldn't be located.`);
 
       toast.success(`Found ${steps.length} location(s)` + (issueParts.length > 0 ? `. ${issueParts.join(" ")}` : ""));
     } catch (err) {
