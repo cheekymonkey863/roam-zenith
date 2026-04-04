@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useState, useEffect, useRef, useCallback } from "react";
 
-const GOOGLE_MAPS_API_KEY = "AIzaSyCHXGKSMbpkEN5Amr0VRDF44cLcOg_JUD8";
+export const GOOGLE_MAPS_API_KEY = "AIzaSyCHXGKSMbpkEN5Amr0VRDF44cLcOg_JUD8";
 
 export interface PlaceResult {
   display_name: string;
@@ -20,9 +20,12 @@ let scriptLoaded = false;
 let scriptLoading = false;
 const loadCallbacks: (() => void)[] = [];
 
-function getGoogle(): any { return (window as any).google; }
+let sharedPlacesHost: HTMLDivElement | null = null;
+let sharedPlacesService: any = null;
 
-function ensureGoogleMapsLoaded(): Promise<void> {
+export function getGoogle(): any { return (window as any).google; }
+
+export function ensureGoogleMapsLoaded(): Promise<void> {
   const g = getGoogle();
   if (scriptLoaded && g?.maps?.places) return Promise.resolve();
   return new Promise((resolve) => {
