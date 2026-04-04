@@ -1,11 +1,12 @@
 import { useParams, Link } from "react-router-dom";
 import { useEffect, useState } from "react";
-import { ArrowLeft, Calendar, MapPin, Route, Navigation, Image as ImageIcon } from "lucide-react";
+import { ArrowLeft, Calendar, MapPin, Route, Navigation, Image as ImageIcon, FileText } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { TripTimeline } from "@/components/TripTimeline";
 import { TrackingControl } from "@/components/TrackingControl";
 import { PhotoImport } from "@/components/PhotoImport";
+import { ItineraryImport } from "@/components/ItineraryImport";
 import { WorldMap } from "@/components/WorldMap";
 import { AddEventForm } from "@/components/AddEventForm";
 import { EditTripDialog } from "@/components/EditTripDialog";
