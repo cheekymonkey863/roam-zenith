@@ -11,6 +11,7 @@ interface VideoAnalysisResult {
   captionId: string;
   caption: string;
   sceneDescription: string;
+  essence: string;
   richTags: string[];
   activityType: string;
   moodTags: string[];
