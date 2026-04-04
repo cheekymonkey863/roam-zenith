@@ -1,6 +1,6 @@
 import { useState, useCallback } from "react";
 import type { Json } from "@/integrations/supabase/types";
-import { Upload, MapPin, Calendar, Check, Image as ImageIcon, Loader2, Pencil, X, Play } from "lucide-react";
+import { Upload, MapPin, Calendar, Check, Image as ImageIcon, Loader2, Pencil, X, Play, Merge } from "lucide-react";
 import { extractExifFromFiles, groupPhotosByLocation, reverseGeocode, type PhotoExifData } from "@/lib/exif";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -117,6 +117,8 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
   const [suggestions, setSuggestions] = useState<SuggestedStep[]>([]);
   const [noGpsPhotos, setNoGpsPhotos] = useState<PhotoExifData[]>([]);
   const [editingKey, setEditingKey] = useState<string | null>(null);
+  const [dragSourceKey, setDragSourceKey] = useState<string | null>(null);
+  const [dragOverKey, setDragOverKey] = useState<string | null>(null);
 
   const processFiles = useCallback(async (files: File[]) => {
     setProcessing(true);
@@ -259,6 +261,60 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
     setSuggestions((prev) => prev.map((s) => (s.key === key ? { ...s, [field]: value } : s)));
   };
 
+  const mergeSteps = (targetKey: string, sourceKey: string) => {
+    if (targetKey === sourceKey) return;
+    setSuggestions((prev) => {
+      const target = prev.find((s) => s.key === targetKey);
+      const source = prev.find((s) => s.key === sourceKey);
+      if (!target || !source) return prev;
+
+      const mergedDescription = [target.description, source.description].filter(Boolean).join("\n\n");
+      const allPhotos = [...target.photos, ...source.photos];
+      const allDates = allPhotos.map((p) => p.takenAt).filter(Boolean) as Date[];
+      const earliestDate = allDates.length > 0 ? new Date(Math.min(...allDates.map((d) => d.getTime()))) : target.earliestDate;
+
+      const merged: SuggestedStep = {
+        ...target,
+        photos: allPhotos,
+        earliestDate,
+        description: mergedDescription,
+        summary: [target.summary, source.summary].filter(Boolean).join(" | "),
+      };
+
+      return prev.filter((s) => s.key !== sourceKey).map((s) => (s.key === targetKey ? merged : s));
+    });
+  };
+
+  const handleStepDragStart = (e: React.DragEvent, key: string) => {
+    setDragSourceKey(key);
+    e.dataTransfer.effectAllowed = "move";
+  };
+
+  const handleStepDragOver = (e: React.DragEvent, key: string) => {
+    e.preventDefault();
+    if (dragSourceKey && dragSourceKey !== key) {
+      setDragOverKey(key);
+    }
+  };
+
+  const handleStepDragLeave = () => {
+    setDragOverKey(null);
+  };
+
+  const handleStepDrop = (e: React.DragEvent, targetKey: string) => {
+    e.preventDefault();
+    if (dragSourceKey && dragSourceKey !== targetKey) {
+      mergeSteps(targetKey, dragSourceKey);
+    }
+    setDragSourceKey(null);
+    setDragOverKey(null);
+  };
+
+  const handleStepDragEnd = () => {
+    setDragSourceKey(null);
+    setDragOverKey(null);
+  };
+
   const findMatchingExistingStep = (lat: number, lng: number) => {
     for (const existing of existingSteps) {
       const dlat = (existing.latitude - lat) * 111320;
@@ -382,6 +438,9 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
             <h3 className="font-display text-lg font-semibold text-foreground">
               Detected Locations ({suggestions.filter((s) => s.selected).length}/{suggestions.length})
             </h3>
+            <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Merge className="h-3 w-3" /> Drag one event onto another to merge
+            </p>
             <div className="flex items-center gap-2">
               {onCancel && (
                 <button onClick={onCancel} className="flex items-center gap-1.5 rounded-xl bg-secondary px-4 py-2 text-sm font-medium text-secondary-foreground hover:bg-secondary/80 transition-colors">
@@ -409,10 +468,26 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
           <div className="flex flex-col gap-3">
             {suggestions.map((step) => {
               const isEditing = editingKey === step.key;
+              const isDragSource = dragSourceKey === step.key;
+              const isDragTarget = dragOverKey === step.key && dragSourceKey !== step.key;
               return (
                 <div
                   key={step.key}
-                  className={`rounded-2xl border-2 p-4 transition-all ${step.selected ? "border-primary bg-primary/5" : "border-border bg-card opacity-60"}`}
+                  draggable
+                  onDragStart={(e) => handleStepDragStart(e, step.key)}
+                  onDragOver={(e) => handleStepDragOver(e, step.key)}
+                  onDragLeave={handleStepDragLeave}
+                  onDrop={(e) => handleStepDrop(e, step.key)}
+                  onDragEnd={handleStepDragEnd}
+                  className={`rounded-2xl border-2 p-4 transition-all cursor-grab active:cursor-grabbing ${
+                    isDragTarget
+                      ? "border-primary bg-primary/15 ring-2 ring-primary/30"
+                      : isDragSource
+                      ? "opacity-40 border-border"
+                      : step.selected
+                      ? "border-primary bg-primary/5"
+                      : "border-border bg-card opacity-60"
+                  }`}
                 >
                   <div className="flex items-start gap-4">
                     <div
