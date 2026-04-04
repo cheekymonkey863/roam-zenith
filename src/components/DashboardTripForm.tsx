@@ -10,6 +10,7 @@ import { toast } from "sonner";
 import { type PhotoExifData } from "@/lib/exif";
 import { processImportedMediaFiles } from "@/lib/mediaImport";
 import { buildStoredMediaMetadata } from "@/lib/mediaMetadata";
+import { ImportPreview } from "@/components/ImportPreview";
  
  type ImportMode = "none" | "photo" | "itinerary";
  
