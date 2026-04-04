@@ -505,7 +505,21 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
       {processing && (
         <div className="flex flex-col items-center gap-3 rounded-2xl bg-card p-8 shadow-card">
           <Loader2 className="h-8 w-8 animate-spin text-primary" />
-          <p className="text-sm text-muted-foreground">Reading metadata and grouping your media...</p>
+          <p className="text-sm font-medium text-foreground">
+            {processingStatus.phase || "Processing"}
+            {processingStatus.total > 0 && ` (${processingStatus.current}/${processingStatus.total})`}
+          </p>
+          {processingStatus.total > 1 && (
+            <div className="w-full max-w-xs">
+              <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+                <div
+                  className="h-full rounded-full bg-primary transition-all duration-300 ease-out"
+                  style={{ width: `${(processingStatus.current / processingStatus.total) * 100}%` }}
+                />
+              </div>
+            </div>
+          )}
+          <p className="text-xs text-muted-foreground">This may take a moment for large batches</p>
         </div>
       )}
 
