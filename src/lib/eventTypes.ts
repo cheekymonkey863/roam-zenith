@@ -1,5 +1,5 @@
 import {
-  Plane, TrainFront, Bus, Ship, Car, Footprints, Bike,
+  Plane, TrainFront, Bus, Ship, Car, Footprints, Bike, Sailboat, Anchor,
   Hotel, Building, Home, Castle, Trees, Tent, Mountain, Palmtree, Snowflake,
   Map, Camera, UtensilsCrossed, Users, Music, Theater, Sparkles, Heart, Flag, Trophy,
   type LucideIcon,
