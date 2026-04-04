@@ -157,29 +157,53 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
     setSuggestions((prev) => prev.map((s) => (s.key === key ? { ...s, [field]: value } : s)));
   };
 
+  // Check if a suggested step is near an existing step (within 2km)
+  const findMatchingExistingStep = (lat: number, lng: number) => {
+    for (const existing of existingSteps) {
+      const dlat = (existing.latitude - lat) * 111320;
+      const dlng = (existing.longitude - lng) * 111320 * Math.cos(lat * Math.PI / 180);
+      const dist = Math.sqrt(dlat * dlat + dlng * dlng);
+      if (dist < 2000) return existing;
+    }
+    return null;
+  };
+
   const importSelected = async () => {
     if (!user) return;
     setImporting(true);
     const selected = suggestions.filter((s) => s.selected);
+    let newSteps = 0;
+    let matchedSteps = 0;
 
     for (const step of selected) {
-      const { data: stepData, error: stepError } = await supabase.from("trip_steps").insert({
-        trip_id: tripId, user_id: user.id, location_name: step.locationName, country: step.country,
-        latitude: step.latitude, longitude: step.longitude,
-        recorded_at: step.earliestDate?.toISOString() || new Date().toISOString(),
-        source: "photo_import", event_type: "activity", is_confirmed: true,
-        notes: step.summary, description: step.description || null,
-      }).select().single();
+      const matchingStep = findMatchingExistingStep(step.latitude, step.longitude);
+      let stepId: string;
 
-      if (stepError || !stepData) { console.error("Step insert error:", stepError); toast.error(`Failed to create step for ${step.locationName}`); continue; }
+      if (matchingStep) {
+        // Attach photos to existing step instead of creating duplicate
+        stepId = matchingStep.id;
+        matchedSteps++;
+      } else {
+        const { data: stepData, error: stepError } = await supabase.from("trip_steps").insert({
+          trip_id: tripId, user_id: user.id, location_name: step.locationName, country: step.country,
+          latitude: step.latitude, longitude: step.longitude,
+          recorded_at: step.earliestDate?.toISOString() || new Date().toISOString(),
+          source: "photo_import", event_type: "activity", is_confirmed: true,
+          notes: step.summary, description: step.description || null,
+        }).select().single();
+
+        if (stepError || !stepData) { console.error("Step insert error:", stepError); toast.error(`Failed to create step for ${step.locationName}`); continue; }
+        stepId = stepData.id;
+        newSteps++;
+      }
 
       for (const photo of step.photos) {
         const ext = photo.file.name.split(".").pop() || "jpg";
-        const path = `${user.id}/${tripId}/${stepData.id}/${crypto.randomUUID()}.${ext}`;
+        const path = `${user.id}/${tripId}/${stepId}/${crypto.randomUUID()}.${ext}`;
         const { error: uploadError } = await supabase.storage.from("trip-photos").upload(path, photo.file);
         if (uploadError) { console.error("Photo upload error:", uploadError); } else {
           await supabase.from("step_photos").insert({
-            step_id: stepData.id, user_id: user.id, storage_path: path, file_name: photo.file.name,
+            step_id: stepId, user_id: user.id, storage_path: path, file_name: photo.file.name,
             latitude: photo.latitude, longitude: photo.longitude, taken_at: photo.takenAt?.toISOString(),
             exif_data: (photo.exifRaw as Json) ?? null,
           });
@@ -187,7 +211,10 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
       }
     }
 
-    toast.success(`Imported ${selected.length} location(s)!`);
+    const parts = [];
+    if (newSteps > 0) parts.push(`${newSteps} new location(s)`);
+    if (matchedSteps > 0) parts.push(`${matchedSteps} matched to existing steps`);
+    toast.success(`Imported: ${parts.join(", ")}!`);
     setImporting(false);
     setSuggestions([]);
     onImportComplete();
