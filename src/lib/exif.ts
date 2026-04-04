@@ -270,7 +270,7 @@ function extractQuickTimeTextMetadataFromChunk(text: string): QuickTimeTextMetad
 
   const locationKeyIndex = text.indexOf(QUICKTIME_LOCATION_KEY);
   const gpsSearchText = locationKeyIndex >= 0
-    ? text.slice(Math.max(0, locationKeyIndex - 128), Math.min(text.length, locationKeyIndex + 512))
+    ? text.slice(Math.max(0, locationKeyIndex - 128), Math.min(text.length, locationKeyIndex + 1024))
     : text;
   const gps = parseISO6709Text(gpsSearchText);
   if (gps) {
@@ -281,7 +281,7 @@ function extractQuickTimeTextMetadataFromChunk(text: string): QuickTimeTextMetad
 
   const creationKeyIndex = text.indexOf(QUICKTIME_CREATIONDATE_KEY);
   const dateSearchText = creationKeyIndex >= 0
-    ? text.slice(Math.max(0, creationKeyIndex - 64), Math.min(text.length, creationKeyIndex + 256))
+    ? text.slice(Math.max(0, creationKeyIndex - 64), Math.min(text.length, creationKeyIndex + 1024))
     : text;
   const creationDateMatch = dateSearchText.match(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{4}|[+-]\d{2}:?\d{2})/);
   if (creationDateMatch) {
