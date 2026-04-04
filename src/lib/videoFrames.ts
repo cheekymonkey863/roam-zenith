@@ -1,4 +1,5 @@
-import { supabase } from "@/integrations/supabase/client";
+import { FFmpeg } from "@ffmpeg/ffmpeg";
+import { fetchFile, toBlobURL } from "@ffmpeg/util";
 
 export type VideoPreviewSource = "html-video" | "ffmpeg" | "none";
 export type { VideoPreviewSource as VideoPreviewSourceType };
@@ -13,6 +14,10 @@ const ANALYSIS_IMAGE_SIZE = 768;
 const THUMBNAIL_SIZE = 120;
 const ANALYSIS_IMAGE_QUALITY = 0.76;
 const THUMBNAIL_QUALITY = 0.6;
+const FFMPEG_CORE_BASE_URL = "https://unpkg.com/@ffmpeg/core@0.12.9/dist/umd";
+
+let ffmpegInstancePromise: Promise<FFmpeg> | null = null;
+let ffmpegTaskQueue: Promise<void> = Promise.resolve();
 
 function isMovLikeFile(file: File) {
   const fileName = file.name.toLowerCase();
@@ -45,6 +50,44 @@ function resizeImageDataUrl(dataUrl: string, size: number, quality: number): Pro
     };
     image.src = dataUrl;
   });
+}
+
+function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onerror = () => resolve("");
+    reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : "");
+    reader.readAsDataURL(blob);
+  });
+}
+
+async function getFfmpegInstance(): Promise<FFmpeg> {
+  if (!ffmpegInstancePromise) {
+    ffmpegInstancePromise = (async () => {
+      const ffmpeg = new FFmpeg();
+      const [coreURL, wasmURL] = await Promise.all([
+        toBlobURL(`${FFMPEG_CORE_BASE_URL}/ffmpeg-core.js`, "text/javascript"),
+        toBlobURL(`${FFMPEG_CORE_BASE_URL}/ffmpeg-core.wasm`, "application/wasm"),
+      ]);
+
+      await ffmpeg.load({ coreURL, wasmURL });
+      return ffmpeg;
+    })().catch((error) => {
+      ffmpegInstancePromise = null;
+      throw error;
+    });
+  }
+
+  return ffmpegInstancePromise;
+}
+
+function queueFfmpegTask<T>(task: () => Promise<T>): Promise<T> {
+  const run = ffmpegTaskQueue.then(task, task);
+  ffmpegTaskQueue = run.then(
+    () => undefined,
+    () => undefined,
+  );
+  return run;
 }
 
 function captureFrameWithVideoElement(file: File, targetSize = ANALYSIS_IMAGE_SIZE, targetQuality = ANALYSIS_IMAGE_QUALITY): Promise<string> {
@@ -122,40 +165,51 @@ function captureFrameWithVideoElement(file: File, targetSize = ANALYSIS_IMAGE_SI
   });
 }
 
-/**
- * Server-side frame extraction for MOV/QuickTime files that browsers can't decode.
- * Sends a small chunk to the extract-video-metadata edge function which also
- * returns a base64 JPEG frame if available.
- */
-async function captureFrameServerSide(file: File): Promise<string> {
-  try {
-    // Read first 512KB - enough for the server to find a keyframe in many cases
-    const CHUNK_SIZE = 512 * 1024;
-    const chunk = file.slice(0, Math.min(file.size, CHUNK_SIZE));
-    const buffer = await chunk.arrayBuffer();
-    const bytes = new Uint8Array(buffer);
-    const chunkSize = 0x8000;
-    let binary = "";
-    for (let i = 0; i < bytes.length; i += chunkSize) {
-      const subChunk = bytes.subarray(i, i + chunkSize);
-      binary += String.fromCharCode(...subChunk);
+async function captureFrameWithFfmpeg(file: File): Promise<string> {
+  return queueFfmpegTask(async () => {
+    let ffmpeg: FFmpeg | null = null;
+    let inputName = "";
+    let outputName = "";
+
+    try {
+      ffmpeg = await getFfmpegInstance();
+      const extension = file.name.split(".").pop()?.toLowerCase() || "mov";
+      inputName = `input-${crypto.randomUUID()}.${extension}`;
+      outputName = `frame-${crypto.randomUUID()}.jpg`;
+
+      await ffmpeg.writeFile(inputName, await fetchFile(file));
+      const exitCode = await ffmpeg.exec([
+        "-i",
+        inputName,
+        "-vf",
+        "thumbnail=120",
+        "-frames:v",
+        "1",
+        "-q:v",
+        "4",
+        outputName,
+      ], 45000);
+
+      if (exitCode !== 0) return "";
+
+      const output = await ffmpeg.readFile(outputName);
+      const bytes = output instanceof Uint8Array ? output : new Uint8Array(output as ArrayBuffer);
+      if (!bytes.byteLength) return "";
+
+      const dataUrl = await blobToDataUrl(new Blob([bytes], { type: "image/jpeg" }));
+      return resizeImageDataUrl(dataUrl, ANALYSIS_IMAGE_SIZE, ANALYSIS_IMAGE_QUALITY);
+    } catch (error) {
+      console.warn(`[video-preview] FFmpeg fallback failed for "${file.name}"`, error);
+      return "";
+    } finally {
+      if (ffmpeg) {
+        await Promise.allSettled([
+          inputName ? ffmpeg.deleteFile(inputName) : Promise.resolve(),
+          outputName ? ffmpeg.deleteFile(outputName) : Promise.resolve(),
+        ]);
+      }
     }
-    const base64 = btoa(binary);
-
-    const { data, error } = await supabase.functions.invoke("extract-video-metadata", {
-      body: { videoBase64: base64, extractFrame: true },
-    });
-
-    if (error || !data?.frameBase64) return "";
-
-    const frameDataUrl = data.frameBase64.startsWith("data:")
-      ? data.frameBase64
-      : `data:image/jpeg;base64,${data.frameBase64}`;
-
-    return frameDataUrl.length >= 500 ? frameDataUrl : "";
-  } catch {
-    return "";
-  }
+  });
 }
 
 export async function createVideoPreviews(file: File): Promise<VideoPreviewSet> {
@@ -170,11 +224,10 @@ export async function createVideoPreviews(file: File): Promise<VideoPreviewSet> 
     previewSource = "html-video";
   }
 
-  // For MOV files that failed HTML5 playback, we note no preview but don't block
-  // The AI inference will still work with filename/date context
+  // For MOV files that failed HTML5 playback, fall back to ffmpeg.wasm extraction.
   if (!analysisImage && isMov) {
-    console.info(`[video-preview] MOV file "${file.name}" — trying server-side frame extraction...`);
-    analysisImage = await captureFrameServerSide(file);
+    console.info(`[video-preview] MOV file "${file.name}" — trying ffmpeg fallback...`);
+    analysisImage = await captureFrameWithFfmpeg(file);
     if (analysisImage) {
       previewSource = "ffmpeg";
     } else {
