@@ -117,6 +117,8 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
   const [suggestions, setSuggestions] = useState<SuggestedStep[]>([]);
   const [noGpsPhotos, setNoGpsPhotos] = useState<PhotoExifData[]>([]);
   const [editingKey, setEditingKey] = useState<string | null>(null);
+  const [dragSourceKey, setDragSourceKey] = useState<string | null>(null);
+  const [dragOverKey, setDragOverKey] = useState<string | null>(null);
 
   const processFiles = useCallback(async (files: File[]) => {
     setProcessing(true);
