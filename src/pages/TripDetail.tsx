@@ -1,11 +1,12 @@
 import { useParams, Link } from "react-router-dom";
 import { useEffect, useState } from "react";
-import { ArrowLeft, Calendar, MapPin, Route, Navigation, Image as ImageIcon } from "lucide-react";
+import { ArrowLeft, Calendar, MapPin, Route, Navigation, Image as ImageIcon, FileText } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { TripTimeline } from "@/components/TripTimeline";
 import { TrackingControl } from "@/components/TrackingControl";
 import { PhotoImport } from "@/components/PhotoImport";
+import { ItineraryImport } from "@/components/ItineraryImport";
 import { WorldMap } from "@/components/WorldMap";
 import { AddEventForm } from "@/components/AddEventForm";
 import { EditTripDialog } from "@/components/EditTripDialog";
@@ -26,6 +27,7 @@ const TripDetail = () => {
   const [steps, setSteps] = useState<TripStep[]>([]);
   const [loading, setLoading] = useState(true);
   const [showPhotoImport, setShowPhotoImport] = useState(false);
+  const [showItineraryImport, setShowItineraryImport] = useState(false);
 
   const fetchData = async () => {
     if (!user || !id) return;
@@ -98,7 +100,7 @@ const TripDetail = () => {
       <div className="flex flex-wrap gap-3">
         <AddEventForm tripId={trip.id} onEventAdded={fetchData} />
         <button
-          onClick={() => setShowPhotoImport(!showPhotoImport)}
+          onClick={() => { setShowPhotoImport(!showPhotoImport); if (!showPhotoImport) setShowItineraryImport(false); }}
           className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition-colors ${
             showPhotoImport
               ? "bg-primary text-primary-foreground hover:bg-primary/90"
@@ -108,6 +110,17 @@ const TripDetail = () => {
           <ImageIcon className="h-4 w-4" />
           Import Photos
         </button>
+        <button
+          onClick={() => { setShowItineraryImport(!showItineraryImport); if (!showItineraryImport) setShowPhotoImport(false); }}
+          className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition-colors ${
+            showItineraryImport
+              ? "bg-primary text-primary-foreground hover:bg-primary/90"
+              : "bg-secondary text-secondary-foreground hover:bg-secondary/80"
+          }`}
+        >
+          <FileText className="h-4 w-4" />
+          Import Itinerary
+        </button>
       </div>
 
       {showPhotoImport && (
@@ -115,6 +128,14 @@ const TripDetail = () => {
           tripId={trip.id}
           onImportComplete={fetchData}
           onCancel={() => setShowPhotoImport(false)}
+        />
+      )}
+
+      {showItineraryImport && (
+        <ItineraryImport
+          tripId={trip.id}
+          onImportComplete={fetchData}
+          onCancel={() => setShowItineraryImport(false)}
         />
       )}
 
