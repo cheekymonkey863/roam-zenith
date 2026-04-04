@@ -18,6 +18,7 @@ const FFMPEG_CORE_BASE_URL = "https://unpkg.com/@ffmpeg/core@0.12.9/dist/umd";
 
 let ffmpegInstancePromise: Promise<FFmpeg> | null = null;
 let ffmpegTaskQueue: Promise<void> = Promise.resolve();
+let ffmpegUnavailableReason: string | null = null;
 
 function isMovLikeFile(file: File) {
   const fileName = file.name.toLowerCase();
@@ -61,7 +62,20 @@ function blobToDataUrl(blob: Blob): Promise<string> {
   });
 }
 
+function disableFfmpegForSession(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  if (ffmpegUnavailableReason === message) return;
+
+  ffmpegUnavailableReason = message || "FFmpeg unavailable";
+  ffmpegInstancePromise = null;
+  console.warn(`[video-preview] Disabling FFmpeg fallback for this session: ${ffmpegUnavailableReason}`);
+}
+
 async function getFfmpegInstance(): Promise<FFmpeg> {
+  if (ffmpegUnavailableReason) {
+    throw new Error(ffmpegUnavailableReason);
+  }
+
   if (!ffmpegInstancePromise) {
     ffmpegInstancePromise = (async () => {
       const ffmpeg = new FFmpeg();
@@ -73,7 +87,7 @@ async function getFfmpegInstance(): Promise<FFmpeg> {
       await ffmpeg.load({ coreURL, wasmURL });
       return ffmpeg;
     })().catch((error) => {
-      ffmpegInstancePromise = null;
+      disableFfmpegForSession(error);
       throw error;
     });
   }
@@ -166,7 +180,11 @@ function captureFrameWithVideoElement(file: File, targetSize = ANALYSIS_IMAGE_SI
 }
 
 async function captureFrameWithFfmpeg(file: File): Promise<string> {
+  if (ffmpegUnavailableReason) return "";
+
   return queueFfmpegTask(async () => {
+    if (ffmpegUnavailableReason) return "";
+
     let ffmpeg: FFmpeg | null = null;
     let inputName = "";
     let outputName = "";
@@ -201,6 +219,7 @@ async function captureFrameWithFfmpeg(file: File): Promise<string> {
       const dataUrl = await blobToDataUrl(new Blob([bytes], { type: "image/jpeg" }));
       return resizeImageDataUrl(dataUrl, ANALYSIS_IMAGE_SIZE, ANALYSIS_IMAGE_QUALITY);
     } catch (error) {
+      disableFfmpegForSession(error);
       console.warn(`[video-preview] FFmpeg fallback failed for "${file.name}"`, error);
       return "";
     } finally {
@@ -217,27 +236,23 @@ async function captureFrameWithFfmpeg(file: File): Promise<string> {
 export async function createVideoPreviews(file: File): Promise<VideoPreviewSet> {
   const isMov = isMovLikeFile(file);
 
-  let analysisImage = "";
-  let previewSource: VideoPreviewSource = "none";
+  let analysisImage = await captureFrameWithVideoElement(file);
+  let previewSource: VideoPreviewSource = analysisImage ? "html-video" : "none";
 
-  if (isMov) {
-    console.info(`[video-preview] MOV file "${file.name}" — trying ffmpeg fallback...`);
+  if (!analysisImage && isMov && !ffmpegUnavailableReason) {
+    console.info(`[video-preview] MOV file "${file.name}" — HTML5 preview unavailable, trying ffmpeg fallback...`);
     analysisImage = await captureFrameWithFfmpeg(file);
     if (analysisImage) {
       previewSource = "ffmpeg";
     }
   }
 
-  // Try HTML5 video element for non-MOV files, or as a fallback if ffmpeg didn't produce a frame.
-  if (!analysisImage) {
-    analysisImage = await captureFrameWithVideoElement(file);
-    if (analysisImage) {
-      previewSource = "html-video";
-    }
-  }
-
   if (!analysisImage && isMov) {
-    console.info(`[video-preview] MOV file "${file.name}" — no frame available, AI will use filename context.`);
+    console.info(
+      ffmpegUnavailableReason
+        ? `[video-preview] MOV file "${file.name}" — FFmpeg unavailable, continuing without preview frame.`
+        : `[video-preview] MOV file "${file.name}" — no frame available, AI will use filename context.`
+    );
   }
 
   if (!analysisImage) {
