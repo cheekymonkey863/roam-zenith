@@ -202,9 +202,11 @@ Keep summaries under 18 words. Keep photo captions under 14 words.`,
       for (const photo of group.photos) {
         content.push({
           type: "text",
-          text: `Media item ${photo.captionId}: ${photo.fileName}${photo.takenAt ? `, taken at ${photo.takenAt}` : ""}`,
+          text: `Media item ${photo.captionId}: ${photo.fileName}${photo.takenAt ? `, taken at ${photo.takenAt}` : ""}${!photo.analysisImage ? " (video — no preview frame available, caption based on filename and context)" : ""}`,
         });
-        content.push({ type: "image_url", image_url: { url: photo.analysisImage } });
+        if (photo.analysisImage) {
+          content.push({ type: "image_url", image_url: { url: photo.analysisImage } });
+        }
       }
     }
 
