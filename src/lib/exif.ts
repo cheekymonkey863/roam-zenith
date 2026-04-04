@@ -23,22 +23,16 @@ export interface PhotoExifData {
   exifRaw?: Record<string, unknown>;
 }
 
-const EXIF_FIELDS = [
+const DATE_FIELD_PRIORITY = [
+  "SubSecDateTimeOriginal",
   "DateTimeOriginal",
+  "DateTimeDigitized",
   "CreateDate",
-  "GPSLatitude",
-  "GPSLongitude",
-  "GPSLatitudeRef",
-  "GPSLongitudeRef",
-  "Make",
-  "Model",
-  "LensModel",
-  "ExposureTime",
-  "FNumber",
-  "ISO",
-  "ImageWidth",
-  "ImageHeight",
-  "GPSAltitude",
+  "DateCreated",
+  "CreationDate",
+  "MediaCreateDate",
+  "TrackCreateDate",
+  "ModifyDate",
 ] as const;
 
 const HEIC_EXTENSIONS = [".heic", ".heif", ".heics", ".heifs"];
@@ -60,8 +54,123 @@ function withExtension(fileName: string, extension: string) {
 
 function normalizeDate(value: unknown): Date | null {
   if (!value) return null;
-  const date = value instanceof Date ? value : new Date(value as string | number);
-  return Number.isNaN(date.getTime()) ? null : date;
+
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value;
+  }
+
+  if (typeof value === "number") {
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+
+    const parsed = new Date(trimmed);
+    if (!Number.isNaN(parsed.getTime())) return parsed;
+
+    const exifMatch = trimmed.match(
+      /^(\d{4})[:.-](\d{2})[:.-](\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?(?:\.(\d{1,3}))?(?:\s?(Z|[+-]\d{2}:?\d{2}))?$/,
+    );
+
+    if (exifMatch) {
+      const [, year, month, day, hour, minute, second = "0", millisecond = "0", timezone] = exifMatch;
+
+      if (timezone) {
+        const normalizedTimezone = timezone.replace(/^([+-]\d{2})(\d{2})$/, "$1:$2");
+        const isoLike = `${year}-${month}-${day}T${hour}:${minute}:${second}.${millisecond.padEnd(3, "0")}${normalizedTimezone}`;
+        const zonedDate = new Date(isoLike);
+        return Number.isNaN(zonedDate.getTime()) ? null : zonedDate;
+      }
+
+      const localDate = new Date(
+        Number(year),
+        Number(month) - 1,
+        Number(day),
+        Number(hour),
+        Number(minute),
+        Number(second),
+        Number(millisecond.padEnd(3, "0")),
+      );
+      return Number.isNaN(localDate.getTime()) ? null : localDate;
+    }
+  }
+
+  return null;
+}
+
+function collectNestedValuesByKey(value: unknown, key: string, seen = new WeakSet<object>()): unknown[] {
+  if (!value || typeof value !== "object") return [];
+  if (value instanceof Date) return [];
+  if (seen.has(value)) return [];
+  seen.add(value);
+
+  if (Array.isArray(value)) {
+    return value.flatMap((item) => collectNestedValuesByKey(item, key, seen));
+  }
+
+  const record = value as Record<string, unknown>;
+  const matches: unknown[] = [];
+
+  if (key in record) {
+    matches.push(record[key]);
+  }
+
+  for (const child of Object.values(record)) {
+    matches.push(...collectNestedValuesByKey(child, key, seen));
+  }
+
+  return matches;
+}
+
+function sanitizeMetadataValue(value: unknown, depth = 0): unknown {
+  if (depth > 8) return null;
+
+  if (
+    value === null ||
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean"
+  ) {
+    return value;
+  }
+
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value.toISOString();
+  }
+
+  if (typeof value === "bigint") {
+    return value.toString();
+  }
+
+  if (ArrayBuffer.isView(value)) {
+    return Array.from(new Uint8Array(value.buffer, value.byteOffset, value.byteLength));
+  }
+
+  if (value instanceof ArrayBuffer) {
+    return null;
+  }
+
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => sanitizeMetadataValue(item, depth + 1))
+      .filter((item) => item !== undefined);
+  }
+
+  if (typeof value === "object") {
+    const result: Record<string, unknown> = {};
+    for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+      const sanitized = sanitizeMetadataValue(child, depth + 1);
+      if (sanitized !== undefined) {
+        result[key] = sanitized;
+      }
+    }
+    return result;
+  }
+
+  return undefined;
 }
 
 function extractCoordinatesFromExif(exif: any): { latitude: number | null; longitude: number | null } {
@@ -90,10 +199,21 @@ function extractCoordinatesFromExif(exif: any): { latitude: number | null; longi
   return { latitude, longitude };
 }
 
-function extractTakenAtFromExif(exif: any, fallbackTimestamp?: number): Date | null {
-  const fromExif = normalizeDate(exif?.DateTimeOriginal) ?? normalizeDate(exif?.CreateDate);
-  if (fromExif) return fromExif;
-  return typeof fallbackTimestamp === "number" && fallbackTimestamp > 0 ? normalizeDate(fallbackTimestamp) : null;
+function extractTakenAtFromExif(exif: any): Date | null {
+  if (!exif || typeof exif !== "object") return null;
+
+  for (const key of DATE_FIELD_PRIORITY) {
+    const directMatch = normalizeDate(exif[key]);
+    if (directMatch) return directMatch;
+
+    const nestedMatches = collectNestedValuesByKey(exif, key);
+    for (const candidate of nestedMatches) {
+      const nestedDate = normalizeDate(candidate);
+      if (nestedDate) return nestedDate;
+    }
+  }
+
+  return null;
 }
 
 async function normalizeImageFileForBrowser(file: File): Promise<File> {
@@ -119,7 +239,11 @@ async function parseMediaExif(file: File) {
   try {
     return await exifr.parse(file, {
       gps: true,
-      pick: [...EXIF_FIELDS],
+      tiff: true,
+      xmp: true,
+      iptc: true,
+      jfif: true,
+      multiSegment: true,
     });
   } catch {
     return null;
@@ -331,12 +455,10 @@ export async function extractExifFromFile(file: File): Promise<PhotoExifData> {
     metadataSources.add("embedded_gps");
   }
 
-  const embeddedDate = normalizeDate(exif?.DateTimeOriginal) ?? normalizeDate(exif?.CreateDate);
-  let takenAt = embeddedDate ?? normalizeDate(file.lastModified);
+  const embeddedDate = extractTakenAtFromExif(exif);
+  let takenAt = embeddedDate;
   if (embeddedDate) {
     metadataSources.add("embedded_capture_time");
-  } else if (takenAt) {
-    metadataSources.add("file_modified_time");
   }
 
   let cameraMake: string | undefined = typeof exif?.Make === "string" ? exif.Make : undefined;
@@ -359,25 +481,24 @@ export async function extractExifFromFile(file: File): Promise<PhotoExifData> {
       }
     }
 
-    if (!embeddedDate && (!takenAt || metadataSources.has("file_modified_time"))) {
+    if (!embeddedDate && !takenAt) {
       const videoDate = await parseVideoCreationDate(file);
       if (videoDate) {
         takenAt = videoDate;
-        metadataSources.delete("file_modified_time");
         metadataSources.add("video_container_time");
       }
     }
 
     // Server-side fallback only when client-side didn't find everything
-    if (latitude === null || longitude === null || !takenAt || metadataSources.has("file_modified_time")) {
+    if (latitude === null || longitude === null || !takenAt) {
       const serverMeta = await extractVideoMetadataServerSide(file);
       if (serverMeta) {
         if ((latitude === null || longitude === null) && serverMeta.latitude !== null && serverMeta.longitude !== null) {
           latitude = serverMeta.latitude; longitude = serverMeta.longitude; metadataSources.add("video_server_gps");
         }
-        if ((!takenAt || metadataSources.has("file_modified_time")) && serverMeta.creationDate) {
+        if (!takenAt && serverMeta.creationDate) {
           const d = new Date(serverMeta.creationDate);
-          if (!isNaN(d.getTime())) { takenAt = d; metadataSources.delete("file_modified_time"); metadataSources.add("video_server_time"); }
+          if (!isNaN(d.getTime())) { takenAt = d; metadataSources.add("video_server_time"); }
         }
         if (duration === null && typeof serverMeta.duration === "number") { duration = serverMeta.duration; }
         if (!cameraMake && serverMeta.cameraMake) cameraMake = serverMeta.cameraMake;
@@ -387,6 +508,8 @@ export async function extractExifFromFile(file: File): Promise<PhotoExifData> {
   }
 
   console.log(`[exif] ${file.name}: GPS=${latitude},${longitude} date=${takenAt?.toISOString() ?? "none"} sources=[${Array.from(metadataSources).join(",")}]`);
+
+  const sanitizedExif = sanitizeMetadataValue(exif);
 
   return {
     file,
@@ -403,7 +526,10 @@ export async function extractExifFromFile(file: File): Promise<PhotoExifData> {
     metadataSources: Array.from(metadataSources),
     previewSource: previewSource ?? "none",
     aiTags: [],
-    exifRaw: exif ? { ...exif } : undefined,
+    exifRaw:
+      sanitizedExif && typeof sanitizedExif === "object" && !Array.isArray(sanitizedExif)
+        ? (sanitizedExif as Record<string, unknown>)
+        : undefined,
   };
 }
 
