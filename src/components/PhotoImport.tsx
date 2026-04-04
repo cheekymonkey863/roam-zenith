@@ -222,7 +222,8 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
   const { user } = useAuth();
   const [dragOver, setDragOver] = useState(false);
   const [processing, setProcessing] = useState(false);
-  const [importing, setImporting] = useState(false);
+   const [importing, setImporting] = useState(false);
+   const [importProgress, setImportProgress] = useState({ current: 0, total: 0 });
   const [suggestions, setSuggestions] = useState<SuggestedStep[]>([]);
   const [noGpsPhotos, setNoGpsPhotos] = useState<PhotoExifData[]>([]);
   const [editingKey, setEditingKey] = useState<string | null>(null);

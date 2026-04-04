@@ -93,7 +93,8 @@ import { ImportPreview } from "@/components/ImportPreview";
    const [endDate, setEndDate] = useState("");
    const [countries, setCountries] = useState("");
    const [trackInBackground, setTrackInBackground] = useState(false);
-   const [creating, setCreating] = useState(false);
+    const [creating, setCreating] = useState(false);
+    const [importProgress, setImportProgress] = useState({ current: 0, total: 0 });
  
    const [importMode, setImportMode] = useState<ImportMode>("none");
    const [importProcessing, setImportProcessing] = useState(false);
