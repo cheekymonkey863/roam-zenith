@@ -1,7 +1,9 @@
 import exifr from "exifr";
+import heic2any from "heic2any";
 
 export interface PhotoExifData {
   file: File;
+  uploadFile?: File;
   latitude: number | null;
   longitude: number | null;
   takenAt: Date | null;
@@ -29,6 +31,23 @@ const EXIF_FIELDS = [
   "ImageHeight",
   "GPSAltitude",
 ] as const;
+
+const HEIC_EXTENSIONS = [".heic", ".heif", ".heics", ".heifs"];
+const HEIC_MIME_TYPES = new Set([
+  "image/heic",
+  "image/heif",
+  "image/heic-sequence",
+  "image/heif-sequence",
+]);
+
+function isHeicLikeFile(file: File) {
+  const lowerFileName = file.name.toLowerCase();
+  return HEIC_EXTENSIONS.some((extension) => lowerFileName.endsWith(extension)) || HEIC_MIME_TYPES.has(file.type.toLowerCase());
+}
+
+function withExtension(fileName: string, extension: string) {
+  return `${fileName.replace(/\.[^.]+$/, "")}${extension}`;
+}
 
 function normalizeDate(value: unknown): Date | null {
   if (!value) return null;
@@ -68,6 +87,25 @@ function extractTakenAtFromExif(exif: any, fallbackTimestamp?: number): Date | n
   return typeof fallbackTimestamp === "number" && fallbackTimestamp > 0 ? normalizeDate(fallbackTimestamp) : null;
 }
 
+async function normalizeImageFileForBrowser(file: File): Promise<File> {
+  if (!isHeicLikeFile(file)) return file;
+
+  try {
+    const converted = await heic2any({ blob: file, toType: "image/jpeg", quality: 0.92 });
+    const blob = Array.isArray(converted) ? converted[0] : converted;
+
+    if (!(blob instanceof Blob)) return file;
+
+    return new File([blob], withExtension(file.name, ".jpg"), {
+      type: "image/jpeg",
+      lastModified: file.lastModified,
+    });
+  } catch (error) {
+    console.warn("HEIC conversion failed, falling back to original image", error);
+    return file;
+  }
+}
+
 async function parseMediaExif(file: File) {
   try {
     return await exifr.parse(file, {
@@ -82,10 +120,14 @@ async function parseMediaExif(file: File) {
 export async function extractExifFromFile(file: File): Promise<PhotoExifData> {
   const isVideo = file.type.startsWith("video/");
 
-  const [thumbnail, analysisImage, exif] = await Promise.all([
-    isVideo ? createVideoThumbnail(file, 120, 0.6) : createImagePreview(file, 120, 0.6),
-    isVideo ? createVideoThumbnail(file, 768, 0.76) : createImagePreview(file, 768, 0.76),
+  const [uploadFile, exif] = await Promise.all([
+    isVideo ? Promise.resolve(file) : normalizeImageFileForBrowser(file),
     parseMediaExif(file),
+  ]);
+
+  const [thumbnail, analysisImage] = await Promise.all([
+    isVideo ? createVideoThumbnail(file, 120, 0.6) : createImagePreview(uploadFile, 120, 0.6),
+    isVideo ? createVideoThumbnail(file, 768, 0.76) : createImagePreview(uploadFile, 768, 0.76),
   ]);
 
   const { latitude, longitude } = extractCoordinatesFromExif(exif);
@@ -93,6 +135,7 @@ export async function extractExifFromFile(file: File): Promise<PhotoExifData> {
 
   return {
     file,
+    uploadFile,
     latitude,
     longitude,
     takenAt,

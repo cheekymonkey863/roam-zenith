@@ -429,9 +429,12 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
       }
 
       for (const photo of step.photos) {
-        const ext = photo.file.name.split(".").pop() || "jpg";
+        const uploadFile = photo.uploadFile ?? photo.file;
+        const ext = uploadFile.name.split(".").pop() || (uploadFile.type.startsWith("video/") ? "mp4" : "jpg");
         const path = `${user.id}/${tripId}/${stepId}/${crypto.randomUUID()}.${ext}`;
-        const { error: uploadError } = await supabase.storage.from("trip-photos").upload(path, photo.file);
+        const { error: uploadError } = await supabase.storage.from("trip-photos").upload(path, uploadFile, {
+          contentType: uploadFile.type || undefined,
+        });
 
         if (uploadError) {
           console.error("Photo upload error:", uploadError);
@@ -440,7 +443,7 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
             step_id: stepId,
             user_id: user.id,
             storage_path: path,
-            file_name: photo.file.name,
+            file_name: uploadFile.name,
             latitude: photo.latitude,
             longitude: photo.longitude,
             taken_at: photo.takenAt?.toISOString(),
