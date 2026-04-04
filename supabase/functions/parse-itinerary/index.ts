@@ -4,6 +4,12 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
+const VALID_EVENT_TYPES = [
+  "flight", "train", "bus", "ferry", "car", "on_foot", "cycling",
+  "hotel", "apartment_flat", "private_home", "villa", "safari", "glamping", "camping",
+  "tour", "sightseeing", "dining", "meeting", "concert", "theatre", "live_show", "wellness",
+];
+
 interface ParsedActivity {
   locationName: string;
   country: string;
@@ -42,7 +48,6 @@ Deno.serve(async (req) => {
       return jsonResponse({ error: "No itinerary text provided" }, 400);
     }
 
-    // Truncate to ~30k chars to stay within token limits
     const truncated = text.slice(0, 30000);
 
     const aiResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
@@ -56,17 +61,54 @@ Deno.serve(async (req) => {
         messages: [
           {
             role: "system",
-            content: `You parse travel itinerary documents into structured activities. Extract EVERY activity, accommodation, transport, meal, sightseeing stop, border crossing, arrival, and departure mentioned.
+            content: `You parse travel itinerary documents into structured activities. Extract EVERY activity, accommodation, transport, meal, sightseeing stop, and event mentioned.
 
 For each item determine:
 - locationName: specific place name (hotel name, restaurant, landmark, airport, station)
 - country: country name
 - latitude/longitude: your best estimate of coordinates (use your knowledge of the location)
-- eventType: one of "arrival", "departure", "accommodation", "transport", "activity", "food", "sightseeing", "border_crossing", "other"
+- eventType: MUST be one of these exact values:
+
+  TRANSPORT types (for any movement between places):
+    "flight" - air travel
+    "train" - rail travel
+    "bus" - bus or coach travel
+    "ferry" - boat, ferry, or cruise travel
+    "car" - car, taxi, uber, transfer, or driving
+    "on_foot" - walking tours, hikes, treks
+    "cycling" - bicycle travel
+
+  ACCOMMODATION types (for stays/lodging):
+    "hotel" - hotel, resort, lodge, hostel, inn
+    "apartment_flat" - apartment, flat, Airbnb rental
+    "private_home" - staying at someone's home
+    "villa" - villa or large private rental
+    "safari" - safari lodge or camp
+    "glamping" - glamping accommodation
+    "camping" - camping, tent
+
+  EVENT types (for activities/experiences):
+    "tour" - guided tours, walking tours, excursions
+    "sightseeing" - visiting landmarks, museums, viewpoints, parks
+    "dining" - restaurants, meals, food experiences, cafes, bars
+    "meeting" - business meetings, appointments
+    "concert" - concerts, music events
+    "theatre" - theatre, opera, ballet performances
+    "live_show" - live shows, comedy, performances
+    "wellness" - spa, massage, yoga, wellness activities
+
 - date: ISO date string (YYYY-MM-DD) if mentioned, null otherwise
-- time: time string (HH:MM) if mentioned, null otherwise  
+- time: time string (HH:MM) if mentioned, null otherwise
 - description: brief description of what happens at this stop
 - notes: any additional details (booking refs, addresses, tips, costs)
+
+IMPORTANT: Be specific with eventType. For example:
+- An airport pickup is "car" not generic transport
+- A restaurant dinner is "dining" not generic activity
+- A museum visit is "sightseeing" not generic activity
+- Check-in at Hilton is "hotel" not generic accommodation
+- A walking tour is "tour"
+- A spa visit is "wellness"
 
 Sort activities chronologically. Be thorough — extract every single stop mentioned.`,
           },
@@ -95,7 +137,7 @@ Sort activities chronologically. Be thorough — extract every single stop menti
                         longitude: { type: "number", description: "Estimated longitude" },
                         eventType: {
                           type: "string",
-                          enum: ["arrival", "departure", "accommodation", "transport", "activity", "food", "sightseeing", "border_crossing", "other"],
+                          enum: VALID_EVENT_TYPES,
                         },
                         date: { type: "string", description: "ISO date YYYY-MM-DD or null" },
                         time: { type: "string", description: "Time HH:MM or null" },
@@ -144,10 +186,7 @@ Sort activities chronologically. Be thorough — extract every single stop menti
           country: typeof a.country === "string" ? a.country : "Unknown",
           latitude: typeof a.latitude === "number" ? a.latitude : null,
           longitude: typeof a.longitude === "number" ? a.longitude : null,
-          eventType: [
-            "arrival", "departure", "accommodation", "transport",
-            "activity", "food", "sightseeing", "border_crossing", "other",
-          ].includes(a.eventType) ? a.eventType : "other",
+          eventType: VALID_EVENT_TYPES.includes(a.eventType) ? a.eventType : mapLegacyEventType(a.eventType),
           date: typeof a.date === "string" ? a.date : null,
           time: typeof a.time === "string" ? a.time : null,
           description: typeof a.description === "string" ? a.description : "",
@@ -161,3 +200,23 @@ Sort activities chronologically. Be thorough — extract every single stop menti
     return jsonResponse({ error: error instanceof Error ? error.message : "Unknown error" }, 500);
   }
 });
+
+// Map old generic types to specific new types
+function mapLegacyEventType(type: string): string {
+  switch (type) {
+    case "arrival":
+    case "departure":
+    case "transport":
+      return "car";
+    case "accommodation":
+      return "hotel";
+    case "food":
+      return "dining";
+    case "activity":
+      return "tour";
+    case "border_crossing":
+    case "other":
+    default:
+      return "sightseeing";
+  }
+}
