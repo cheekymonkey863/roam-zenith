@@ -129,7 +129,7 @@ const TripDetail = () => {
           }`}
         >
           <ImageIcon className="h-4 w-4" />
-          Import Photos
+          Add from Photo / Video
         </button>
         <button
           onClick={() => { setShowItineraryImport(!showItineraryImport); if (!showItineraryImport) setShowPhotoImport(false); }}
@@ -140,7 +140,7 @@ const TripDetail = () => {
           }`}
         >
           <FileText className="h-4 w-4" />
-          Import Itinerary
+          Add from Itinerary
         </button>
       </div>
 
