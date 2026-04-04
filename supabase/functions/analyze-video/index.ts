@@ -1,3 +1,5 @@
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
@@ -24,9 +26,94 @@ function jsonResponse(body: unknown, status = 200) {
 const GEMINI_API_BASE = "https://generativelanguage.googleapis.com";
 const GEMINI_MODEL = "gemini-2.5-flash";
 
+// ── Gemini File API helpers ──────────────────────────────────
+
+async function uploadToGeminiFileAPI(
+  apiKey: string,
+  videoBytes: Uint8Array,
+  mimeType: string,
+  displayName: string,
+): Promise<string> {
+  // Step 1: Start resumable upload
+  const startRes = await fetch(
+    `${GEMINI_API_BASE}/upload/v1beta/files?key=${apiKey}`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Goog-Upload-Protocol": "resumable",
+        "X-Goog-Upload-Command": "start",
+        "X-Goog-Upload-Header-Content-Length": String(videoBytes.byteLength),
+        "X-Goog-Upload-Header-Content-Type": mimeType,
+      },
+      body: JSON.stringify({ file: { display_name: displayName } }),
+    },
+  );
+
+  if (!startRes.ok) {
+    const errText = await startRes.text();
+    throw new Error(`Gemini File API start failed [${startRes.status}]: ${errText}`);
+  }
+
+  const uploadUrl = startRes.headers.get("X-Goog-Upload-URL");
+  if (!uploadUrl) throw new Error("No upload URL returned from Gemini File API");
+
+  // Consume the body to avoid resource leak
+  await startRes.text();
+
+  // Step 2: Upload the bytes
+  const uploadRes = await fetch(uploadUrl, {
+    method: "PUT",
+    headers: {
+      "Content-Length": String(videoBytes.byteLength),
+      "X-Goog-Upload-Offset": "0",
+      "X-Goog-Upload-Command": "upload, finalize",
+    },
+    body: videoBytes,
+  });
+
+  if (!uploadRes.ok) {
+    const errText = await uploadRes.text();
+    throw new Error(`Gemini File API upload failed [${uploadRes.status}]: ${errText}`);
+  }
+
+  const uploadData = await uploadRes.json();
+  const fileUri = uploadData?.file?.uri;
+  if (!fileUri) throw new Error("No fileUri in Gemini upload response");
+
+  return fileUri;
+}
+
+async function waitForFileActive(apiKey: string, fileUri: string, maxWaitMs = 120_000): Promise<void> {
+  // Extract file name from URI: files/xxxx
+  const fileName = fileUri.split("/").slice(-1)[0];
+  const getUrl = `${GEMINI_API_BASE}/v1beta/files/${fileName}?key=${apiKey}`;
+
+  const deadline = Date.now() + maxWaitMs;
+  while (Date.now() < deadline) {
+    const res = await fetch(getUrl);
+    if (!res.ok) {
+      const errText = await res.text();
+      throw new Error(`File status check failed [${res.status}]: ${errText}`);
+    }
+    const data = await res.json();
+    const state = data?.state;
+
+    if (state === "ACTIVE") return;
+    if (state === "FAILED") throw new Error(`Gemini file processing failed: ${JSON.stringify(data)}`);
+
+    // Wait 2 seconds before polling again
+    await new Promise((r) => setTimeout(r, 2000));
+  }
+
+  throw new Error("Timed out waiting for Gemini file to become ACTIVE");
+}
+
+// ── Main analysis ────────────────────────────────────────────
+
 async function analyzeVideoWithGemini(
   apiKey: string,
-  videoBase64: string,
+  fileUri: string,
   mimeType: string,
   metadata: {
     captionId: string;
@@ -43,7 +130,9 @@ async function analyzeVideoWithGemini(
     metadata.latitude != null && metadata.longitude != null
       ? `Coordinates: ${metadata.latitude.toFixed(6)}, ${metadata.longitude.toFixed(6)}`
       : null,
-    metadata.locationName ? `Reverse-geocoded location: ${metadata.locationName}${metadata.country ? `, ${metadata.country}` : ""}` : null,
+    metadata.locationName
+      ? `Reverse-geocoded location: ${metadata.locationName}${metadata.country ? `, ${metadata.country}` : ""}`
+      : null,
   ]
     .filter(Boolean)
     .join(" | ");
@@ -76,10 +165,7 @@ OUTPUT RULES:
         contents: [
           {
             parts: [
-              {
-                inlineData: { mimeType, data: videoBase64 },
-                videoMetadata: { startOffset: "0s", endOffset: "30s" },
-              },
+              { fileData: { fileUri, mimeType } },
               { text: prompt },
             ],
           },
@@ -132,6 +218,8 @@ OUTPUT RULES:
   };
 }
 
+// ── Request handler ──────────────────────────────────────────
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -142,15 +230,14 @@ Deno.serve(async (req) => {
 
   try {
     const apiKey = Deno.env.get("GOOGLE_AI_STUDIO_KEY");
-    if (!apiKey) {
-      throw new Error("GOOGLE_AI_STUDIO_KEY is not configured");
-    }
+    if (!apiKey) throw new Error("GOOGLE_AI_STUDIO_KEY is not configured");
 
     const body = await req.json();
     const {
-      videoBase64,
+      storagePath,
       captionId,
       fileName = "video.mp4",
+      mimeType: rawMimeType,
       takenAt = null,
       latitude = null,
       longitude = null,
@@ -158,23 +245,48 @@ Deno.serve(async (req) => {
       country = null,
     } = body;
 
-    // Normalize MIME type — Gemini accepts video/mp4 most reliably
-    let mimeType = body.mimeType || "video/mp4";
-    if (mimeType === "video/quicktime" || mimeType === "video/mov") {
-      mimeType = "video/mp4";
-    }
-
-    if (!videoBase64 || typeof videoBase64 !== "string") {
-      return jsonResponse({ error: "videoBase64 is required" }, 400);
+    if (!storagePath || typeof storagePath !== "string") {
+      return jsonResponse({ error: "storagePath is required" }, 400);
     }
     if (!captionId || typeof captionId !== "string") {
       return jsonResponse({ error: "captionId is required" }, 400);
     }
 
-    const sizeMB = (videoBase64.length * 0.75 / 1024 / 1024).toFixed(1);
-    console.log(`Analyzing video "${fileName}" (${sizeMB}MB, ${mimeType}) via inline data...`);
+    // Normalize MIME type for Gemini
+    let mimeType = rawMimeType || "video/mp4";
+    if (mimeType === "video/quicktime" || mimeType === "video/mov") {
+      mimeType = "video/mp4";
+    }
 
-    const result = await analyzeVideoWithGemini(apiKey, videoBase64, mimeType, {
+    // Download video from Supabase Storage
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const supabaseClient = createClient(supabaseUrl, supabaseServiceKey);
+
+    console.log(`Downloading video "${fileName}" from storage: ${storagePath}...`);
+    const { data: fileData, error: downloadError } = await supabaseClient.storage
+      .from("trip-photos")
+      .download(storagePath);
+
+    if (downloadError || !fileData) {
+      console.error("Storage download error:", downloadError);
+      return jsonResponse({ error: `Failed to download video: ${downloadError?.message}` }, 500);
+    }
+
+    const videoBytes = new Uint8Array(await fileData.arrayBuffer());
+    const sizeMB = (videoBytes.byteLength / 1024 / 1024).toFixed(1);
+    console.log(`Downloaded ${sizeMB}MB. Uploading to Gemini File API...`);
+
+    // Upload to Gemini File API
+    const fileUri = await uploadToGeminiFileAPI(apiKey, videoBytes, mimeType, fileName);
+    console.log(`Uploaded to Gemini. fileUri: ${fileUri}. Waiting for ACTIVE...`);
+
+    // Wait for file to be processed
+    await waitForFileActive(apiKey, fileUri);
+    console.log(`File ACTIVE. Running analysis...`);
+
+    // Analyze with generateContent using fileUri
+    const result = await analyzeVideoWithGemini(apiKey, fileUri, mimeType, {
       captionId,
       fileName,
       takenAt,
