@@ -1,4 +1,4 @@
-import { useEffect, useRef, useImperativeHandle, forwardRef, useCallback } from "react";
+import { useEffect, useRef, useImperativeHandle, forwardRef, useCallback, type CSSProperties } from "react";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 import { inferStepVisualType, type StepVisualType } from "@/lib/stepVisuals";
@@ -49,7 +49,7 @@ interface WorldMapProps {
   visualTypes?: Record<string, StepVisualType>;
   activeStepId?: string | null;
   className?: string;
-  style?: React.CSSProperties;
+  style?: CSSProperties;
 }
 
 export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function WorldMap(
