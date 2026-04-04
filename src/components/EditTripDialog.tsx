@@ -8,7 +8,7 @@ import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { format, parse } from "date-fns";
+import { format, parse, differenceInDays, addDays } from "date-fns";
 import { cn } from "@/lib/utils";
 import type { Tables } from "@/integrations/supabase/types";
 
@@ -25,6 +25,31 @@ export function EditTripDialog({ trip, onUpdated }: EditTripDialogProps) {
   const [title, setTitle] = useState(trip.title);
   const [startDate, setStartDate] = useState(trip.start_date || "");
   const [endDate, setEndDate] = useState(trip.end_date || "");
+
+  const computeTripDurationDays = () => {
+    if (!startDate || !endDate) return null;
+    try {
+      const s = parse(startDate, "yyyy-MM-dd", new Date());
+      const e = parse(endDate, "yyyy-MM-dd", new Date());
+      const diff = differenceInDays(e, s);
+      return diff > 0 ? diff : null;
+    } catch {
+      return null;
+    }
+  };
+
+  const handleStartDateChange = (d: Date | undefined) => {
+    if (!d) {
+      setStartDate("");
+      return;
+    }
+    const duration = computeTripDurationDays();
+    const newStart = format(d, "yyyy-MM-dd");
+    setStartDate(newStart);
+    if (duration !== null) {
+      setEndDate(format(addDays(d, duration), "yyyy-MM-dd"));
+    }
+  };
 
   const handleSave = async () => {
     if (!title.trim()) {
@@ -88,7 +113,8 @@ export function EditTripDialog({ trip, onUpdated }: EditTripDialogProps) {
                   <Calendar
                     mode="single"
                     selected={startDate ? parse(startDate, "yyyy-MM-dd", new Date()) : undefined}
-                    onSelect={(d) => setStartDate(d ? format(d, "yyyy-MM-dd") : "")}
+                    onSelect={handleStartDateChange}
+                    defaultMonth={startDate ? parse(startDate, "yyyy-MM-dd", new Date()) : undefined}
                     initialFocus
                     className="p-3 pointer-events-auto"
                   />
