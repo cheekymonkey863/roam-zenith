@@ -106,7 +106,7 @@ function applyMediaCaptions(
   photos: PhotoExifData[],
   photoCaptions: MediaCaptionResult[] | undefined,
   locationName: string
-) {
+): PhotoExifData[] {
   const captionMap = new Map(
     (photoCaptions ?? [])
       .filter((item) => item.captionId.trim().length > 0 && item.caption.trim().length > 0)
@@ -261,8 +261,8 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
       const exifResults = await extractExifFromFiles(mediaFiles);
       const groups = groupPhotosByLocation(exifResults, LOCATION_GROUP_RADIUS_METERS, LOCATION_GROUP_MAX_GAP_HOURS);
 
-      const baseSteps = await Promise.all(
-        Array.from(groups.entries()).map(async ([key, photos]) => {
+      const baseSteps: SuggestedStep[] = await Promise.all(
+        Array.from(groups.entries()).map(async ([key, photos]): Promise<SuggestedStep> => {
           const sortedPhotos = sortMediaByCapturedTime(photos);
           const { latitude, longitude } = getRepresentativeCoordinates(sortedPhotos);
           const geo = await reverseGeocode(latitude, longitude);
@@ -316,7 +316,7 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
         toast.warning("Visual recognition was unavailable, so only GPS-matched media was grouped.");
       }
 
-      const steps = baseSteps.map((step) => {
+      const steps: SuggestedStep[] = baseSteps.map((step): SuggestedStep => {
         const inferred = inferredLocations.get(step.key);
         const locationName = inferred?.locationName || step.locationName;
         const country = inferred?.country || step.country;
