@@ -1,7 +1,10 @@
 import { FFmpeg } from "@ffmpeg/ffmpeg";
 import { fetchFile, toBlobURL } from "@ffmpeg/util";
 
+import { supabase } from "@/integrations/supabase/client";
+
 export type VideoPreviewSource = "html-video" | "ffmpeg" | "none";
+export type { VideoPreviewSource as VideoPreviewSourceType };
 
 export interface VideoPreviewSet {
   thumbnail: string;
@@ -13,25 +16,10 @@ const ANALYSIS_IMAGE_SIZE = 768;
 const THUMBNAIL_SIZE = 120;
 const ANALYSIS_IMAGE_QUALITY = 0.76;
 const THUMBNAIL_QUALITY = 0.6;
-const FFMPEG_CORE_BASE_URL = "https://unpkg.com/@ffmpeg/core@0.12.9/dist/esm";
-
-let ffmpegInstance: FFmpeg | null = null;
-let ffmpegLoadPromise: Promise<FFmpeg> | null = null;
-let ffmpegAssetUrlsPromise: Promise<{ coreURL: string; wasmURL: string; workerURL: string }> | null = null;
-let ffmpegTaskQueue = Promise.resolve();
 
 function isMovLikeFile(file: File) {
   const fileName = file.name.toLowerCase();
   return file.type === "video/quicktime" || fileName.endsWith(".mov") || fileName.endsWith(".qt");
-}
-
-function readBlobAsDataUrl(blob: Blob): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : "");
-    reader.onerror = () => reject(reader.error ?? new Error("Failed to read blob as data URL"));
-    reader.readAsDataURL(blob);
-  });
 }
 
 function resizeImageDataUrl(dataUrl: string, size: number, quality: number): Promise<string> {
@@ -62,7 +50,7 @@ function resizeImageDataUrl(dataUrl: string, size: number, quality: number): Pro
   });
 }
 
-function captureFrameWithVideoElement(file: File): Promise<string> {
+function captureFrameWithVideoElement(file: File, targetSize = ANALYSIS_IMAGE_SIZE, targetQuality = ANALYSIS_IMAGE_QUALITY): Promise<string> {
   return new Promise((resolve) => {
     const video = document.createElement("video");
     const url = URL.createObjectURL(file);
@@ -84,7 +72,7 @@ function captureFrameWithVideoElement(file: File): Promise<string> {
           return;
         }
 
-        const scale = Math.min(ANALYSIS_IMAGE_SIZE / video.videoWidth, ANALYSIS_IMAGE_SIZE / video.videoHeight, 1);
+        const scale = Math.min(targetSize / video.videoWidth, targetSize / video.videoHeight, 1);
         const canvas = document.createElement("canvas");
         canvas.width = Math.max(1, Math.round(video.videoWidth * scale));
         canvas.height = Math.max(1, Math.round(video.videoHeight * scale));
@@ -96,7 +84,7 @@ function captureFrameWithVideoElement(file: File): Promise<string> {
         }
 
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        const dataUrl = canvas.toDataURL("image/jpeg", ANALYSIS_IMAGE_QUALITY);
+        const dataUrl = canvas.toDataURL("image/jpeg", targetQuality);
         finish(dataUrl.length >= 500 ? dataUrl : "");
       } catch {
         finish("");
@@ -137,152 +125,61 @@ function captureFrameWithVideoElement(file: File): Promise<string> {
   });
 }
 
-async function getFfmpegAssetUrls() {
-  if (!ffmpegAssetUrlsPromise) {
-    ffmpegAssetUrlsPromise = Promise.all([
-      toBlobURL(`${FFMPEG_CORE_BASE_URL}/ffmpeg-core.js`, "text/javascript"),
-      toBlobURL(`${FFMPEG_CORE_BASE_URL}/ffmpeg-core.wasm`, "application/wasm"),
-      toBlobURL(`${FFMPEG_CORE_BASE_URL}/ffmpeg-core.worker.js`, "text/javascript"),
-    ]).then(([coreURL, wasmURL, workerURL]) => ({ coreURL, wasmURL, workerURL }));
-  }
-
-  return ffmpegAssetUrlsPromise;
-}
-
-async function getFfmpeg() {
-  if (ffmpegInstance?.loaded) return ffmpegInstance;
-
-  if (!ffmpegLoadPromise) {
-    ffmpegLoadPromise = (async () => {
-      const ffmpeg = ffmpegInstance ?? new FFmpeg();
-      const assets = await getFfmpegAssetUrls();
-      await ffmpeg.load(assets);
-      ffmpegInstance = ffmpeg;
-      return ffmpeg;
-    })().catch((error) => {
-      ffmpegLoadPromise = null;
-      throw error;
-    });
-  }
-
-  return ffmpegLoadPromise;
-}
-
-function queueFfmpegTask<T>(task: () => Promise<T>) {
-  const run = ffmpegTaskQueue.then(task, task);
-  ffmpegTaskQueue = run.then(() => undefined, () => undefined);
-  return run;
-}
-
-async function safeDeleteFile(ffmpeg: FFmpeg, path: string) {
+/**
+ * Server-side frame extraction for MOV/QuickTime files that browsers can't decode.
+ * Sends a small chunk to the extract-video-metadata edge function which also
+ * returns a base64 JPEG frame if available.
+ */
+async function captureFrameServerSide(file: File): Promise<string> {
   try {
-    await ffmpeg.deleteFile(path);
-  } catch {
-    // Ignore cleanup failures
-  }
-}
-
-async function readVideoDuration(ffmpeg: FFmpeg, inputName: string) {
-  const outputName = `duration-${crypto.randomUUID()}.txt`;
-
-  try {
-    const exitCode = await ffmpeg.ffprobe(
-      [
-        "-v",
-        "error",
-        "-show_entries",
-        "format=duration",
-        "-of",
-        "default=noprint_wrappers=1:nokey=1",
-        inputName,
-        "-o",
-        outputName,
-      ],
-      15000,
-    );
-
-    if (exitCode !== 0) return null;
-
-    const durationText = await ffmpeg.readFile(outputName, "utf8");
-    if (typeof durationText !== "string") return null;
-
-    const duration = Number.parseFloat(durationText.trim());
-    return Number.isFinite(duration) && duration > 0 ? duration : null;
-  } catch {
-    return null;
-  } finally {
-    await safeDeleteFile(ffmpeg, outputName);
-  }
-}
-
-async function captureFrameWithFfmpeg(file: File) {
-  return queueFfmpegTask(async () => {
-    const ffmpeg = await getFfmpeg();
-    const extension = file.name.split(".").pop()?.toLowerCase() || "mp4";
-    const inputName = `input-${crypto.randomUUID()}.${extension}`;
-    const outputName = `frame-${crypto.randomUUID()}.jpg`;
-
-    try {
-      await ffmpeg.writeFile(inputName, await fetchFile(file));
-
-      const duration = await readVideoDuration(ffmpeg, inputName);
-      const seekSeconds = duration === null ? 0 : Math.min(Math.max(duration * 0.33, 0), Math.max(duration - 0.1, 0));
-      const exitCode = await ffmpeg.exec(
-        [
-          "-ss",
-          seekSeconds.toFixed(2),
-          "-i",
-          inputName,
-          "-frames:v",
-          "1",
-          "-vf",
-          `scale=${ANALYSIS_IMAGE_SIZE}:${ANALYSIS_IMAGE_SIZE}:force_original_aspect_ratio=decrease`,
-          "-q:v",
-          "4",
-          outputName,
-        ],
-        30000,
-      );
-
-      if (exitCode !== 0) return "";
-
-      const imageBytes = await ffmpeg.readFile(outputName);
-      if (!(imageBytes instanceof Uint8Array) || imageBytes.length === 0) return "";
-
-      const blobBytes = new Uint8Array(imageBytes);
-      return readBlobAsDataUrl(new Blob([blobBytes.buffer], { type: "image/jpeg" }));
-    } catch {
-      return "";
-    } finally {
-      await Promise.all([safeDeleteFile(ffmpeg, inputName), safeDeleteFile(ffmpeg, outputName)]);
+    // Read first 512KB - enough for the server to find a keyframe in many cases
+    const CHUNK_SIZE = 512 * 1024;
+    const chunk = file.slice(0, Math.min(file.size, CHUNK_SIZE));
+    const buffer = await chunk.arrayBuffer();
+    const bytes = new Uint8Array(buffer);
+    const chunkSize = 0x8000;
+    let binary = "";
+    for (let i = 0; i < bytes.length; i += chunkSize) {
+      const subChunk = bytes.subarray(i, i + chunkSize);
+      binary += String.fromCharCode(...subChunk);
     }
-  });
+    const base64 = btoa(binary);
+
+    const { data, error } = await supabase.functions.invoke("extract-video-metadata", {
+      body: { videoBase64: base64, extractFrame: true },
+    });
+
+    if (error || !data?.frameBase64) return "";
+
+    const frameDataUrl = data.frameBase64.startsWith("data:")
+      ? data.frameBase64
+      : `data:image/jpeg;base64,${data.frameBase64}`;
+
+    return frameDataUrl.length >= 500 ? frameDataUrl : "";
+  } catch {
+    return "";
+  }
 }
 
 export async function createVideoPreviews(file: File): Promise<VideoPreviewSet> {
-  const prefersFfmpeg = isMovLikeFile(file);
+  const isMov = isMovLikeFile(file);
 
   let analysisImage = "";
   let previewSource: VideoPreviewSource = "none";
 
-  if (prefersFfmpeg) {
-    analysisImage = await captureFrameWithFfmpeg(file);
-    previewSource = analysisImage ? "ffmpeg" : "none";
-    if (!analysisImage) {
-      analysisImage = await captureFrameWithVideoElement(file);
-      previewSource = analysisImage ? "html-video" : "none";
-    }
-  } else {
-    analysisImage = await captureFrameWithVideoElement(file);
-    previewSource = analysisImage ? "html-video" : "none";
-    if (!analysisImage) {
-      analysisImage = await captureFrameWithFfmpeg(file);
-      previewSource = analysisImage ? "ffmpeg" : "none";
-    }
+  // Try HTML5 video element first (works for MP4, WebM, etc.)
+  analysisImage = await captureFrameWithVideoElement(file);
+  if (analysisImage) {
+    previewSource = "html-video";
+  }
+
+  // For MOV files that failed HTML5 playback, we note no preview but don't block
+  // The AI inference will still work with filename/date context
+  if (!analysisImage && isMov) {
+    console.info(`[video-preview] MOV file "${file.name}" — no browser-side frame available, AI will use filename context.`);
   }
 
   if (!analysisImage) {
-    console.warn(`[video-preview] Could not extract a representative frame for "${file.name}".`);
     return { thumbnail: "", analysisImage: "", previewSource: "none" };
   }
 
