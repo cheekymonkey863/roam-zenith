@@ -3,6 +3,8 @@ export type StepVisualType =
   | "train"
   | "bus"
   | "ferry"
+  | "yacht_boat"
+  | "cruise"
   | "car"
   | "on_foot"
   | "cycling"
