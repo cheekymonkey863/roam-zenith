@@ -186,6 +186,7 @@ const Dashboard = () => {
             {trips.map((trip) => {
               const tripSteps = steps.filter((s) => s.trip_id === trip.id);
               const tripCountries = [...new Set(tripSteps.map((s) => s.country).filter(Boolean))];
+              const status = getTripStatus(trip.start_date, trip.end_date);
 
               return (
                 <Link
@@ -194,23 +195,21 @@ const Dashboard = () => {
                   className="group flex flex-col overflow-hidden rounded-2xl bg-card shadow-card transition-all duration-300 hover:shadow-card-hover hover:-translate-y-1"
                 >
                   <div className="relative h-32 bg-gradient-to-br from-primary/20 via-accent/10 to-secondary">
-                    {trip.is_active && (
-                      <span className="absolute right-3 top-3 rounded-full bg-accent px-2.5 py-0.5 text-xs font-medium text-accent-foreground">
-                        Active
-                      </span>
-                    )}
+                    <span className={`absolute right-3 top-3 rounded-full px-2.5 py-0.5 text-xs font-medium ${getTripStatusStyle(status)}`}>
+                      {getTripStatusLabel(status)}
+                    </span>
                     <div className="absolute inset-0 flex items-end p-5">
                       <h3 className="font-display text-xl font-semibold text-foreground">{trip.title}</h3>
                     </div>
                   </div>
                   <div className="flex flex-col gap-2 p-5">
                     <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <MapPin className="h-3.5 w-3.5" />
-                      <span>{tripCountries.length > 0 ? tripCountries.join(", ") : "No locations yet"}</span>
+                      <Calendar className="h-3.5 w-3.5" />
+                      <span>{formatTripDateRange(trip.start_date, trip.end_date)}</span>
                     </div>
                     <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <Route className="h-3.5 w-3.5" />
-                      <span>{tripSteps.length} steps</span>
+                      <MapPin className="h-3.5 w-3.5" />
+                      <span>{tripCountries.length > 0 ? tripCountries.join(", ") : "No locations yet"}</span>
                     </div>
                   </div>
                 </Link>
