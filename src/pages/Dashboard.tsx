@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Globe, MapPin, Route, Calendar, Compass, Plus, ChevronDown, ChevronUp } from "lucide-react";
+import { Globe, MapPin, Route, Compass, Plus, ChevronDown, ChevronUp, Calendar } from "lucide-react";
+import { getTripStatus, getTripStatusLabel, getTripStatusStyle, formatTripDateRange } from "@/lib/tripStatus";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { WorldMap } from "@/components/WorldMap";
