@@ -66,6 +66,7 @@ export type ImportProgressCallback = (phase: string, current: number, total: num
 const LOCATION_GROUP_RADIUS_METERS = 500;
 const LOCATION_GROUP_MAX_GAP_HOURS = 6;
 const UNGROUPED_MEDIA_MATCH_WINDOW_MS = LOCATION_GROUP_MAX_GAP_HOURS * 60 * 60 * 1000;
+const NO_GPS_CONTEXT_MATCH_WINDOW_MS = 90 * 60 * 1000;
 const REVERSE_GEOCODE_CONCURRENCY = 2;
 
 const CONFIDENCE_RANK: Record<StepConfidence, number> = {
@@ -106,19 +107,37 @@ function buildEventDescription(locationName: string, country: string, eventType 
   return buildImportedEventDescription(locationName, country, eventType);
 }
 
-function buildMediaCaption(photo: PhotoExifData, locationName: string) {
+function buildMediaCaption(photo: PhotoExifData, locationName: string, eventType = "activity") {
   const isVideo = photo.file.type.startsWith("video/");
   if (!isKnownLocationName(locationName)) {
     return isVideo ? "Video from this travel stop" : "Photo from this travel stop";
   }
 
-  return isVideo ? `Video taken at ${locationName}` : `Photo taken at ${locationName}`;
+  if (isVideo) {
+    const videoPrefix = {
+      concert: "Performance video",
+      live_show: "Performance video",
+      theatre: "Show video",
+      sport: "Match video",
+      sightseeing: "Sightseeing video",
+      dining: "Dining video",
+      flight: "Flight video",
+      train: "Train video",
+      ferry: "Ferry video",
+      hotel: "Stay video",
+    }[eventType];
+
+    return videoPrefix ? `${videoPrefix} at ${locationName}` : `Video at ${locationName}`;
+  }
+
+  return `Photo at ${locationName}`;
 }
 
 function applyMediaInsights(
   photos: PhotoExifData[],
   photoCaptions: MediaInsightResult[] | undefined,
   locationName: string,
+  eventType = "activity",
 ): PhotoExifData[] {
   const captionMap = new Map(
     (photoCaptions ?? [])
@@ -128,11 +147,13 @@ function applyMediaInsights(
 
   return sortMediaByCapturedTime(photos).map((photo) => {
     const insight = captionMap.get(photo.captionId);
+    const isVideo = photo.file.type.startsWith("video/");
+    const fallbackCaption = buildMediaCaption(photo, locationName, eventType);
 
     return {
       ...photo,
-      caption: insight?.caption?.trim() || photo.caption || buildMediaCaption(photo, locationName),
-      sceneDescription: insight?.sceneDescription?.trim() || photo.sceneDescription,
+      caption: isVideo ? photo.caption || fallbackCaption : insight?.caption?.trim() || photo.caption || fallbackCaption,
+      sceneDescription: isVideo ? undefined : insight?.sceneDescription?.trim() || photo.sceneDescription,
       aiTags: dedupeTags([...(photo.aiTags ?? []), ...((insight?.richTags ?? []).map((tag) => tag.trim()))]),
     };
   });
@@ -161,24 +182,32 @@ function getClosestTimeDistanceMs(step: ImportedMediaStep, targetDate: Date) {
   return distances.length > 0 ? Math.min(...distances) : Number.POSITIVE_INFINITY;
 }
 
-function findStepForUngroupedMedia(media: PhotoExifData, steps: ImportedMediaStep[]) {
-  if (!media.takenAt) return null;
-  if (media.file.type.startsWith("video/")) return null;
+function findStepByCapturedTime(targetDate: Date | null, steps: ImportedMediaStep[], maxWindowMs = UNGROUPED_MEDIA_MATCH_WINDOW_MS) {
+  if (!targetDate) return null;
 
   const candidates = steps
-    .filter((step) => step.photos.some((photo) => photo.takenAt && isSameCalendarDay(photo.takenAt, media.takenAt!)))
-    .map((step) => ({ step, diffMs: getClosestTimeDistanceMs(step, media.takenAt!) }))
+    .filter((step) => step.photos.some((photo) => photo.takenAt && isSameCalendarDay(photo.takenAt, targetDate)))
+    .map((step) => ({ step, diffMs: getClosestTimeDistanceMs(step, targetDate) }))
     .sort((a, b) => a.diffMs - b.diffMs);
 
   if (candidates.length === 0) return null;
-  if (
-    candidates[0].diffMs <= UNGROUPED_MEDIA_MATCH_WINDOW_MS &&
-    (candidates.length === 1 || candidates[0].diffMs <= candidates[1].diffMs / 2)
-  ) {
+  if (candidates[0].diffMs <= maxWindowMs && (candidates.length === 1 || candidates[0].diffMs <= candidates[1].diffMs / 2)) {
     return candidates[0].step;
   }
 
   return null;
+}
+
+function findStepForUngroupedMedia(media: PhotoExifData, steps: ImportedMediaStep[]) {
+  if (!media.takenAt) return null;
+  if (media.file.type.startsWith("video/")) return null;
+
+  return findStepByCapturedTime(media.takenAt, steps);
+}
+
+function findContextStepForNoGpsGroup(photos: PhotoExifData[], steps: ImportedMediaStep[]) {
+  const groupDate = sortMediaByCapturedTime(photos).find((photo) => photo.takenAt)?.takenAt ?? null;
+  return findStepByCapturedTime(groupDate, steps, NO_GPS_CONTEXT_MATCH_WINDOW_MS);
 }
 
 async function mapWithConcurrency<T, U>(
@@ -337,7 +366,7 @@ export async function processImportedMediaFiles(
         country: geo.country,
         latitude,
         longitude,
-        photos: applyMediaInsights(sortedPhotos, undefined, displayName),
+        photos: applyMediaInsights(sortedPhotos, undefined, displayName, stepDetails.eventType),
         earliestDate,
         selected: true,
         eventType: stepDetails.eventType,
@@ -361,7 +390,12 @@ export async function processImportedMediaFiles(
       continue;
     }
 
-    matchedStep.photos = applyMediaInsights([...matchedStep.photos, media], undefined, matchedStep.locationName);
+    matchedStep.photos = applyMediaInsights(
+      [...matchedStep.photos, media],
+      undefined,
+      matchedStep.locationName,
+      matchedStep.eventType,
+    );
     if (media.takenAt && (!matchedStep.earliestDate || media.takenAt.getTime() < matchedStep.earliestDate.getTime())) {
       matchedStep.earliestDate = media.takenAt;
     }
@@ -399,17 +433,11 @@ export async function processImportedMediaFiles(
       ...step,
       locationName,
       country,
-      photos: applyMediaInsights(step.photos, inferred?.photoCaptions, locationName),
+      photos: applyMediaInsights(step.photos, inferred?.photoCaptions, locationName, stepDetails.eventType),
       eventType: stepDetails.eventType,
       confidence: inferred?.confidence ? pickHigherConfidence(step.confidence, inferred.confidence) : step.confidence,
-      summary:
-        stepDetails.eventType === "activity" && inferred?.summary
-          ? inferred.summary
-          : buildLocationSummary(locationName, country, stepDetails.eventType),
-      description:
-        stepDetails.eventType === "activity" && inferred?.eventDescription
-          ? inferred.eventDescription
-          : buildEventDescription(locationName, country, stepDetails.eventType),
+      summary: buildLocationSummary(locationName, country, stepDetails.eventType),
+      description: buildEventDescription(locationName, country, stepDetails.eventType),
     };
   });
 
@@ -417,12 +445,13 @@ export async function processImportedMediaFiles(
     await Promise.all(
       noGpsGroups.map(async (group): Promise<ImportedMediaStep | null> => {
         const inferred = inferredLocations.get(group.key);
-        if (!inferred) return null;
+        const contextualStep = findContextStepForNoGpsGroup(group.photos, baseSteps);
+        if (!inferred && !contextualStep) return null;
 
-        let latitude = inferred.latitude;
-        let longitude = inferred.longitude;
+        let latitude = contextualStep?.latitude ?? inferred?.latitude ?? null;
+        let longitude = contextualStep?.longitude ?? inferred?.longitude ?? null;
 
-        if ((latitude === null || longitude === null) && inferred.locationName) {
+        if ((latitude === null || longitude === null) && inferred?.locationName) {
           const geocoded = await geocodeLocationName(inferred.locationName, inferred.country);
           latitude = geocoded?.latitude ?? null;
           longitude = geocoded?.longitude ?? null;
@@ -430,16 +459,23 @@ export async function processImportedMediaFiles(
 
         if (latitude === null || longitude === null) return null;
 
-        const locationName = inferred.locationName || "Visually Identified Location";
-        const country = inferred.country || "Unknown";
-        const photos = applyMediaInsights(group.photos, inferred.photoCaptions, locationName);
-        const dates = photos.map((photo) => photo.takenAt).filter(Boolean) as Date[];
-        const earliestDate = dates.length > 0 ? new Date(Math.min(...dates.map((date) => date.getTime()))) : null;
-
+        const locationName =
+          contextualStep && isKnownLocationName(contextualStep.locationName)
+            ? contextualStep.locationName
+            : inferred?.locationName || "Visually Identified Location";
+        const country =
+          contextualStep?.country && contextualStep.country !== "Unknown"
+            ? contextualStep.country
+            : inferred?.country || "Unknown";
         const stepDetails = buildImportedStepDetails({
           locationName,
           country,
+          placeTypes: contextualStep?.placeTypes,
+          fallbackEventType: contextualStep?.eventType,
         });
+        const photos = applyMediaInsights(group.photos, inferred?.photoCaptions, locationName, stepDetails.eventType);
+        const dates = photos.map((photo) => photo.takenAt).filter(Boolean) as Date[];
+        const earliestDate = dates.length > 0 ? new Date(Math.min(...dates.map((date) => date.getTime()))) : null;
 
         return {
           key: group.key,
@@ -451,15 +487,9 @@ export async function processImportedMediaFiles(
           earliestDate,
           selected: true,
           eventType: stepDetails.eventType,
-          confidence: inferred.confidence,
-          summary:
-            stepDetails.eventType === "activity" && inferred.summary
-              ? inferred.summary
-              : buildLocationSummary(locationName, country, stepDetails.eventType),
-          description:
-            stepDetails.eventType === "activity" && inferred.eventDescription
-              ? inferred.eventDescription
-              : buildEventDescription(locationName, country, stepDetails.eventType),
+          confidence: contextualStep ? pickHigherConfidence(inferred?.confidence ?? "low", contextualStep.confidence) : inferred?.confidence ?? "low",
+          summary: buildLocationSummary(locationName, country, stepDetails.eventType),
+          description: buildEventDescription(locationName, country, stepDetails.eventType),
         };
       }),
     )
