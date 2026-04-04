@@ -15,10 +15,16 @@ interface LocationGroupInput {
     country: string;
   } | null;
   photos: Array<{
+    captionId: string;
     fileName: string;
     takenAt: string | null;
     analysisImage: string | null;
   }>;
+}
+
+interface PhotoCaptionResult {
+  captionId: string;
+  caption: string;
 }
 
 interface InferenceResult {
@@ -29,6 +35,8 @@ interface InferenceResult {
   longitude: number | null;
   confidence: Confidence;
   summary: string;
+  eventDescription: string;
+  photoCaptions: PhotoCaptionResult[];
 }
 
 function jsonResponse(body: unknown, status = 200) {
@@ -44,6 +52,33 @@ function normalizeString(value: unknown, fallback: string) {
 
 function normalizeConfidence(value: unknown): Confidence {
   return value === "high" || value === "medium" || value === "low" ? value : "low";
+}
+
+function normalizePhotoCaptions(value: unknown): PhotoCaptionResult[] {
+  if (!Array.isArray(value)) return [];
+
+  return value
+    .map((item: any) => ({
+      captionId: normalizeString(item?.captionId, ""),
+      caption: normalizeString(item?.caption, ""),
+    }))
+    .filter((item: PhotoCaptionResult) => item.captionId.length > 0 && item.caption.length > 0);
+}
+
+function buildFallbackSummary(locationName: string) {
+  return locationName !== "Unknown" && locationName !== "Unknown Location"
+    ? `Grouped media around ${locationName}.`
+    : "Grouped nearby media from the same stop.";
+}
+
+function buildFallbackEventDescription(locationName: string, country: string) {
+  if (locationName === "Unknown" || locationName === "Unknown Location") {
+    return "Travel event created from nearby media captured in the same time range.";
+  }
+
+  return country !== "Unknown"
+    ? `Travel event around ${locationName}, ${country}.`
+    : `Travel event around ${locationName}.`;
 }
 
 Deno.serve(async (req) => {
@@ -80,8 +115,9 @@ Deno.serve(async (req) => {
               : null,
             photos: Array.isArray(group?.photos)
               ? group.photos
-                  .slice(0, 3)
+                  .slice(0, 4)
                   .map((photo: any) => ({
+                    captionId: normalizeString(photo?.captionId, crypto.randomUUID()),
                     fileName: normalizeString(photo?.fileName, "photo"),
                     takenAt: typeof photo?.takenAt === "string" ? photo.takenAt : null,
                     analysisImage:
@@ -113,7 +149,9 @@ Deno.serve(async (req) => {
           latitude: group.exifLocation!.latitude,
           longitude: group.exifLocation!.longitude,
           confidence: "low" as Confidence,
-          summary: "",
+          summary: buildFallbackSummary(group.exifLocation!.name),
+          eventDescription: buildFallbackEventDescription(group.exifLocation!.name, group.exifLocation!.country),
+          photoCaptions: [],
         },
       ])
     );
@@ -128,6 +166,8 @@ Deno.serve(async (req) => {
         longitude: null,
         confidence: "low",
         summary: "No GPS data; visual recognition was inconclusive.",
+        eventDescription: "Travel event created from nearby media captured in the same time range.",
+        photoCaptions: [],
       });
     }
 
@@ -136,11 +176,13 @@ Deno.serve(async (req) => {
       {
         type: "text",
         text: `You analyze travel photos. For each group:
-- If EXIF coordinates are provided, they are the geographic source of truth. Use visuals to refine the human-readable location/activity name and provide a vivid description of what is visible.
+- If EXIF coordinates are provided, they are the geographic source of truth. Use visuals to refine the human-readable location/activity name and understand the stop overall.
 - If NO EXIF coordinates are provided, use the photo contents to identify the location. Return your best estimate of the city/landmark/country and approximate latitude/longitude.
 - The "locationName" MUST be a specific landmark, beach, park, or point of interest — NOT a generic city name. Example: "Boulders Beach" not "Simon's Town", "Table Mountain" not "Cape Town".
-- The "summary" MUST describe what is visible in the photos: scenery, landmarks, wildlife, or activities. Do NOT mention people. Do NOT reference GPS metadata. Example: "African penguins on the sandy shore of Boulders Beach".
-Keep summaries under 18 words.`,
+- The "summary" MUST describe what is consistently visible across the full group: scenery, landmarks, wildlife, or activities. Do NOT mention people. Do NOT reference GPS metadata.
+- The "eventDescription" MUST describe the travel stop as a whole based on the location and combined media, not any one image. Keep it to one concise sentence.
+- The "photoCaptions" array MUST include one caption for every media item using the exact "captionId" provided. Each caption must describe only that specific image or video frame.
+Keep summaries under 18 words. Keep photo captions under 14 words.`,
       },
     ];
 
@@ -148,19 +190,19 @@ Keep summaries under 18 words.`,
       if (group.exifLocation) {
         content.push({
           type: "text",
-          text: `Group ${group.key} (HAS GPS)\nEXIF center: ${group.exifLocation.latitude}, ${group.exifLocation.longitude}\nReverse geocode: ${group.exifLocation.name}, ${group.exifLocation.country}\nGoal: return the best display name for this stop.`,
+          text: `Group ${group.key} (HAS GPS)\nEXIF center: ${group.exifLocation.latitude}, ${group.exifLocation.longitude}\nReverse geocode: ${group.exifLocation.name}, ${group.exifLocation.country}\nGoal: return the best display name for this stop, one location-level summary, one travel-event description for the whole stop, and one caption per media item.`,
         });
       } else {
         content.push({
           type: "text",
-          text: `Group ${group.key} (NO GPS)\nNo EXIF coordinates available. Identify the location from the photo contents. Return the city/landmark name, country, and your best estimate of latitude and longitude.`,
+          text: `Group ${group.key} (NO GPS)\nNo EXIF coordinates available. Identify the location from the photo contents. Return the city/landmark name, country, your best estimate of latitude and longitude, one travel-event description for the whole stop, and one caption per media item.`,
         });
       }
 
       for (const photo of group.photos) {
         content.push({
           type: "text",
-          text: `Photo file: ${photo.fileName}${photo.takenAt ? `, taken at ${photo.takenAt}` : ""}`,
+          text: `Media item ${photo.captionId}: ${photo.fileName}${photo.takenAt ? `, taken at ${photo.takenAt}` : ""}`,
         });
         content.push({ type: "image_url", image_url: { url: photo.analysisImage } });
       }
@@ -177,7 +219,7 @@ Keep summaries under 18 words.`,
         messages: [
           {
             role: "system",
-            content: "You analyze travel photos to identify locations and describe scenes. For locationName, always use specific landmark/POI names (e.g. 'Boulders Beach', 'Table Mountain') not generic city names. For summary, always describe what is visible in the photos (scenery, wildlife, landmarks) — never mention people and never reference GPS metadata.",
+            content: "You analyze travel photos and representative video frames to identify locations, caption each media item, and describe the overall stop. For locationName, always use specific landmark/POI names (e.g. 'Boulders Beach', 'Table Mountain') not generic city names. For summary, describe what is consistently visible across the group. For eventDescription, describe the stop as a whole based on the location and combined media, not any single image. For photoCaptions, return one concise caption for every captionId. Never mention GPS metadata or people.",
           },
           { role: "user", content },
         ],
@@ -202,8 +244,21 @@ Keep summaries under 18 words.`,
                         longitude: { type: "number", description: "Longitude. Required for no-GPS groups, optional for GPS groups." },
                         confidence: { type: "string", enum: ["high", "medium", "low"] },
                         summary: { type: "string" },
+                        eventDescription: { type: "string" },
+                        photoCaptions: {
+                          type: "array",
+                          items: {
+                            type: "object",
+                            properties: {
+                              captionId: { type: "string" },
+                              caption: { type: "string" },
+                            },
+                            required: ["captionId", "caption"],
+                            additionalProperties: false,
+                          },
+                        },
                       },
-                      required: ["key", "locationName", "country", "confidence", "summary"],
+                      required: ["key", "locationName", "country", "confidence", "summary", "eventDescription", "photoCaptions"],
                       additionalProperties: false,
                     },
                   },
@@ -256,6 +311,8 @@ Keep summaries under 18 words.`,
         longitude: isNoExif && typeof result?.longitude === "number" ? result.longitude : fallback.longitude,
         confidence: normalizeConfidence(result?.confidence),
         summary: normalizeString(result?.summary, fallback.summary),
+        eventDescription: normalizeString(result?.eventDescription, fallback.eventDescription),
+        photoCaptions: normalizePhotoCaptions(result?.photoCaptions),
       });
     }
 

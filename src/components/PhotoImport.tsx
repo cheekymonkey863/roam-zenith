@@ -27,6 +27,11 @@ interface SuggestedStep {
   description: string;
 }
 
+interface MediaCaptionResult {
+  captionId: string;
+  caption: string;
+}
+
 interface HybridLocationResult {
   key: string;
   locationName: string;
@@ -35,6 +40,8 @@ interface HybridLocationResult {
   longitude: number | null;
   confidence: SuggestedStep["confidence"];
   summary: string;
+  eventDescription?: string;
+  photoCaptions?: MediaCaptionResult[];
 }
 
 interface PhotoImportProps {
@@ -42,6 +49,81 @@ interface PhotoImportProps {
   onImportComplete: () => void;
   onCancel?: () => void;
   existingSteps?: Array<{ id: string; latitude: number; longitude: number; location_name: string | null }>;
+}
+
+const LOCATION_GROUP_RADIUS_METERS = 500;
+const LOCATION_GROUP_MAX_GAP_HOURS = 6;
+const EXISTING_STEP_MATCH_RADIUS_METERS = 500;
+const UNGROUPED_MEDIA_MATCH_WINDOW_MS = LOCATION_GROUP_MAX_GAP_HOURS * 60 * 60 * 1000;
+
+const CONFIDENCE_RANK: Record<SuggestedStep["confidence"], number> = {
+  low: 0,
+  medium: 1,
+  high: 2,
+};
+
+function sortMediaByCapturedTime<T extends PhotoExifData>(media: T[]) {
+  return [...media].sort(
+    (a, b) => (a.takenAt?.getTime() ?? a.file.lastModified ?? 0) - (b.takenAt?.getTime() ?? b.file.lastModified ?? 0)
+  );
+}
+
+function isKnownLocationName(value: string) {
+  const normalized = value.trim().toLowerCase();
+  return normalized.length > 0 && normalized !== "unknown" && normalized !== "unknown location";
+}
+
+function buildLocationSummary(locationName: string, country: string) {
+  if (!isKnownLocationName(locationName)) {
+    return "Grouped nearby media from the same travel stop.";
+  }
+
+  return country && country !== "Unknown"
+    ? `Grouped media around ${locationName}, ${country}.`
+    : `Grouped media around ${locationName}.`;
+}
+
+function buildEventDescription(locationName: string, country: string) {
+  if (!isKnownLocationName(locationName)) {
+    return "Travel event created from nearby media captured in the same time range.";
+  }
+
+  return country && country !== "Unknown"
+    ? `Travel event around ${locationName}, ${country}.`
+    : `Travel event around ${locationName}.`;
+}
+
+function buildMediaCaption(photo: PhotoExifData, locationName: string) {
+  const mediaLabel = photo.file.type.startsWith("video/") ? "Video" : "Image";
+  if (!isKnownLocationName(locationName)) {
+    return `${mediaLabel} from this travel stop`;
+  }
+
+  return `${mediaLabel} showing ${locationName}`;
+}
+
+function applyMediaCaptions(
+  photos: PhotoExifData[],
+  photoCaptions: MediaCaptionResult[] | undefined,
+  locationName: string
+): PhotoExifData[] {
+  const captionMap = new Map(
+    (photoCaptions ?? [])
+      .filter((item) => item.captionId.trim().length > 0 && item.caption.trim().length > 0)
+      .map((item) => [item.captionId, item.caption.trim()])
+  );
+
+  return sortMediaByCapturedTime(photos).map((photo) => ({
+    ...photo,
+    caption: captionMap.get(photo.captionId) ?? photo.caption ?? buildMediaCaption(photo, locationName),
+  }));
+}
+
+function pickHigherConfidence(
+  left: SuggestedStep["confidence"],
+  right: SuggestedStep["confidence"]
+): SuggestedStep["confidence"] {
+  return CONFIDENCE_RANK[left] >= CONFIDENCE_RANK[right] ? left : right;
 }
 
 function getRepresentativeCoordinates(photos: PhotoExifData[]) {
@@ -76,12 +158,9 @@ function findStepForUngroupedMedia(media: PhotoExifData, steps: SuggestedStep[])
     .sort((a, b) => a.diffMs - b.diffMs);
 
   if (candidates.length === 0) return null;
-  if (candidates[0].diffMs <= 3 * 60 * 60 * 1000) return candidates[0].step;
-  if (candidates.length === 1 && candidates[0].diffMs <= 12 * 60 * 60 * 1000) return candidates[0].step;
   if (
-    candidates.length > 1 &&
-    candidates[0].diffMs <= 6 * 60 * 60 * 1000 &&
-    candidates[0].diffMs <= candidates[1].diffMs / 2
+    candidates[0].diffMs <= UNGROUPED_MEDIA_MATCH_WINDOW_MS &&
+    (candidates.length === 1 || candidates[0].diffMs <= candidates[1].diffMs / 2)
   ) {
     return candidates[0].step;
   }
@@ -97,10 +176,11 @@ async function inferLocationsWithVision(
     .map((group) => ({
       key: group.key,
       exifLocation: null,
-      photos: group.photos
+      photos: sortMediaByCapturedTime(group.photos)
         .filter((photo) => Boolean(photo.analysisImage))
-        .slice(0, 2)
+        .slice(0, 4)
         .map((photo) => ({
+          captionId: photo.captionId,
           fileName: photo.file.name,
           takenAt: photo.takenAt?.toISOString() ?? null,
           analysisImage: photo.analysisImage ?? null,
@@ -110,14 +190,14 @@ async function inferLocationsWithVision(
 
   const gpsGroups = steps
     .filter((step) => step.photos.some((photo) => Boolean(photo.analysisImage)))
-    .slice(0, 8)
     .map((step) => ({
       key: step.key,
       exifLocation: { latitude: step.latitude, longitude: step.longitude, name: step.locationName, country: step.country },
-      photos: step.photos
+      photos: sortMediaByCapturedTime(step.photos)
         .filter((photo) => Boolean(photo.analysisImage))
-        .slice(0, 1)
+        .slice(0, 4)
         .map((photo) => ({
+          captionId: photo.captionId,
           fileName: photo.file.name,
           takenAt: photo.takenAt?.toISOString() ?? null,
           analysisImage: photo.analysisImage ?? null,
@@ -179,13 +259,14 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
 
     try {
       const exifResults = await extractExifFromFiles(mediaFiles);
-      const groups = groupPhotosByLocation(exifResults, 2000);
+      const groups = groupPhotosByLocation(exifResults, LOCATION_GROUP_RADIUS_METERS, LOCATION_GROUP_MAX_GAP_HOURS);
 
-      const baseSteps = await Promise.all(
-        Array.from(groups.entries()).map(async ([key, photos]) => {
-          const { latitude, longitude } = getRepresentativeCoordinates(photos);
+      const baseSteps: SuggestedStep[] = await Promise.all(
+        Array.from(groups.entries()).map(async ([key, photos]): Promise<SuggestedStep> => {
+          const sortedPhotos = sortMediaByCapturedTime(photos);
+          const { latitude, longitude } = getRepresentativeCoordinates(sortedPhotos);
           const geo = await reverseGeocode(latitude, longitude);
-          const dates = photos.map((p) => p.takenAt).filter(Boolean) as Date[];
+          const dates = sortedPhotos.map((p) => p.takenAt).filter(Boolean) as Date[];
           const earliestDate = dates.length > 0 ? new Date(Math.min(...dates.map((d) => d.getTime()))) : null;
 
           return {
@@ -194,12 +275,12 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
             country: geo.country,
             latitude,
             longitude,
-            photos,
+            photos: applyMediaCaptions(sortedPhotos, undefined, geo.name),
             earliestDate,
             selected: true,
             confidence: "low" as const,
-            summary: "Using GPS metadata for the location suggestion.",
-            description: "",
+            summary: buildLocationSummary(geo.name, geo.country),
+            description: buildEventDescription(geo.name, geo.country),
           };
         })
       );
@@ -235,17 +316,19 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
         toast.warning("Visual recognition was unavailable, so only GPS-matched media was grouped.");
       }
 
-      const steps = baseSteps.map((step) => {
+      const steps: SuggestedStep[] = baseSteps.map((step): SuggestedStep => {
         const inferred = inferredLocations.get(step.key);
-        if (!inferred) return step;
+        const locationName = inferred?.locationName || step.locationName;
+        const country = inferred?.country || step.country;
 
         return {
           ...step,
-          locationName: inferred.locationName || step.locationName,
-          country: inferred.country || step.country,
-          confidence: inferred.confidence,
-          summary: inferred.summary || step.summary,
-          description: inferred.summary || "",
+          locationName,
+          country,
+          photos: applyMediaCaptions(step.photos, inferred?.photoCaptions, locationName),
+          confidence: inferred?.confidence ?? step.confidence,
+          summary: inferred?.summary || buildLocationSummary(locationName, country),
+          description: inferred?.eventDescription || buildEventDescription(locationName, country),
         };
       });
 
@@ -266,21 +349,24 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
 
             if (latitude === null || longitude === null) return null;
 
-            const dates = group.photos.map((photo) => photo.takenAt).filter(Boolean) as Date[];
+            const locationName = inferred.locationName || "Visually Identified Location";
+            const country = inferred.country || "Unknown";
+            const photos = applyMediaCaptions(group.photos, inferred.photoCaptions, locationName);
+            const dates = photos.map((photo) => photo.takenAt).filter(Boolean) as Date[];
             const earliestDate = dates.length > 0 ? new Date(Math.min(...dates.map((date) => date.getTime()))) : null;
 
             return {
               key: group.key,
-              locationName: inferred.locationName || "Visually Identified Location",
-              country: inferred.country || "Unknown",
+              locationName,
+              country,
               latitude,
               longitude,
-              photos: group.photos,
+              photos,
               earliestDate,
               selected: true,
               confidence: inferred.confidence,
-              summary: inferred.summary || "Location identified visually.",
-              description: inferred.summary || "",
+              summary: inferred.summary || buildLocationSummary(locationName, country),
+              description: inferred.eventDescription || buildEventDescription(locationName, country),
             };
           })
         )
@@ -331,17 +417,22 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
       const source = prev.find((s) => s.key === sourceKey);
       if (!target || !source) return prev;
 
-      const mergedDescription = [target.description, source.description].filter(Boolean).join("\n\n");
-      const allPhotos = [...target.photos, ...source.photos];
+      const mergedLocationName = isKnownLocationName(target.locationName) ? target.locationName : source.locationName;
+      const mergedCountry = target.country !== "Unknown" ? target.country : source.country;
+      const allPhotos = applyMediaCaptions([...target.photos, ...source.photos], undefined, mergedLocationName);
       const allDates = allPhotos.map((p) => p.takenAt).filter(Boolean) as Date[];
       const earliestDate = allDates.length > 0 ? new Date(Math.min(...allDates.map((d) => d.getTime()))) : target.earliestDate;
 
       const merged: SuggestedStep = {
         ...target,
+        locationName: mergedLocationName,
+        country: mergedCountry,
         photos: allPhotos,
         earliestDate,
-        description: mergedDescription,
-        summary: [target.summary, source.summary].filter(Boolean).join(" | "),
+        selected: target.selected || source.selected,
+        confidence: pickHigherConfidence(target.confidence, source.confidence),
+        description: target.description || source.description || buildEventDescription(mergedLocationName, mergedCountry),
+        summary: target.summary || source.summary || buildLocationSummary(mergedLocationName, mergedCountry),
       };
 
       return prev.filter((s) => s.key !== sourceKey).map((s) => (s.key === targetKey ? merged : s));
@@ -383,7 +474,7 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
       const dlat = (existing.latitude - lat) * 111320;
       const dlng = (existing.longitude - lng) * 111320 * Math.cos(lat * Math.PI / 180);
       const dist = Math.sqrt(dlat * dlat + dlng * dlng);
-      if (dist < 2000) return existing;
+      if (dist < EXISTING_STEP_MATCH_RADIUS_METERS) return existing;
     }
     return null;
   };
@@ -439,6 +530,13 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
         if (uploadError) {
           console.error("Photo upload error:", uploadError);
         } else {
+          const exifData = {
+            ...(photo.exifRaw ?? {}),
+            caption: photo.caption ?? null,
+            caption_id: photo.captionId,
+            media_type: uploadFile.type.startsWith("video/") ? "video" : "image",
+          };
+
           await supabase.from("step_photos").insert({
             step_id: stepId,
             user_id: user.id,
@@ -447,7 +545,7 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
             latitude: photo.latitude,
             longitude: photo.longitude,
             taken_at: photo.takenAt?.toISOString(),
-            exif_data: (photo.exifRaw as Json) ?? null,
+            exif_data: exifData as Json,
           });
         }
       }
@@ -477,7 +575,7 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
             <Upload className="h-10 w-10 text-muted-foreground" />
             <div className="text-center">
               <p className="font-medium text-foreground">Drop photos & videos here</p>
-              <p className="text-sm text-muted-foreground">We'll combine GPS metadata and time matching to suggest trip stops</p>
+              <p className="text-sm text-muted-foreground">We&apos;ll group media from the same day/time window within 500m and suggest travel stops</p>
             </div>
             <input type="file" multiple accept="image/*,video/*" onChange={handleFileSelect} className="hidden" />
             <span className="rounded-xl bg-primary px-4 py-2 text-sm font-medium text-primary-foreground">Browse Files</span>
@@ -629,7 +727,7 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
                           const isVideo = photo.file.type.startsWith("video/");
                           return photo.thumbnail ? (
                             <div key={index} className="relative h-14 w-14 shrink-0">
-                              <img src={photo.thumbnail} alt={photo.file.name} className="h-14 w-14 rounded-lg object-cover" />
+                              <img src={photo.thumbnail} alt={photo.caption || photo.file.name} className="h-14 w-14 rounded-lg object-cover" />
                               {isVideo && (
                                 <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-black/30">
                                   <Play className="h-4 w-4 text-white fill-white" />
@@ -648,6 +746,19 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
                           </div>
                         )}
                       </div>
+
+                      {step.photos.length > 0 && (
+                        <div className="grid gap-1">
+                          {step.photos.map((photo, index) => (
+                            <p key={photo.captionId} className="text-[11px] leading-relaxed text-muted-foreground">
+                              <span className="font-medium text-foreground">
+                                {photo.file.type.startsWith("video/") ? `Video ${index + 1}:` : `Image ${index + 1}:`}
+                              </span>{" "}
+                              {photo.caption}
+                            </p>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
