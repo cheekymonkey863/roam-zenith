@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState, useCallback } from "react";
-import { MapPin, Image as ImageIcon, Trash2, GripVertical, CheckSquare, Square, X } from "lucide-react";
+import { useEffect, useRef, useState, useCallback, Fragment } from "react";
+import { MapPin, Image as ImageIcon, Trash2, GripVertical, CheckSquare, Square, X, Play } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { EditStepDialog } from "@/components/EditStepDialog";
 import { toast } from "sonner";
@@ -57,6 +57,13 @@ function formatStepDate(dateStr: string) {
     month: "short",
     day: "numeric",
   });
+}
+
+const VIDEO_EXTENSIONS = new Set(["mp4", "mov", "webm", "mkv", "avi", "m4v", "qt", "3gp"]);
+
+function isVideoFile(fileName: string): boolean {
+  const ext = fileName.split(".").pop()?.toLowerCase() ?? "";
+  return VIDEO_EXTENSIONS.has(ext);
 }
 
 export function TripTimeline({
@@ -384,14 +391,36 @@ export function TripTimeline({
 
                 {photos.length > 0 && (
                   <div className="mt-2 flex gap-2 overflow-x-auto">
-                    {photos.slice(0, 6).map((photo) => (
-                      <img
-                        key={photo.id}
-                        src={getPhotoUrl(photo)}
-                        alt={photo.file_name}
-                        className="h-20 w-20 shrink-0 rounded-lg object-cover"
-                      />
-                    ))}
+                    {photos.slice(0, 6).map((photo) => {
+                      const url = getPhotoUrl(photo);
+                      const isVideo = isVideoFile(photo.file_name);
+
+                      return isVideo ? (
+                        <div key={photo.id} className="relative h-20 w-20 shrink-0 rounded-lg overflow-hidden bg-muted">
+                          <video
+                            src={url}
+                            className="h-full w-full object-cover"
+                            muted
+                            playsInline
+                            preload="metadata"
+                            onClick={(e) => {
+                              const v = e.currentTarget;
+                              if (v.paused) { v.controls = true; void v.play(); }
+                            }}
+                          />
+                          <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                            <Play className="h-6 w-6 text-white drop-shadow-md" />
+                          </div>
+                        </div>
+                      ) : (
+                        <img
+                          key={photo.id}
+                          src={url}
+                          alt={photo.file_name}
+                          className="h-20 w-20 shrink-0 rounded-lg object-cover"
+                        />
+                      );
+                    })}
                     {photos.length > 6 && (
                       <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-lg bg-muted text-xs font-medium text-muted-foreground">
                         +{photos.length - 6}
