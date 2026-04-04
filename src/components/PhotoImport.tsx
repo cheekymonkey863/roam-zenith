@@ -261,6 +261,60 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
     setSuggestions((prev) => prev.map((s) => (s.key === key ? { ...s, [field]: value } : s)));
   };
 
+  const mergeSteps = (targetKey: string, sourceKey: string) => {
+    if (targetKey === sourceKey) return;
+    setSuggestions((prev) => {
+      const target = prev.find((s) => s.key === targetKey);
+      const source = prev.find((s) => s.key === sourceKey);
+      if (!target || !source) return prev;
+
+      const mergedDescription = [target.description, source.description].filter(Boolean).join("\n\n");
+      const allPhotos = [...target.photos, ...source.photos];
+      const allDates = allPhotos.map((p) => p.takenAt).filter(Boolean) as Date[];
+      const earliestDate = allDates.length > 0 ? new Date(Math.min(...allDates.map((d) => d.getTime()))) : target.earliestDate;
+
+      const merged: SuggestedStep = {
+        ...target,
+        photos: allPhotos,
+        earliestDate,
+        description: mergedDescription,
+        summary: [target.summary, source.summary].filter(Boolean).join(" | "),
+      };
+
+      return prev.filter((s) => s.key !== sourceKey).map((s) => (s.key === targetKey ? merged : s));
+    });
+  };
+
+  const handleStepDragStart = (e: React.DragEvent, key: string) => {
+    setDragSourceKey(key);
+    e.dataTransfer.effectAllowed = "move";
+  };
+
+  const handleStepDragOver = (e: React.DragEvent, key: string) => {
+    e.preventDefault();
+    if (dragSourceKey && dragSourceKey !== key) {
+      setDragOverKey(key);
+    }
+  };
+
+  const handleStepDragLeave = () => {
+    setDragOverKey(null);
+  };
+
+  const handleStepDrop = (e: React.DragEvent, targetKey: string) => {
+    e.preventDefault();
+    if (dragSourceKey && dragSourceKey !== targetKey) {
+      mergeSteps(targetKey, dragSourceKey);
+    }
+    setDragSourceKey(null);
+    setDragOverKey(null);
+  };
+
+  const handleStepDragEnd = () => {
+    setDragSourceKey(null);
+    setDragOverKey(null);
+  };
+
   const findMatchingExistingStep = (lat: number, lng: number) => {
     for (const existing of existingSteps) {
       const dlat = (existing.latitude - lat) * 111320;
