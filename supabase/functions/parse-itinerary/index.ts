@@ -110,8 +110,10 @@ IMPORTANT: Be specific with eventType. For example:
 - A restaurant dinner is "dining" not generic activity
 - A museum visit is "sightseeing" not generic activity
 - Check-in at Hilton is "hotel" not generic accommodation
+- ANY place with "resort" in the name MUST be "resort" (e.g. "Four Seasons Resort" = "resort")
 - A walking tour is "tour"
 - A spa visit is "wellness"
+- Golf, tennis, diving, surfing = "sport"
 
 Sort activities chronologically. Be thorough — extract every single stop mentioned.`,
           },
