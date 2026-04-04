@@ -100,7 +100,7 @@ export function AddEventForm({ tripId, onEventAdded }: AddEventFormProps) {
       <form onSubmit={handleSubmit} className="flex flex-col gap-5">
         {/* Event type selector */}
         <div className="flex flex-col gap-2">
-          <label className="text-sm font-medium text-foreground">Activity Type</label>
+          <label className="text-sm font-medium text-foreground">Event Type</label>
           <EventTypeSelect value={eventType} onValueChange={setEventType} />
         </div>
 
