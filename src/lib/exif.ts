@@ -996,9 +996,7 @@ function haversine(lat1: number, lng1: number, lat2: number, lng2: number): numb
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-import { ensureGoogleMapsLoaded, getGoogle, GOOGLE_MAPS_API_KEY } from "@/hooks/useGooglePlacesSearch";
-
-let _placesServiceHost: HTMLDivElement | null = null;
+import { GOOGLE_MAPS_API_KEY } from "@/hooks/useGooglePlacesSearch";
 
 export interface ReverseGeocodeResult {
   name: string;
