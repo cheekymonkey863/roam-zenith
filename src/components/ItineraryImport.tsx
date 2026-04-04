@@ -233,7 +233,7 @@ export function ItineraryImport({ tripId, onImportComplete, onCancel }: Itinerar
     }
   };
 
-  const eventTypeLabel = (val: string) => EVENT_TYPES.find((t) => t.value === val)?.label || val;
+  const eventTypeLabel = (val: string) => ALL_EVENT_TYPES.find((t) => t.value === val)?.label || val;
 
   return (
     <div className="flex flex-col gap-6">
