@@ -3,17 +3,19 @@
  import { Upload, FileText, Image, Loader2, X, Check } from "lucide-react";
  import { format } from "date-fns";
  import { cn } from "@/lib/utils";
- import { supabase } from "@/integrations/supabase/client";
- import { useAuth } from "@/hooks/useAuth";
- import { Switch } from "@/components/ui/switch";
- import { toast } from "sonner";
- import {
-   extractExifFromFiles,
-   groupPhotosByLocation,
-   reverseGeocode,
-   type PhotoExifData,
- } from "@/lib/exif";
- import type { Json } from "@/integrations/supabase/types";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
+import { Switch } from "@/components/ui/switch";
+import { toast } from "sonner";
+import {
+  extractExifFromFiles,
+  geocodeLocationName,
+  groupMediaByTime,
+  groupPhotosByLocation,
+  reverseGeocode,
+  type PhotoExifData,
+} from "@/lib/exif";
+import type { Json } from "@/integrations/supabase/types";
  
  type ImportMode = "none" | "photo" | "itinerary";
  
