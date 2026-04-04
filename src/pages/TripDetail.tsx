@@ -1,6 +1,6 @@
-import { useParams, Link } from "react-router-dom";
+import { useParams, Link, useNavigate } from "react-router-dom";
 import { useEffect, useState, useRef, useCallback } from "react";
-import { ArrowLeft, Calendar, MapPin, Route, Navigation, Image as ImageIcon, FileText } from "lucide-react";
+import { ArrowLeft, Calendar, MapPin, Route, Navigation, Image as ImageIcon, FileText, Trash2 } from "lucide-react";
 import { getTripStatus, getTripStatusLabel, getTripStatusStyle, formatTripDateRange } from "@/lib/tripStatus";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -12,7 +12,9 @@ import { ItineraryImport } from "@/components/ItineraryImport";
 import { WorldMap, type WorldMapHandle } from "@/components/WorldMap";
 import { AddEventForm } from "@/components/AddEventForm";
 import { EditTripDialog } from "@/components/EditTripDialog";
+import { DeleteTripDialog } from "@/components/DeleteTripDialog";
 import { ShareTripDialog } from "@/components/ShareTripDialog";
+import { Button } from "@/components/ui/button";
 import { useIsMobile } from "@/hooks/use-mobile";
 import type { Tables } from "@/integrations/supabase/types";
 
@@ -26,6 +28,7 @@ function formatDate(dateStr: string | null) {
 
 const TripDetail = () => {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const { user } = useAuth();
   const isMobile = useIsMobile();
   const [trip, setTrip] = useState<Trip | null>(null);
@@ -84,14 +87,26 @@ const TripDetail = () => {
         </Link>
 
         <div className="rounded-2xl bg-gradient-to-br from-primary/15 via-accent/10 to-secondary p-8">
-          <div className="flex items-start justify-between">
+          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
             <h1 className="font-display text-3xl font-semibold text-foreground md:text-4xl">{trip.title}</h1>
-            <div className="flex items-center gap-2">
+            <div className="flex shrink-0 items-center gap-2 self-start">
               <span className={`rounded-full px-3 py-1 text-xs font-medium ${getTripStatusStyle(getTripStatus(trip.start_date, trip.end_date))}`}>
                 {getTripStatusLabel(getTripStatus(trip.start_date, trip.end_date))}
               </span>
               {isOwner && <ShareTripDialog tripId={trip.id} tripTitle={trip.title} />}
-              {isOwner && <EditTripDialog trip={trip} onUpdated={fetchData} />}
+              {isOwner && <EditTripDialog trip={trip} tripCountries={countries} onUpdated={fetchData} />}
+              {isOwner && (
+                <DeleteTripDialog
+                  tripId={trip.id}
+                  tripTitle={trip.title}
+                  onDeleted={() => navigate("/")}
+                  trigger={
+                    <Button type="button" variant="secondary" size="icon" className="rounded-xl">
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  }
+                />
+              )}
             </div>
           </div>
 
