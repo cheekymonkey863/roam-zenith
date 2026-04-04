@@ -380,12 +380,16 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
     return null;
   };
 
-  const importSelected = async () => {
+   const importSelected = async () => {
     if (!user) return;
     setImporting(true);
     const selected = suggestions.filter((s) => s.selected);
     let newSteps = 0;
     let matchedSteps = 0;
+
+    const totalItems = selected.reduce((n, s) => n + s.photos.length, 0) + selected.length;
+    let completed = 0;
+    setImportProgress({ current: 0, total: totalItems });
 
     for (const step of selected) {
       const matchingStep = findMatchingExistingStep(step.latitude, step.longitude);
@@ -420,6 +424,9 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
         newSteps++;
       }
 
+      completed++;
+      setImportProgress({ current: completed, total: totalItems });
+
       for (const photo of step.photos) {
         const uploadFile = photo.uploadFile ?? photo.file;
         const ext = uploadFile.name.split(".").pop() || (uploadFile.type.startsWith("video/") ? "mp4" : "jpg");
@@ -447,6 +454,9 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
             exif_data: exifData,
           });
         }
+
+        completed++;
+        setImportProgress({ current: completed, total: totalItems });
       }
     }
 
@@ -455,6 +465,7 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
     if (matchedSteps > 0) parts.push(`${matchedSteps} matched to existing steps`);
     toast.success(`Imported: ${parts.join(", ")}!`);
     setImporting(false);
+    setImportProgress({ current: 0, total: 0 });
     setSuggestions([]);
     onImportComplete();
   };
