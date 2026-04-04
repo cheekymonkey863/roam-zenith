@@ -697,14 +697,19 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
                           const previewSrc = photo.thumbnail || photo.analysisImage;
 
                           return previewSrc ? (
-                            <div key={index} className="relative h-14 w-14 shrink-0">
-                              <img src={previewSrc} alt={photo.caption || photo.file.name} className="h-14 w-14 rounded-lg object-cover" />
+                            <button
+                              key={index}
+                              type="button"
+                              onClick={(e) => { e.stopPropagation(); setLightboxSrc(previewSrc); }}
+                              className="group relative h-14 w-14 shrink-0 overflow-hidden rounded-lg border border-border transition-all hover:border-primary hover:ring-2 hover:ring-primary/30"
+                            >
+                              <img src={previewSrc} alt={photo.caption || photo.file.name} className="h-full w-full object-cover" />
                               {isVideo && (
                                 <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-black/30">
                                   <Play className="h-4 w-4 text-white fill-white" />
                                 </div>
                               )}
-                            </div>
+                            </button>
                           ) : (
                             <div key={index} className="flex h-14 w-14 shrink-0 items-center justify-center rounded-lg bg-muted">
                               {isVideo ? <Play className="h-5 w-5 text-muted-foreground" /> : <ImageIcon className="h-5 w-5 text-muted-foreground" />}
