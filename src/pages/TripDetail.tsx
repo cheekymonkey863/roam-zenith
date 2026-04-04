@@ -40,7 +40,7 @@ const TripDetail = () => {
     if (!user || !id) return;
     const [tripRes, stepsRes] = await Promise.all([
       supabase.from("trips").select("*").eq("id", id).eq("user_id", user.id).single(),
-      supabase.from("trip_steps").select("*").eq("trip_id", id).eq("user_id", user.id).order("recorded_at", { ascending: true }),
+      supabase.from("trip_steps").select("*").eq("trip_id", id).eq("user_id", user.id).order("sort_order", { ascending: true }).order("recorded_at", { ascending: true }),
     ]);
     setTrip(tripRes.data);
     setSteps(stepsRes.data || []);
