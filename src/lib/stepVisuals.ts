@@ -13,6 +13,8 @@ export type StepVisualType =
   | "safari_accommodation"
   | "glamping"
   | "camping"
+  | "resort"
+  | "ski_lodge"
   | "food"
   | "sightseeing"
   | "tour"
@@ -22,6 +24,7 @@ export type StepVisualType =
   | "theatre"
   | "live_show"
   | "wellness"
+  | "sport"
   | "border"
   | "transport"
   | "activity"
@@ -35,7 +38,8 @@ export interface StepVisualInput {
 }
 
 const FLIGHT_PATTERN = /\b(airport|airfield|flight|airline|boarding|gate|terminal|depart(?:ure|ing)|arriv(?:al|ing)|runway|iata)\b|\([A-Z]{3}\)/i;
-const HOTEL_PATTERN = /\b(hotel|resort|lodge|hostel|airbnb|inn|suite|suites|guesthouse|villa|camp|room|stay|marriott|hilton|hyatt|radisson|pullman|fairmont|sheraton|belmond|vignette|palace|palacio|sanctuary)\b/i;
+const HOTEL_PATTERN = /\b(hotel|lodge|hostel|airbnb|inn|suite|suites|guesthouse|villa|camp|room|stay|marriott|hilton|hyatt|radisson|pullman|fairmont|sheraton|belmond|vignette|palace|palacio|sanctuary)\b/i;
+const RESORT_PATTERN = /\bresort\b/i;
 const HOTEL_EVENT_PATTERN = /\bhotel\s+check.?in\b|\bhotel\s+check.?out\b/i;
 const FOOD_PATTERN = /\b(restaurant|cafe|bar|bistro|breakfast|lunch|dinner|brunch|tasting|meal|food)\b/i;
 const BORDER_PATTERN = /\b(border|immigration|passport|customs|checkpoint|crossing)\b/i;
@@ -87,6 +91,8 @@ export function inferStepVisualType(step: StepVisualInput, googlePlaceTypes: str
     safari: "safari_accommodation",
     glamping: "glamping",
     camping: "camping",
+    resort: "resort",
+    ski_lodge: "ski_lodge",
     tour: "tour",
     sightseeing: "sightseeing",
     dining: "dining",
@@ -95,9 +101,14 @@ export function inferStepVisualType(step: StepVisualInput, googlePlaceTypes: str
     theatre: "theatre",
     live_show: "live_show",
     wellness: "wellness",
+    sport: "sport",
   };
 
   if (directMap[step.event_type]) return directMap[step.event_type];
+
+  // Resort check takes priority - anything with "resort" is a resort
+  const isResort = RESORT_PATTERN.test(text);
+  if (isResort) return "resort";
 
   const isFlight = FLIGHT_PATTERN.test(text) || googleType === "flight";
   const isHotel = HOTEL_PATTERN.test(text) || HOTEL_EVENT_PATTERN.test(text) || googleType === "hotel";

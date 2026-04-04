@@ -1,7 +1,7 @@
 import {
   Plane, TrainFront, Bus, Ship, Car, Footprints, Bike,
-  Hotel, Building, Home, Castle, Trees, Tent, Mountain,
-  Map, Camera, UtensilsCrossed, Users, Music, Theater, Sparkles, Heart, Flag,
+  Hotel, Building, Home, Castle, Trees, Tent, Mountain, Palmtree, Snowflake,
+  Map, Camera, UtensilsCrossed, Users, Music, Theater, Sparkles, Heart, Flag, Trophy,
   type LucideIcon,
 } from "lucide-react";
 
@@ -35,6 +35,8 @@ export const EVENT_TYPE_GROUPS = [
       { value: "safari", label: "Safari", icon: Trees },
       { value: "glamping", label: "Glamping", icon: Mountain },
       { value: "camping", label: "Camping", icon: Tent },
+      { value: "resort", label: "Resort", icon: Palmtree },
+      { value: "ski_lodge", label: "Ski Lodge", icon: Snowflake },
     ],
   },
   {
@@ -48,6 +50,7 @@ export const EVENT_TYPE_GROUPS = [
       { value: "theatre", label: "Theatre", icon: Theater },
       { value: "live_show", label: "Live Show", icon: Sparkles },
       { value: "wellness", label: "Wellness", icon: Heart },
+      { value: "sport", label: "Sport", icon: Trophy },
     ],
   },
 ] as const;

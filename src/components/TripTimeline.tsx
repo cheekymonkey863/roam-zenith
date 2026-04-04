@@ -7,8 +7,8 @@ import { inferStepVisualType, type StepVisualType } from "@/lib/stepVisuals";
 import { getEventType } from "@/lib/eventTypes";
 import {
   Plane, TrainFront, Bus, Ship, Car, Footprints, Bike,
-  Hotel, Building, Home, Castle, Trees, Mountain, Tent,
-  Map as MapIcon, Camera, UtensilsCrossed, Users, Music, Theater, Sparkles, Heart,
+  Hotel, Building, Home, Castle, Trees, Mountain, Tent, Palmtree, Snowflake,
+  Map as MapIcon, Camera, UtensilsCrossed, Users, Music, Theater, Sparkles, Heart, Trophy,
   Flag, CircleDot, ArrowRightLeft,
 } from "lucide-react";
 import type { Tables } from "@/integrations/supabase/types";
@@ -31,6 +31,8 @@ const VISUAL_CONFIG: Record<StepVisualType, { icon: React.ElementType; bg: strin
   safari_accommodation: { icon: Trees, bg: "bg-yellow-600", text: "text-white" },
   glamping: { icon: Mountain, bg: "bg-emerald-600", text: "text-white" },
   camping: { icon: Tent, bg: "bg-green-700", text: "text-white" },
+  resort: { icon: Palmtree, bg: "bg-cyan-500", text: "text-white" },
+  ski_lodge: { icon: Snowflake, bg: "bg-sky-700", text: "text-white" },
   food: { icon: UtensilsCrossed, bg: "bg-orange-500", text: "text-white" },
   sightseeing: { icon: Camera, bg: "bg-emerald-500", text: "text-white" },
   tour: { icon: MapIcon, bg: "bg-sky-500", text: "text-white" },
@@ -40,6 +42,7 @@ const VISUAL_CONFIG: Record<StepVisualType, { icon: React.ElementType; bg: strin
   theatre: { icon: Theater, bg: "bg-red-600", text: "text-white" },
   live_show: { icon: Sparkles, bg: "bg-fuchsia-500", text: "text-white" },
   wellness: { icon: Heart, bg: "bg-rose-500", text: "text-white" },
+  sport: { icon: Trophy, bg: "bg-amber-500", text: "text-white" },
   border: { icon: MapPin, bg: "bg-amber-500", text: "text-white" },
   transport: { icon: ArrowRightLeft, bg: "bg-sky-600", text: "text-white" },
   activity: { icon: Flag, bg: "bg-primary", text: "text-primary-foreground" },

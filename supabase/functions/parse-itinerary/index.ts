@@ -6,8 +6,8 @@ const corsHeaders = {
 
 const VALID_EVENT_TYPES = [
   "flight", "train", "bus", "ferry", "car", "on_foot", "cycling",
-  "hotel", "apartment_flat", "private_home", "villa", "safari", "glamping", "camping",
-  "tour", "sightseeing", "dining", "meeting", "concert", "theatre", "live_show", "wellness",
+  "hotel", "apartment_flat", "private_home", "villa", "safari", "glamping", "camping", "resort", "ski_lodge",
+  "tour", "sightseeing", "dining", "meeting", "concert", "theatre", "live_show", "wellness", "sport",
 ];
 
 interface ParsedActivity {
@@ -79,13 +79,15 @@ For each item determine:
     "cycling" - bicycle travel
 
   ACCOMMODATION types (for stays/lodging):
-    "hotel" - hotel, resort, lodge, hostel, inn
+    "hotel" - hotel, lodge, hostel, inn
     "apartment_flat" - apartment, flat, Airbnb rental
     "private_home" - staying at someone's home
     "villa" - villa or large private rental
     "safari" - safari lodge or camp
     "glamping" - glamping accommodation
     "camping" - camping, tent
+    "resort" - ANY place with "resort" in the name, beach resort, spa resort, mountain resort
+    "ski_lodge" - ski lodge, ski chalet, ski resort (when skiing is the focus)
 
   EVENT types (for activities/experiences):
     "tour" - guided tours, walking tours, excursions
@@ -96,6 +98,7 @@ For each item determine:
     "theatre" - theatre, opera, ballet performances
     "live_show" - live shows, comedy, performances
     "wellness" - spa, massage, yoga, wellness activities
+    "sport" - sports events, sporting activities, gym, golf, tennis, surfing, diving, skiing
 
 - date: ISO date string (YYYY-MM-DD) if mentioned, null otherwise
 - time: time string (HH:MM) if mentioned, null otherwise
@@ -107,8 +110,10 @@ IMPORTANT: Be specific with eventType. For example:
 - A restaurant dinner is "dining" not generic activity
 - A museum visit is "sightseeing" not generic activity
 - Check-in at Hilton is "hotel" not generic accommodation
+- ANY place with "resort" in the name MUST be "resort" (e.g. "Four Seasons Resort" = "resort")
 - A walking tour is "tour"
 - A spa visit is "wellness"
+- Golf, tennis, diving, surfing = "sport"
 
 Sort activities chronologically. Be thorough — extract every single stop mentioned.`,
           },
