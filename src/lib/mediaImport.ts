@@ -21,6 +21,7 @@ export interface MediaInsightResult {
   captionId: string;
   caption: string;
   sceneDescription?: string;
+  essence?: string;
   richTags?: string[];
 }
 
