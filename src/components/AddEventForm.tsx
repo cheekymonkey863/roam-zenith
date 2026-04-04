@@ -239,7 +239,7 @@ export function AddEventForm({ tripId, onEventAdded }: AddEventFormProps) {
   return (
     <div className="rounded-2xl bg-card p-6 shadow-card">
       <div className="mb-5 flex items-center justify-between">
-        <h3 className="font-display text-lg font-semibold text-foreground">Add Travel Event</h3>
+        <h3 className="font-display text-lg font-semibold text-foreground">Add Trip Stop</h3>
         <button
           onClick={() => {
             setOpen(false);
