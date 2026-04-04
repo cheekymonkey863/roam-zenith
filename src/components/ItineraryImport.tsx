@@ -36,15 +36,9 @@ interface ItineraryImportProps {
 }
 
 async function extractTextFromFile(file: File): Promise<string> {
-  // For text-based files, read directly
   if (file.type === "text/plain" || file.name.endsWith(".txt") || file.name.endsWith(".md")) {
     return file.text();
   }
-
-  // For PDF and DOCX, we'll read the raw text content
-  // PDFs and DOCX are binary, so we send the base64 to the edge function
-  // Actually, we'll use a simpler approach: read as text for basic formats,
-  // and for PDF/DOCX we'll extract text client-side using basic methods
 
   if (file.type === "application/pdf" || file.name.endsWith(".pdf")) {
     return extractTextFromPDF(file);
@@ -57,112 +51,59 @@ async function extractTextFromFile(file: File): Promise<string> {
     return extractTextFromDOCX(file);
   }
 
-  // Fallback: try reading as text
   return file.text();
 }
 
 async function extractTextFromPDF(file: File): Promise<string> {
-  // Use pdf.js-like approach: read the raw bytes and extract text
-  // Simple approach: convert to array buffer, look for text streams
+  const pdfjsLib = await import("pdfjs-dist");
+  pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
+
   const buffer = await file.arrayBuffer();
-  const bytes = new Uint8Array(buffer);
-  const decoder = new TextDecoder("utf-8", { fatal: false });
-  const raw = decoder.decode(bytes);
-
-  // Extract text between BT/ET markers (basic PDF text extraction)
+  const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
   const textParts: string[] = [];
-  const btRegex = /BT\s([\s\S]*?)ET/g;
-  let match;
-  while ((match = btRegex.exec(raw)) !== null) {
-    const block = match[1];
-    // Extract text from Tj and TJ operators
-    const tjRegex = /\(([^)]*)\)\s*Tj/g;
-    let tjMatch;
-    while ((tjMatch = tjRegex.exec(block)) !== null) {
-      textParts.push(tjMatch[1]);
-    }
-    // TJ arrays
-    const tjArrayRegex = /\[([^\]]*)\]\s*TJ/g;
-    let tjArrMatch;
-    while ((tjArrMatch = tjArrayRegex.exec(block)) !== null) {
-      const inner = tjArrMatch[1];
-      const strRegex = /\(([^)]*)\)/g;
-      let strMatch;
-      while ((strMatch = strRegex.exec(inner)) !== null) {
-        textParts.push(strMatch[1]);
-      }
-    }
+
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page = await pdf.getPage(i);
+    const content = await page.getTextContent();
+    const pageText = content.items
+      .map((item: any) => item.str)
+      .join(" ");
+    textParts.push(pageText);
   }
 
-  let text = textParts.join(" ").replace(/\\n/g, "\n").replace(/\\r/g, "");
-  
-  // If basic extraction yields very little, fall back to raw string extraction
-  if (text.trim().length < 50) {
-    // Try to extract readable strings from the PDF
-    const stringParts: string[] = [];
-    const readableRegex = /[\x20-\x7E]{4,}/g;
-    let strMatch;
-    while ((strMatch = readableRegex.exec(raw)) !== null) {
-      const s = strMatch[0];
-      // Filter out PDF operators and metadata
-      if (!/^(\/|<<|>>|obj|endobj|stream|endstream|xref|trailer)/.test(s) && s.length > 5) {
-        stringParts.push(s);
-      }
-    }
-    text = stringParts.join("\n");
-  }
-
+  const text = textParts.join("\n\n");
   return text || "Could not extract text from PDF. Please try copying and pasting the itinerary text instead.";
 }
 
 async function extractTextFromDOCX(file: File): Promise<string> {
-  // DOCX is a ZIP file containing XML
-  // We need to find word/document.xml and extract text from it
+  const JSZip = (await import("jszip")).default;
   const buffer = await file.arrayBuffer();
-  const bytes = new Uint8Array(buffer);
+  const zip = await JSZip.loadAsync(buffer);
 
-  // Find the word/document.xml entry in the ZIP
-  // Simple approach: look for XML text content
-  const decoder = new TextDecoder("utf-8", { fatal: false });
-  const raw = decoder.decode(bytes);
-
-  // Extract text from XML tags
-  const textParts: string[] = [];
-  const wtRegex = /<w:t[^>]*>([^<]*)<\/w:t>/g;
-  let match;
-  while ((match = wtRegex.exec(raw)) !== null) {
-    textParts.push(match[1]);
+  const docXml = zip.file("word/document.xml");
+  if (!docXml) {
+    return "Could not extract text from DOCX. Please try copying and pasting the itinerary text instead.";
   }
 
-  // Detect paragraph breaks
-  let text = "";
-  let currentParagraph = "";
-  const allMatches: Array<{ type: "text" | "para"; value: string }> = [];
+  const xmlStr = await docXml.async("string");
+  const paragraphs: string[] = [];
+  const paraRegex = /<w:p[\s>]([\s\S]*?)<\/w:p>/g;
+  let pMatch;
 
-  const combinedRegex = /<w:t[^>]*>([^<]*)<\/w:t>|<\/w:p>/g;
-  let m;
-  while ((m = combinedRegex.exec(raw)) !== null) {
-    if (m[1] !== undefined) {
-      allMatches.push({ type: "text", value: m[1] });
-    } else {
-      allMatches.push({ type: "para", value: "" });
+  while ((pMatch = paraRegex.exec(xmlStr)) !== null) {
+    const paraContent = pMatch[1];
+    const textParts: string[] = [];
+    const wtRegex = /<w:t[^>]*>([^<]*)<\/w:t>/g;
+    let tMatch;
+    while ((tMatch = wtRegex.exec(paraContent)) !== null) {
+      textParts.push(tMatch[1]);
+    }
+    if (textParts.length > 0) {
+      paragraphs.push(textParts.join(""));
     }
   }
 
-  for (const item of allMatches) {
-    if (item.type === "text") {
-      currentParagraph += item.value;
-    } else {
-      if (currentParagraph.trim()) {
-        text += currentParagraph.trim() + "\n";
-      }
-      currentParagraph = "";
-    }
-  }
-  if (currentParagraph.trim()) {
-    text += currentParagraph.trim() + "\n";
-  }
-
+  const text = paragraphs.join("\n");
   return text || "Could not extract text from DOCX. Please try copying and pasting the itinerary text instead.";
 }
 
