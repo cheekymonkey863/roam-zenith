@@ -269,23 +269,29 @@ function extractQuickTimeTextMetadataFromChunk(text: string): QuickTimeTextMetad
   const metadata = createEmptyQuickTimeTextMetadata();
 
   const locationKeyIndex = text.indexOf(QUICKTIME_LOCATION_KEY);
-  const gpsSearchText = locationKeyIndex >= 0
-    ? text.slice(Math.max(0, locationKeyIndex - 128), Math.min(text.length, locationKeyIndex + 1024))
-    : text;
-  const gps = parseISO6709Text(gpsSearchText);
-  if (gps) {
-    metadata.latitude = gps.latitude;
-    metadata.longitude = gps.longitude;
-    metadata.altitude = gps.altitude ?? null;
+  if (locationKeyIndex >= 0) {
+    const gpsSearchText = text.slice(
+      Math.max(0, locationKeyIndex - 128),
+      Math.min(text.length, locationKeyIndex + 1024),
+    );
+    const gps = parseISO6709Text(gpsSearchText);
+    if (gps) {
+      metadata.latitude = gps.latitude;
+      metadata.longitude = gps.longitude;
+      metadata.altitude = gps.altitude ?? null;
+    }
   }
 
   const creationKeyIndex = text.indexOf(QUICKTIME_CREATIONDATE_KEY);
-  const dateSearchText = creationKeyIndex >= 0
-    ? text.slice(Math.max(0, creationKeyIndex - 64), Math.min(text.length, creationKeyIndex + 1024))
-    : text;
-  const creationDateMatch = dateSearchText.match(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{4}|[+-]\d{2}:?\d{2})/);
-  if (creationDateMatch) {
-    metadata.creationDate = normalizeDate(creationDateMatch[0]);
+  if (creationKeyIndex >= 0) {
+    const dateSearchText = text.slice(
+      Math.max(0, creationKeyIndex - 64),
+      Math.min(text.length, creationKeyIndex + 1024),
+    );
+    const creationDateMatch = dateSearchText.match(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{4}|[+-]\d{2}:?\d{2})/);
+    if (creationDateMatch) {
+      metadata.creationDate = normalizeDate(creationDateMatch[0]);
+    }
   }
 
   return metadata;
@@ -568,8 +574,9 @@ export async function extractExifFromFile(file: File): Promise<PhotoExifData> {
   }
 
   const embeddedCoordinates = extractCoordinatesFromExif(exif);
-  let { latitude, longitude } = embeddedCoordinates;
-  if (latitude !== null && longitude !== null) {
+  let latitude = isMovVideo ? null : embeddedCoordinates.latitude;
+  let longitude = isMovVideo ? null : embeddedCoordinates.longitude;
+  if (!isMovVideo && latitude !== null && longitude !== null) {
     metadataSources.add("embedded_gps");
   }
 
@@ -587,8 +594,36 @@ export async function extractExifFromFile(file: File): Promise<PhotoExifData> {
     metadataSources.add("embedded_camera");
   }
 
-  // For videos: use server-side metadata extraction for robust MP4/MOV parsing
+  // For videos: MOV GPS is only trusted from keyed QuickTime metadata or server-side parsing.
   if (isVideo) {
+    const applyServerVideoMetadata = (
+      serverMeta: NonNullable<Awaited<ReturnType<typeof extractVideoMetadataServerSide>>>,
+    ) => {
+      if ((latitude === null || longitude === null) && serverMeta.latitude !== null && serverMeta.longitude !== null) {
+        latitude = serverMeta.latitude;
+        longitude = serverMeta.longitude;
+        metadataSources.add("video_server_gps");
+      }
+
+      if (!takenAt && serverMeta.creationDate) {
+        const date = new Date(serverMeta.creationDate);
+        if (!Number.isNaN(date.getTime())) {
+          takenAt = date;
+          metadataSources.add("video_server_time");
+        }
+      }
+
+      if (duration === null && typeof serverMeta.duration === "number") {
+        duration = serverMeta.duration;
+      }
+      if (!cameraMake && serverMeta.cameraMake) {
+        cameraMake = serverMeta.cameraMake;
+      }
+      if (!cameraModel && serverMeta.cameraModel) {
+        cameraModel = serverMeta.cameraModel;
+      }
+    };
+
     if (isMovVideo) {
       const quickTimeTextMetadata = await extractQuickTimeTextMetadata(file);
 
@@ -602,40 +637,38 @@ export async function extractExifFromFile(file: File): Promise<PhotoExifData> {
         takenAt = quickTimeTextMetadata.creationDate;
         metadataSources.add("video_quicktime_text_time");
       }
-    }
 
-    // Client-side video atom parsing — reads head + tail of file
-    if (latitude === null || longitude === null) {
-      const videoGPS = await parseVideoGPS(file);
-      if (videoGPS) {
-        latitude = videoGPS.latitude;
-        longitude = videoGPS.longitude;
-        metadataSources.add("video_container_gps");
+      if (latitude === null || longitude === null || !takenAt || duration === null || !cameraMake || !cameraModel) {
+        const serverMeta = await extractVideoMetadataServerSide(file);
+        if (serverMeta) {
+          applyServerVideoMetadata(serverMeta);
+        }
       }
-    }
 
-    if (!embeddedDate && !takenAt) {
-      const videoDate = await parseVideoCreationDate(file);
-      if (videoDate) {
-        takenAt = videoDate;
-        metadataSources.add("video_container_time");
+    } else {
+      // Client-side video atom parsing — reads head + tail of file
+      if (latitude === null || longitude === null) {
+        const videoGPS = await parseVideoGPS(file);
+        if (videoGPS) {
+          latitude = videoGPS.latitude;
+          longitude = videoGPS.longitude;
+          metadataSources.add("video_container_gps");
+        }
       }
-    }
 
-    // Server-side fallback only when client-side didn't find everything
-    if (latitude === null || longitude === null || !takenAt) {
+      if (!embeddedDate && !takenAt) {
+        const videoDate = await parseVideoCreationDate(file);
+        if (videoDate) {
+          takenAt = videoDate;
+          metadataSources.add("video_container_time");
+        }
+      }
+
+      if (latitude === null || longitude === null || !takenAt || duration === null || !cameraMake || !cameraModel) {
       const serverMeta = await extractVideoMetadataServerSide(file);
       if (serverMeta) {
-        if ((latitude === null || longitude === null) && serverMeta.latitude !== null && serverMeta.longitude !== null) {
-          latitude = serverMeta.latitude; longitude = serverMeta.longitude; metadataSources.add("video_server_gps");
+          applyServerVideoMetadata(serverMeta);
         }
-        if (!takenAt && serverMeta.creationDate) {
-          const d = new Date(serverMeta.creationDate);
-          if (!isNaN(d.getTime())) { takenAt = d; metadataSources.add("video_server_time"); }
-        }
-        if (duration === null && typeof serverMeta.duration === "number") { duration = serverMeta.duration; }
-        if (!cameraMake && serverMeta.cameraMake) cameraMake = serverMeta.cameraMake;
-        if (!cameraModel && serverMeta.cameraModel) cameraModel = serverMeta.cameraModel;
       }
     }
   }
