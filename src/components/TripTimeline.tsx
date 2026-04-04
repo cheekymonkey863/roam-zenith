@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState, useCallback, Fragment } from "react";
-import { MapPin, Image as ImageIcon, Trash2, GripVertical, CheckSquare, Square, X, Play } from "lucide-react";
+import { MapPin, Image as ImageIcon, Trash2, GripVertical, CheckSquare, Square, X } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { EditStepDialog } from "@/components/EditStepDialog";
+import { StepMediaGallery } from "@/components/StepMediaGallery";
 import { toast } from "sonner";
-import { getStoredPreviewThumbnail } from "@/lib/mediaMetadata";
 import { inferStepVisualType, type StepVisualType } from "@/lib/stepVisuals";
 import { getEventType } from "@/lib/eventTypes";
 import {
@@ -391,44 +391,13 @@ export function TripTimeline({
                 {step.notes && <p className="text-sm leading-relaxed text-muted-foreground">{step.notes}</p>}
 
                 {photos.length > 0 && (
-                  <div className="mt-2 flex gap-2 overflow-x-auto">
-                    {photos.slice(0, 6).map((photo) => {
-                      const url = getPhotoUrl(photo);
-                      const isVideo = isVideoFile(photo.file_name);
-                      const poster = getStoredPreviewThumbnail(photo.exif_data);
-
-                      return isVideo ? (
-                        <div key={photo.id} className="relative h-20 w-20 shrink-0 rounded-lg overflow-hidden bg-muted">
-                          <video
-                            src={url}
-                            poster={poster ?? undefined}
-                            className="h-full w-full object-cover"
-                            muted
-                            playsInline
-                            preload="metadata"
-                            onClick={(e) => {
-                              const v = e.currentTarget;
-                              if (v.paused) { v.controls = true; void v.play(); }
-                            }}
-                          />
-                          <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-                            <Play className="h-6 w-6 text-white drop-shadow-md" />
-                          </div>
-                        </div>
-                      ) : (
-                        <img
-                          key={photo.id}
-                          src={url}
-                          alt={photo.file_name}
-                          className="h-20 w-20 shrink-0 rounded-lg object-cover"
-                        />
-                      );
-                    })}
-                    {photos.length > 6 && (
-                      <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-lg bg-muted text-xs font-medium text-muted-foreground">
-                        +{photos.length - 6}
-                      </div>
-                    )}
+                  <div className="mt-2">
+                    <StepMediaGallery
+                      photos={photos}
+                      stepId={step.id}
+                      allSteps={steps.map((s) => ({ id: s.id, location_name: s.location_name }))}
+                      onUpdated={onUpdated}
+                    />
                   </div>
                 )}
 
