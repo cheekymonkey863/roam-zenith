@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Plus, Plane, Hotel, Utensils, Camera, MapPin, ArrowRightLeft, Flag, CircleDot, X, Search, Loader2 } from "lucide-react";
+import { Plus, Plane, Hotel, Utensils, Camera, MapPin, Flag, CircleDot, X, Search, Loader2, TrainFront, Bus, Ship, Car, Footprints, Bike } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
@@ -7,10 +7,14 @@ import { PendingPhotoUpload, type SelectedFile } from "@/components/ActivityPhot
 import { useGooglePlacesSearch } from "@/hooks/useGooglePlacesSearch";
 
 const EVENT_TYPES = [
-  { value: "arrival", label: "Arrival", icon: Plane },
-  { value: "departure", label: "Departure", icon: Plane },
+  { value: "flight", label: "Flight", icon: Plane },
+  { value: "train", label: "Train", icon: TrainFront },
+  { value: "bus", label: "Bus", icon: Bus },
+  { value: "ferry", label: "Ferry", icon: Ship },
+  { value: "car", label: "Car", icon: Car },
+  { value: "on_foot", label: "On Foot", icon: Footprints },
+  { value: "cycling", label: "Cycling", icon: Bike },
   { value: "accommodation", label: "Accommodation", icon: Hotel },
-  { value: "transport", label: "Transport", icon: ArrowRightLeft },
   { value: "activity", label: "Activity", icon: Flag },
   { value: "food", label: "Food & Drink", icon: Utensils },
   { value: "sightseeing", label: "Sightseeing", icon: Camera },

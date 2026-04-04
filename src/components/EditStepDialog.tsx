@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Pencil, Trash2, Search, Loader2, Plane, Hotel, Utensils, Camera, MapPin, ArrowRightLeft, Flag, CircleDot } from "lucide-react";
+import { Pencil, Trash2, Search, Loader2, Plane, Hotel, Utensils, Camera, MapPin, Flag, CircleDot, TrainFront, Bus, Ship, Car, Footprints, Bike } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -10,10 +10,14 @@ import type { Tables } from "@/integrations/supabase/types";
 type TripStep = Tables<"trip_steps">;
 
 const EVENT_TYPES = [
-  { value: "arrival", label: "Arrival", icon: Plane },
-  { value: "departure", label: "Departure", icon: Plane },
+  { value: "flight", label: "Flight", icon: Plane },
+  { value: "train", label: "Train", icon: TrainFront },
+  { value: "bus", label: "Bus", icon: Bus },
+  { value: "ferry", label: "Ferry", icon: Ship },
+  { value: "car", label: "Car", icon: Car },
+  { value: "on_foot", label: "On Foot", icon: Footprints },
+  { value: "cycling", label: "Cycling", icon: Bike },
   { value: "accommodation", label: "Accommodation", icon: Hotel },
-  { value: "transport", label: "Transport", icon: ArrowRightLeft },
   { value: "activity", label: "Activity", icon: Flag },
   { value: "food", label: "Food & Drink", icon: Utensils },
   { value: "sightseeing", label: "Sightseeing", icon: Camera },
