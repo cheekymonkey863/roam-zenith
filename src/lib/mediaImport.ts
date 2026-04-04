@@ -471,66 +471,67 @@ export async function processImportedMediaFiles(
       storagePath: string;
     }> = [];
 
-    let uploadsDone = 0;
-    for (const { photo, step } of allVideoMedia) {
-      try {
-        const {
-          data: { user },
-        } = await supabase.auth.getUser();
-        if (!user) {
-          console.error("No authenticated user for video upload");
-          uploadsDone++;
-          continue;
-        }
+    // Get user once, not per-video
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
 
-        const ext = photo.file.name.split(".").pop()?.toLowerCase() || "mp4";
-        const storagePath = `${user.id}/video-analysis/${crypto.randomUUID()}.${ext}`;
+    if (!user) {
+      console.error("No authenticated user for video upload");
+    } else {
+      const VIDEO_UPLOAD_CONCURRENCY = 2;
+      let uploadsDone = 0;
 
-        await resumableUpload({
-          bucketName: "trip-photos",
-          objectName: storagePath,
-          file: photo.file,
-          contentType: photo.file.type || "video/mp4",
-        });
+      await mapWithConcurrency(allVideoMedia, VIDEO_UPLOAD_CONCURRENCY, async ({ photo, step }) => {
+        try {
+          const ext = photo.file.name.split(".").pop()?.toLowerCase() || "mp4";
+          const storagePath = `${user.id}/video-analysis/${crypto.randomUUID()}.${ext}`;
 
-        let mimeType = photo.file.type || "video/mp4";
-        if (mimeType === "video/quicktime" || mimeType === "video/mov") {
-          mimeType = "video/mp4";
-        }
-
-        const { data, error } = await supabase.functions.invoke("analyze-video", {
-          body: {
-            storagePath,
-            mimeType,
-            captionId: photo.captionId,
-            fileName: photo.file.name,
-            takenAt: photo.takenAt?.toISOString() ?? null,
-            latitude: step?.latitude ?? photo.latitude ?? null,
-            longitude: step?.longitude ?? photo.longitude ?? null,
-            locationName: step?.locationName ?? null,
-            country: step?.country ?? null,
-            itinerarySteps: existingTripSteps ?? [],
-          },
-        });
-
-        if (!error && data?.jobId) {
-          pendingJobs.push({
-            jobId: data.jobId,
-            captionId: photo.captionId,
-            fileName: photo.file.name,
-            storagePath,
+          await resumableUpload({
+            bucketName: "trip-photos",
+            objectName: storagePath,
+            file: photo.file,
+            contentType: photo.file.type || "video/mp4",
           });
-        } else {
-          const errMsg = error?.message || data?.error || "Unknown error";
-          console.error(`Video analysis request failed for ${photo.file.name}:`, errMsg);
-          // Clean up storage immediately on request failure
-          await supabase.storage.from("trip-photos").remove([storagePath]).catch(() => {});
+
+          let mimeType = photo.file.type || "video/mp4";
+          if (mimeType === "video/quicktime" || mimeType === "video/mov") {
+            mimeType = "video/mp4";
+          }
+
+          const { data, error } = await supabase.functions.invoke("analyze-video", {
+            body: {
+              storagePath,
+              mimeType,
+              captionId: photo.captionId,
+              fileName: photo.file.name,
+              takenAt: photo.takenAt?.toISOString() ?? null,
+              latitude: step?.latitude ?? photo.latitude ?? null,
+              longitude: step?.longitude ?? photo.longitude ?? null,
+              locationName: step?.locationName ?? null,
+              country: step?.country ?? null,
+              itinerarySteps: existingTripSteps ?? [],
+            },
+          });
+
+          if (!error && data?.jobId) {
+            pendingJobs.push({
+              jobId: data.jobId,
+              captionId: photo.captionId,
+              fileName: photo.file.name,
+              storagePath,
+            });
+          } else {
+            const errMsg = error?.message || data?.error || "Unknown error";
+            console.error(`Video analysis request failed for ${photo.file.name}:`, errMsg);
+            await supabase.storage.from("trip-photos").remove([storagePath]).catch(() => {});
+          }
+        } catch (err) {
+          console.error(`Video upload failed for ${photo.file.name}:`, err);
         }
-      } catch (err) {
-        console.error(`Video upload failed for ${photo.file.name}:`, err);
-      }
-      uploadsDone++;
-      onProgress?.("Uploading videos", uploadsDone, allVideoMedia.length);
+        uploadsDone++;
+        onProgress?.("Uploading videos", uploadsDone, allVideoMedia.length);
+      });
     }
 
     // Phase 2: Poll for all job results
