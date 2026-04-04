@@ -222,7 +222,8 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
   const { user } = useAuth();
   const [dragOver, setDragOver] = useState(false);
   const [processing, setProcessing] = useState(false);
-  const [importing, setImporting] = useState(false);
+   const [importing, setImporting] = useState(false);
+   const [importProgress, setImportProgress] = useState({ current: 0, total: 0 });
   const [suggestions, setSuggestions] = useState<SuggestedStep[]>([]);
   const [noGpsPhotos, setNoGpsPhotos] = useState<PhotoExifData[]>([]);
   const [editingKey, setEditingKey] = useState<string | null>(null);
@@ -379,12 +380,16 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
     return null;
   };
 
-  const importSelected = async () => {
+   const importSelected = async () => {
     if (!user) return;
     setImporting(true);
     const selected = suggestions.filter((s) => s.selected);
     let newSteps = 0;
     let matchedSteps = 0;
+
+    const totalItems = selected.reduce((n, s) => n + s.photos.length, 0) + selected.length;
+    let completed = 0;
+    setImportProgress({ current: 0, total: totalItems });
 
     for (const step of selected) {
       const matchingStep = findMatchingExistingStep(step.latitude, step.longitude);
@@ -419,6 +424,9 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
         newSteps++;
       }
 
+      completed++;
+      setImportProgress({ current: completed, total: totalItems });
+
       for (const photo of step.photos) {
         const uploadFile = photo.uploadFile ?? photo.file;
         const ext = uploadFile.name.split(".").pop() || (uploadFile.type.startsWith("video/") ? "mp4" : "jpg");
@@ -446,6 +454,9 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
             exif_data: exifData,
           });
         }
+
+        completed++;
+        setImportProgress({ current: completed, total: totalItems });
       }
     }
 
@@ -454,6 +465,7 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
     if (matchedSteps > 0) parts.push(`${matchedSteps} matched to existing steps`);
     toast.success(`Imported: ${parts.join(", ")}!`);
     setImporting(false);
+    setImportProgress({ current: 0, total: 0 });
     setSuggestions([]);
     onImportComplete();
   };
@@ -510,15 +522,33 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
                   Cancel
                 </button>
               )}
-              <button
-                onClick={importSelected}
-                disabled={importing || suggestions.filter((s) => s.selected).length === 0}
-                className="flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
-              >
-                {importing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-                {importing ? "Importing..." : "Import Selected"}
-              </button>
-            </div>
+               <button
+                 onClick={importSelected}
+                 disabled={importing || suggestions.filter((s) => s.selected).length === 0}
+                 className="flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
+               >
+                 {importing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                 {importing
+                   ? `Importing… ${importProgress.total > 0 ? `(${Math.round((importProgress.current / importProgress.total) * 100)}%)` : ""}`
+                   : "Import Selected"}
+               </button>
+             </div>
+
+             {/* Import progress bar */}
+             {importing && importProgress.total > 0 && (
+               <div className="flex flex-col gap-1.5">
+                 <div className="flex items-center justify-between text-xs text-muted-foreground">
+                   <span>Uploading media…</span>
+                   <span>{Math.round((importProgress.current / importProgress.total) * 100)}%</span>
+                 </div>
+                 <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+                   <div
+                     className="h-full rounded-full bg-primary transition-all duration-300 ease-out"
+                     style={{ width: `${(importProgress.current / importProgress.total) * 100}%` }}
+                   />
+                 </div>
+               </div>
+             )}
           </div>
 
           {noGpsPhotos.length > 0 && (
