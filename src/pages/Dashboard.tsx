@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
-import { Globe, MapPin, Route, Compass, Plus, ChevronDown, ChevronUp, Calendar } from "lucide-react";
+import { Link } from "react-router-dom";
+import { Globe, MapPin, Compass, Plus, ChevronDown, ChevronUp, Calendar } from "lucide-react";
 import { getTripStatus, getTripStatusLabel, getTripStatusStyle, formatTripDateRange } from "@/lib/tripStatus";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { WorldMap } from "@/components/WorldMap";
 import { StatCard } from "@/components/StatCard";
-import { Switch } from "@/components/ui/switch";
+import { DashboardTripForm } from "@/components/DashboardTripForm";
 import type { Tables } from "@/integrations/supabase/types";
 
 type Trip = Tables<"trips">;
@@ -14,16 +14,10 @@ type TripStep = Tables<"trip_steps">;
 
 const Dashboard = () => {
   const { user } = useAuth();
-  const navigate = useNavigate();
   const [trips, setTrips] = useState<Trip[]>([]);
   const [steps, setSteps] = useState<TripStep[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAddTrip, setShowAddTrip] = useState(false);
-  const [title, setTitle] = useState("");
-  const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState("");
-  const [trackInBackground, setTrackInBackground] = useState(false);
-  const [creating, setCreating] = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -38,35 +32,6 @@ const Dashboard = () => {
     };
     fetchData();
   }, [user]);
-
-  const isPastTrip = (() => {
-    if (!endDate) return false;
-    const end = new Date(endDate);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    return end < today;
-  })();
-
-  const handleCreate = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!user || !title.trim()) return;
-    setCreating(true);
-    const { data } = await supabase
-      .from("trips")
-      .insert({
-        user_id: user.id,
-        title: title.trim(),
-        start_date: startDate || null,
-        end_date: endDate || null,
-        is_active: trackInBackground && !isPastTrip,
-      })
-      .select()
-      .single();
-    if (data) {
-      navigate(`/trips/${data.id}`);
-    }
-    setCreating(false);
-  };
 
   const countries = [...new Set(steps.map((s) => s.country).filter(Boolean))];
   const cities = [...new Set(steps.map((s) => s.location_name).filter(Boolean))];
@@ -99,62 +64,7 @@ const Dashboard = () => {
           )}
         </button>
 
-        {showAddTrip && (
-          <form onSubmit={handleCreate} className="flex flex-col gap-4 border-t border-border px-5 pb-5 pt-4">
-            <div className="flex flex-col gap-1.5">
-              <label className="text-sm font-medium text-foreground">Trip Name *</label>
-              <input
-                type="text"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder="e.g. Summer in Europe"
-                required
-                className="rounded-xl border border-border bg-background px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="flex flex-col gap-1.5">
-                <label className="text-sm font-medium text-foreground">Start Date</label>
-                <input
-                  type="date"
-                  value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
-                  className="rounded-xl border border-border bg-background px-4 py-2.5 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-                />
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <label className="text-sm font-medium text-foreground">End Date</label>
-                <input
-                  type="date"
-                  value={endDate}
-                  onChange={(e) => setEndDate(e.target.value)}
-                  min={startDate || undefined}
-                  className="rounded-xl border border-border bg-background px-4 py-2.5 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-                />
-              </div>
-            </div>
-            <div className={`flex items-center justify-between rounded-xl border border-border px-4 py-3 transition-opacity ${isPastTrip ? "opacity-40 pointer-events-none" : ""}`}>
-              <div className="flex flex-col gap-0.5">
-                <span className="text-sm font-medium text-foreground">Track in background</span>
-                <span className="text-xs text-muted-foreground">
-                  {isPastTrip ? "Not available for past trips" : "Automatically record your location during this trip"}
-                </span>
-              </div>
-              <Switch
-                checked={trackInBackground && !isPastTrip}
-                onCheckedChange={setTrackInBackground}
-                disabled={isPastTrip}
-              />
-            </div>
-            <button
-              type="submit"
-              disabled={creating || !title.trim()}
-              className="rounded-xl bg-primary py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
-            >
-              {creating ? "Creating..." : "Add Trip"}
-            </button>
-          </form>
-        )}
+        {showAddTrip && <DashboardTripForm />}
       </section>
 
       {/* Stats */}
