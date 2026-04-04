@@ -366,6 +366,23 @@ async function readVideoChunks(file: File): Promise<ArrayBuffer[]> {
   return chunks;
 }
 
+async function extractQuickTimeTextMetadata(file: File): Promise<QuickTimeTextMetadata> {
+  const metadata = createEmptyQuickTimeTextMetadata();
+  const decoder = new TextDecoder("utf-8", { fatal: false });
+
+  const chunks = await readVideoChunks(file);
+  for (const buffer of chunks) {
+    const text = decoder.decode(new Uint8Array(buffer));
+    mergeQuickTimeTextMetadata(metadata, extractQuickTimeTextMetadataFromChunk(text));
+  }
+
+  if (metadata.latitude !== null && metadata.longitude !== null && metadata.creationDate) {
+    return metadata;
+  }
+
+  return scanVideoFileForQuickTimeTextMetadata(file);
+}
+
 async function parseVideoCreationDate(file: File): Promise<Date | null> {
   try {
     const chunks = await readVideoChunks(file);
@@ -529,6 +546,7 @@ async function extractVideoMetadataServerSide(
 
 export async function extractExifFromFile(file: File): Promise<PhotoExifData> {
   const isVideo = file.type.startsWith("video/");
+  const isMovVideo = isVideo && isMovLikeVideo(file);
 
   const [uploadFile, exif, videoPreviews] = await Promise.all([
     isVideo ? Promise.resolve(file) : normalizeImageFileForBrowser(file),
@@ -571,6 +589,21 @@ export async function extractExifFromFile(file: File): Promise<PhotoExifData> {
 
   // For videos: use server-side metadata extraction for robust MP4/MOV parsing
   if (isVideo) {
+    if (isMovVideo) {
+      const quickTimeTextMetadata = await extractQuickTimeTextMetadata(file);
+
+      if (quickTimeTextMetadata.latitude !== null && quickTimeTextMetadata.longitude !== null) {
+        latitude = quickTimeTextMetadata.latitude;
+        longitude = quickTimeTextMetadata.longitude;
+        metadataSources.add("video_quicktime_text_gps");
+      }
+
+      if (quickTimeTextMetadata.creationDate) {
+        takenAt = quickTimeTextMetadata.creationDate;
+        metadataSources.add("video_quicktime_text_time");
+      }
+    }
+
     // Client-side video atom parsing — reads head + tail of file
     if (latitude === null || longitude === null) {
       const videoGPS = await parseVideoGPS(file);
@@ -586,21 +619,6 @@ export async function extractExifFromFile(file: File): Promise<PhotoExifData> {
       if (videoDate) {
         takenAt = videoDate;
         metadataSources.add("video_container_time");
-      }
-    }
-
-    if ((latitude === null || longitude === null || !takenAt) && isMovLikeVideo(file)) {
-      const quickTimeTextMetadata = await scanVideoFileForQuickTimeTextMetadata(file);
-
-      if ((latitude === null || longitude === null) && quickTimeTextMetadata.latitude !== null && quickTimeTextMetadata.longitude !== null) {
-        latitude = quickTimeTextMetadata.latitude;
-        longitude = quickTimeTextMetadata.longitude;
-        metadataSources.add("video_quicktime_text_gps");
-      }
-
-      if (!takenAt && quickTimeTextMetadata.creationDate) {
-        takenAt = quickTimeTextMetadata.creationDate;
-        metadataSources.add("video_quicktime_text_time");
       }
     }
 
