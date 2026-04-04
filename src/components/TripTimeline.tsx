@@ -43,36 +43,49 @@ export function TripTimeline({
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const stepRefs = useRef<Map<string, HTMLDivElement>>(new Map());
 
-  // IntersectionObserver to detect which step is in view
+  // Scroll-based detection: find the step closest to viewport center
   useEffect(() => {
     if (!onStepInView || steps.length === 0) return;
 
-    const observer = new IntersectionObserver(
-      (entries) => {
-        let bestEntry: IntersectionObserverEntry | null = null;
-        for (const entry of entries) {
-          if (entry.isIntersecting) {
-            if (!bestEntry || entry.intersectionRatio > bestEntry.intersectionRatio) {
-              bestEntry = entry;
-            }
-          }
-        }
-        if (bestEntry) {
-          const stepId = (bestEntry.target as HTMLElement).dataset.stepId;
-          if (stepId) onStepInView(stepId);
-        }
-      },
-      { threshold: [0.3, 0.5, 0.7], rootMargin: "-20% 0px -40% 0px" }
-    );
+    let lastReportedId = "";
+    let ticking = false;
 
-    // Observe after a brief delay to ensure refs are set
-    const timer = setTimeout(() => {
-      stepRefs.current.forEach((el) => observer.observe(el));
-    }, 100);
+    const findCenterStep = () => {
+      const centerY = window.innerHeight * 0.35; // focus point in upper-third
+      let closestId = "";
+      let closestDist = Infinity;
+
+      stepRefs.current.forEach((el, id) => {
+        const rect = el.getBoundingClientRect();
+        const elCenter = rect.top + rect.height / 2;
+        const dist = Math.abs(elCenter - centerY);
+        if (dist < closestDist) {
+          closestDist = dist;
+          closestId = id;
+        }
+      });
+
+      if (closestId && closestId !== lastReportedId) {
+        lastReportedId = closestId;
+        onStepInView(closestId);
+      }
+      ticking = false;
+    };
+
+    const onScroll = () => {
+      if (!ticking) {
+        ticking = true;
+        requestAnimationFrame(findCenterStep);
+      }
+    };
+
+    window.addEventListener("scroll", onScroll, { passive: true });
+    // Initial check
+    const timer = setTimeout(findCenterStep, 200);
 
     return () => {
+      window.removeEventListener("scroll", onScroll);
       clearTimeout(timer);
-      observer.disconnect();
     };
   }, [steps, onStepInView]);
 
