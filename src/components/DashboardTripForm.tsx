@@ -97,7 +97,8 @@ import { ImportPreview } from "@/components/ImportPreview";
     const [importProgress, setImportProgress] = useState({ current: 0, total: 0 });
  
    const [importMode, setImportMode] = useState<ImportMode>("none");
-   const [importProcessing, setImportProcessing] = useState(false);
+    const [importProcessing, setImportProcessing] = useState(false);
+    const [processingStatus, setProcessingStatus] = useState({ phase: "", current: 0, total: 0 });
    const [dragOver, setDragOver] = useState(false);
    const [pendingPhotoSteps, setPendingPhotoSteps] = useState<PendingPhotoStep[]>([]);
    const [pendingActivities, setPendingActivities] = useState<PendingActivity[]>([]);
