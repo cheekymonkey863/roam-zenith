@@ -43,6 +43,18 @@ const HEIC_MIME_TYPES = new Set([
   "image/heif-sequence",
 ]);
 
+const QUICKTIME_LOCATION_KEY = "com.apple.quicktime.location.ISO6709";
+const QUICKTIME_CREATIONDATE_KEY = "com.apple.quicktime.creationdate";
+const QUICKTIME_SCAN_CHUNK_SIZE = 1024 * 1024;
+const QUICKTIME_SCAN_OVERLAP = 4096;
+
+interface QuickTimeTextMetadata {
+  latitude: number | null;
+  longitude: number | null;
+  altitude: number | null;
+  creationDate: Date | null;
+}
+
 function isHeicLikeFile(file: File) {
   const lowerFileName = file.name.toLowerCase();
   return HEIC_EXTENSIONS.some((extension) => lowerFileName.endsWith(extension)) || HEIC_MIME_TYPES.has(file.type.toLowerCase());
@@ -50,6 +62,11 @@ function isHeicLikeFile(file: File) {
 
 function withExtension(fileName: string, extension: string) {
   return `${fileName.replace(/\.[^.]+$/, "")}${extension}`;
+}
+
+function isMovLikeVideo(file: File) {
+  const lowerFileName = file.name.toLowerCase();
+  return file.type === "video/quicktime" || lowerFileName.endsWith(".mov");
 }
 
 function normalizeDate(value: unknown): Date | null {
@@ -214,6 +231,89 @@ function extractTakenAtFromExif(exif: any): Date | null {
   }
 
   return null;
+}
+
+function parseISO6709Text(text: string): { latitude: number; longitude: number; altitude?: number } | null {
+  const match = text.match(/([+-]\d{1,2}(?:\.\d+)?)([+-]\d{1,3}(?:\.\d+)?)(?:([+-]\d+(?:\.\d+)?))?\/?/);
+  if (!match) return null;
+
+  const latitude = Number.parseFloat(match[1]);
+  const longitude = Number.parseFloat(match[2]);
+  const altitude = match[3] ? Number.parseFloat(match[3]) : undefined;
+
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
+  if (Math.abs(latitude) > 90 || Math.abs(longitude) > 180) return null;
+  if (latitude === 0 && longitude === 0) return null;
+
+  return { latitude, longitude, altitude };
+}
+
+function createEmptyQuickTimeTextMetadata(): QuickTimeTextMetadata {
+  return {
+    latitude: null,
+    longitude: null,
+    altitude: null,
+    creationDate: null,
+  };
+}
+
+function mergeQuickTimeTextMetadata(target: QuickTimeTextMetadata, source: QuickTimeTextMetadata): QuickTimeTextMetadata {
+  if (target.latitude === null && source.latitude !== null) target.latitude = source.latitude;
+  if (target.longitude === null && source.longitude !== null) target.longitude = source.longitude;
+  if (target.altitude === null && source.altitude !== null) target.altitude = source.altitude;
+  if (target.creationDate === null && source.creationDate !== null) target.creationDate = source.creationDate;
+  return target;
+}
+
+function extractQuickTimeTextMetadataFromChunk(text: string): QuickTimeTextMetadata {
+  const metadata = createEmptyQuickTimeTextMetadata();
+
+  const locationKeyIndex = text.indexOf(QUICKTIME_LOCATION_KEY);
+  const gpsSearchText = locationKeyIndex >= 0
+    ? text.slice(Math.max(0, locationKeyIndex - 128), Math.min(text.length, locationKeyIndex + 512))
+    : text;
+  const gps = parseISO6709Text(gpsSearchText);
+  if (gps) {
+    metadata.latitude = gps.latitude;
+    metadata.longitude = gps.longitude;
+    metadata.altitude = gps.altitude ?? null;
+  }
+
+  const creationKeyIndex = text.indexOf(QUICKTIME_CREATIONDATE_KEY);
+  const dateSearchText = creationKeyIndex >= 0
+    ? text.slice(Math.max(0, creationKeyIndex - 64), Math.min(text.length, creationKeyIndex + 256))
+    : text;
+  const creationDateMatch = dateSearchText.match(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{4}|[+-]\d{2}:?\d{2})/);
+  if (creationDateMatch) {
+    metadata.creationDate = normalizeDate(creationDateMatch[0]);
+  }
+
+  return metadata;
+}
+
+async function scanVideoFileForQuickTimeTextMetadata(file: File): Promise<QuickTimeTextMetadata> {
+  const metadata = createEmptyQuickTimeTextMetadata();
+  const decoder = new TextDecoder("utf-8", { fatal: false });
+  let carry = new Uint8Array(0);
+
+  for (let offset = 0; offset < file.size; offset += QUICKTIME_SCAN_CHUNK_SIZE) {
+    const buffer = await file.slice(offset, Math.min(file.size, offset + QUICKTIME_SCAN_CHUNK_SIZE)).arrayBuffer();
+    const chunk = new Uint8Array(buffer);
+    const combined = new Uint8Array(carry.length + chunk.length);
+    combined.set(carry);
+    combined.set(chunk, carry.length);
+
+    const text = decoder.decode(combined);
+    mergeQuickTimeTextMetadata(metadata, extractQuickTimeTextMetadataFromChunk(text));
+
+    if (metadata.latitude !== null && metadata.longitude !== null && metadata.creationDate) {
+      break;
+    }
+
+    carry = combined.slice(Math.max(0, combined.length - QUICKTIME_SCAN_OVERLAP));
+  }
+
+  return metadata;
 }
 
 async function normalizeImageFileForBrowser(file: File): Promise<File> {
@@ -486,6 +586,21 @@ export async function extractExifFromFile(file: File): Promise<PhotoExifData> {
       if (videoDate) {
         takenAt = videoDate;
         metadataSources.add("video_container_time");
+      }
+    }
+
+    if ((latitude === null || longitude === null || !takenAt) && isMovLikeVideo(file)) {
+      const quickTimeTextMetadata = await scanVideoFileForQuickTimeTextMetadata(file);
+
+      if ((latitude === null || longitude === null) && quickTimeTextMetadata.latitude !== null && quickTimeTextMetadata.longitude !== null) {
+        latitude = quickTimeTextMetadata.latitude;
+        longitude = quickTimeTextMetadata.longitude;
+        metadataSources.add("video_quicktime_text_gps");
+      }
+
+      if (!takenAt && quickTimeTextMetadata.creationDate) {
+        takenAt = quickTimeTextMetadata.creationDate;
+        metadataSources.add("video_quicktime_text_time");
       }
     }
 
