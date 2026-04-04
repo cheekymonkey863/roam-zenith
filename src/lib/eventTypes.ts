@@ -1,7 +1,7 @@
 import {
   Plane, TrainFront, Bus, Ship, Car, Footprints, Bike,
-  Hotel, Building, Home, Castle, Trees, Tent, Mountain,
-  Map, Camera, UtensilsCrossed, Users, Music, Theater, Sparkles, Heart, Flag,
+  Hotel, Building, Home, Castle, Trees, Tent, Mountain, Palmtree, Snowflake,
+  Map, Camera, UtensilsCrossed, Users, Music, Theater, Sparkles, Heart, Flag, Trophy,
   type LucideIcon,
 } from "lucide-react";
 
