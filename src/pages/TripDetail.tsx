@@ -12,6 +12,7 @@ import { ItineraryImport } from "@/components/ItineraryImport";
 import { WorldMap, type WorldMapHandle } from "@/components/WorldMap";
 import { AddEventForm } from "@/components/AddEventForm";
 import { EditTripDialog } from "@/components/EditTripDialog";
+import { ShareTripDialog } from "@/components/ShareTripDialog";
 import { useIsMobile } from "@/hooks/use-mobile";
 import type { Tables } from "@/integrations/supabase/types";
 
