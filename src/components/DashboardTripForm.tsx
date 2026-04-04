@@ -1,4 +1,4 @@
- import { useState } from "react";
+ import { useCallback, useState } from "react";
  import { useNavigate } from "react-router-dom";
  import { Upload, FileText, Image, Loader2, X, Check } from "lucide-react";
  import { format } from "date-fns";
@@ -83,6 +83,17 @@ import { ImportPreview } from "@/components/ImportPreview";
    if (countries.length === 2) return `${countries[0]} & ${countries[1]} Trip`;
    return `${countries.slice(0, 2).join(", ")} + ${countries.length - 2} more`;
  }
+
+ function sortPendingMedia(photos: PhotoExifData[]) {
+   return [...photos].sort(
+     (a, b) => (a.takenAt?.getTime() ?? a.file.lastModified ?? 0) - (b.takenAt?.getTime() ?? b.file.lastModified ?? 0),
+   );
+ }
+
+ function getEarliestPendingDate(photos: PhotoExifData[]) {
+   const dates = photos.map((photo) => photo.takenAt).filter((date): date is Date => Boolean(date));
+   return dates.length > 0 ? new Date(Math.min(...dates.map((date) => date.getTime()))) : null;
+ }
  
  export function DashboardTripForm() {
    const { user } = useAuth();
@@ -114,6 +125,57 @@ import { ImportPreview } from "@/components/ImportPreview";
    })();
  
    const hasPendingImport = pendingPhotoSteps.length > 0 || pendingActivities.length > 0;
+
+    const removePendingMedia = useCallback((stepKey: string, photoIds: string[]) => {
+      const ids = new Set(photoIds);
+      setPendingPhotoSteps((prev) =>
+        prev.flatMap((step) => {
+          if (step.key !== stepKey) return [step];
+
+          const remainingPhotos = step.photos.filter((photo) => !ids.has(photo.captionId));
+          if (remainingPhotos.length === 0) return [];
+
+          return [{
+            ...step,
+            photos: sortPendingMedia(remainingPhotos),
+            earliestDate: getEarliestPendingDate(remainingPhotos),
+          }];
+        }),
+      );
+
+      toast.success(`Removed ${photoIds.length} file${photoIds.length === 1 ? "" : "s"} from the import`);
+    }, []);
+
+    const movePendingMedia = useCallback((sourceStepKey: string, targetStepKey: string, photoIds: string[]) => {
+      const ids = new Set(photoIds);
+      let movedCount = 0;
+      let targetLabel = "another stop";
+
+      setPendingPhotoSteps((prev) => {
+        const next = prev.map((step) => ({ ...step, photos: [...step.photos] }));
+        const sourceStep = next.find((step) => step.key === sourceStepKey);
+        const targetStep = next.find((step) => step.key === targetStepKey);
+
+        if (!sourceStep || !targetStep) return prev;
+
+        const movedPhotos = sourceStep.photos.filter((photo) => ids.has(photo.captionId));
+        if (movedPhotos.length === 0) return prev;
+
+        movedCount = movedPhotos.length;
+        targetLabel = targetStep.locationName || "another stop";
+
+        sourceStep.photos = sourceStep.photos.filter((photo) => !ids.has(photo.captionId));
+        targetStep.photos = sortPendingMedia([...targetStep.photos, ...movedPhotos]);
+        sourceStep.earliestDate = getEarliestPendingDate(sourceStep.photos);
+        targetStep.earliestDate = getEarliestPendingDate(targetStep.photos);
+
+        return next.filter((step) => step.photos.length > 0);
+      });
+
+      if (movedCount > 0) {
+        toast.success(`Moved ${movedCount} file${movedCount === 1 ? "" : "s"} to ${targetLabel}`);
+      }
+    }, []);
  
    const populateFromDates = (dates: Date[]) => {
      if (dates.length === 0) return;
@@ -568,7 +630,12 @@ import { ImportPreview } from "@/components/ImportPreview";
  
         {/* Pending import preview */}
         {pendingPhotoSteps.length > 0 && (
-          <ImportPreview steps={pendingPhotoSteps} onClear={clearImport} />
+          <ImportPreview
+            steps={pendingPhotoSteps}
+            onClear={clearImport}
+            onMoveMedia={movePendingMedia}
+            onRemoveMedia={removePendingMedia}
+          />
         )}
 
         {/* Pending itinerary summary */}

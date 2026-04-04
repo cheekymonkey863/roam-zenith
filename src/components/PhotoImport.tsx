@@ -1,34 +1,12 @@
 import { useState, useCallback } from "react";
-import { Upload, MapPin, Calendar, Check, Image as ImageIcon, Loader2, Pencil, X, Play, Merge } from "lucide-react";
-
-function MediaLightbox({ src, onClose }: { src: string; onClose: () => void }) {
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-4 backdrop-blur-sm"
-      onClick={onClose}
-    >
-      <button
-        type="button"
-        onClick={onClose}
-        className="absolute right-4 top-4 rounded-full bg-black/50 p-2 text-white hover:bg-black/70"
-      >
-        <X className="h-5 w-5" />
-      </button>
-      <img
-        src={src}
-        alt="Preview"
-        className="max-h-[92vh] max-w-[96vw] rounded-xl object-contain shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-      />
-    </div>
-  );
-}
+import { Upload, MapPin, Calendar, Check, Loader2, Pencil, X, Merge } from "lucide-react";
 import {
   type PhotoExifData,
 } from "@/lib/exif";
 import { processImportedMediaFiles } from "@/lib/mediaImport";
 import { buildStoredMediaMetadata } from "@/lib/mediaMetadata";
 import { buildImportedEventDescription, buildImportedLocationSummary, buildImportedStepDetails } from "@/lib/placeClassification";
+import { PendingMediaGallery } from "@/components/PendingMediaGallery";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
@@ -142,6 +120,11 @@ function getRepresentativeCoordinates(photos: PhotoExifData[]) {
   return { latitude: latitudes[mid], longitude: longitudes[mid] };
 }
 
+function getEarliestDateFromPhotos(photos: PhotoExifData[]) {
+  const dates = photos.map((photo) => photo.takenAt).filter((date): date is Date => Boolean(date));
+  return dates.length > 0 ? new Date(Math.min(...dates.map((date) => date.getTime()))) : null;
+}
+
 function isSameCalendarDay(a: Date, b: Date) {
   return (
     a.getFullYear() === b.getFullYear() &&
@@ -253,7 +236,6 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
   const [editingKey, setEditingKey] = useState<string | null>(null);
   const [dragSourceKey, setDragSourceKey] = useState<string | null>(null);
   const [dragOverKey, setDragOverKey] = useState<string | null>(null);
-  const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
 
   const processFiles = useCallback(async (files: File[]) => {
     setProcessing(true);
@@ -396,6 +378,58 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
     setDragSourceKey(null);
     setDragOverKey(null);
   };
+
+  const removeMediaFromSuggestion = useCallback((stepKey: string, photoIds: string[]) => {
+    const ids = new Set(photoIds);
+
+    setSuggestions((prev) =>
+      prev.flatMap((step) => {
+        if (step.key !== stepKey) return [step];
+
+        const remainingPhotos = step.photos.filter((photo) => !ids.has(photo.captionId));
+        if (remainingPhotos.length === 0) return [];
+
+        return [{
+          ...step,
+          photos: sortMediaByCapturedTime(remainingPhotos),
+          earliestDate: getEarliestDateFromPhotos(remainingPhotos),
+        }];
+      }),
+    );
+
+    toast.success(`Removed ${photoIds.length} file${photoIds.length === 1 ? "" : "s"}`);
+  }, []);
+
+  const moveMediaBetweenSuggestions = useCallback((sourceKey: string, targetKey: string, photoIds: string[]) => {
+    const ids = new Set(photoIds);
+    let movedCount = 0;
+    let targetLabel = "another stop";
+
+    setSuggestions((prev) => {
+      const next = prev.map((step) => ({ ...step, photos: [...step.photos] }));
+      const sourceStep = next.find((step) => step.key === sourceKey);
+      const targetStep = next.find((step) => step.key === targetKey);
+
+      if (!sourceStep || !targetStep) return prev;
+
+      const movedPhotos = sourceStep.photos.filter((photo) => ids.has(photo.captionId));
+      if (movedPhotos.length === 0) return prev;
+
+      movedCount = movedPhotos.length;
+      targetLabel = targetStep.locationName || "another stop";
+
+      sourceStep.photos = sourceStep.photos.filter((photo) => !ids.has(photo.captionId));
+      targetStep.photos = sortMediaByCapturedTime([...targetStep.photos, ...movedPhotos]);
+      sourceStep.earliestDate = getEarliestDateFromPhotos(sourceStep.photos);
+      targetStep.earliestDate = getEarliestDateFromPhotos(targetStep.photos);
+
+      return next.filter((step) => step.photos.length > 0);
+    });
+
+    if (movedCount > 0) {
+      toast.success(`Moved ${movedCount} file${movedCount === 1 ? "" : "s"} to ${targetLabel}`);
+    }
+  }, []);
 
   const findMatchingExistingStep = (lat: number, lng: number) => {
     for (const existing of existingSteps) {
@@ -694,38 +728,16 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
                         </>
                       )}
 
-                      <div className="mt-1 flex gap-1.5 overflow-x-auto">
-                        {step.photos.slice(0, 6).map((photo, index) => {
-                          const isVideo = photo.file.type.startsWith("video/");
-                          const thumbnailSrc = photo.thumbnail || photo.analysisImage;
-                          const lightboxPreviewSrc = photo.analysisImage || photo.thumbnail;
-
-                          return thumbnailSrc && lightboxPreviewSrc ? (
-                            <button
-                              key={index}
-                              type="button"
-                              onClick={(e) => { e.stopPropagation(); setLightboxSrc(lightboxPreviewSrc); }}
-                              className="group relative h-14 w-14 shrink-0 overflow-hidden rounded-lg border border-border transition-all hover:border-primary hover:ring-2 hover:ring-primary/30"
-                            >
-                              <img src={thumbnailSrc} alt={photo.caption || photo.file.name} className="h-full w-full object-cover" />
-                              {isVideo && (
-                                <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-black/30">
-                                  <Play className="h-4 w-4 text-white fill-white" />
-                                </div>
-                              )}
-                            </button>
-                          ) : (
-                            <div key={index} className="flex h-14 w-14 shrink-0 items-center justify-center rounded-lg bg-muted">
-                              {isVideo ? <Play className="h-5 w-5 text-muted-foreground" /> : <ImageIcon className="h-5 w-5 text-muted-foreground" />}
-                            </div>
-                          );
-                        })}
-                        {step.photos.length > 6 && (
-                          <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-lg bg-muted text-xs font-medium text-muted-foreground">
-                            +{step.photos.length - 6}
-                          </div>
-                        )}
-                      </div>
+                      <PendingMediaGallery
+                        photos={step.photos}
+                        stepId={step.key}
+                        allSteps={suggestions.map((suggestion) => ({
+                          id: suggestion.key,
+                          label: suggestion.locationName || "Untitled stop",
+                        }))}
+                        onMove={moveMediaBetweenSuggestions}
+                        onRemove={removeMediaFromSuggestion}
+                      />
 
                       {step.photos.length > 0 && (
                         <div className="grid gap-1">
@@ -747,7 +759,6 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
           </div>
         </div>
       )}
-      {lightboxSrc && <MediaLightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />}
     </div>
   );
 }

@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { Check, ChevronDown, ChevronUp, X, MapPin, Image as ImageIcon } from "lucide-react";
-import { cn } from "@/lib/utils";
 import { getEventType } from "@/lib/eventTypes";
 import type { PhotoExifData } from "@/lib/exif";
+import { PendingMediaGallery } from "@/components/PendingMediaGallery";
 
 interface PendingStep {
   key: string;
@@ -16,80 +16,14 @@ interface PendingStep {
 interface ImportPreviewProps {
   steps: PendingStep[];
   onClear: () => void;
+  onMoveMedia: (sourceStepKey: string, targetStepKey: string, photoIds: string[]) => void;
+  onRemoveMedia: (stepKey: string, photoIds: string[]) => void;
 }
 
-function MediaLightbox({ src, onClose }: { src: string; onClose: () => void }) {
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-4 backdrop-blur-sm"
-      onClick={onClose}
-    >
-      <button
-        type="button"
-        onClick={onClose}
-        className="absolute right-4 top-4 rounded-full bg-black/50 p-2 text-white hover:bg-black/70"
-      >
-        <X className="h-5 w-5" />
-      </button>
-      <img
-        src={src}
-        alt="Preview"
-        className="max-h-[92vh] max-w-[96vw] rounded-xl object-contain shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-      />
-    </div>
-  );
-}
-
-function StepThumbnails({ photos }: { photos: PhotoExifData[] }) {
-  const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
-  const previews = photos
-    .filter((p) => p.thumbnail || p.analysisImage)
-    .slice(0, 6);
-  const remaining = photos.length - previews.length;
-
-  if (previews.length === 0) return null;
-
-  return (
-    <>
-      <div className="flex gap-1.5 overflow-x-auto py-1">
-        {previews.map((photo) => {
-          const thumbnailSrc = photo.thumbnail || photo.analysisImage || "";
-          const lightboxPreviewSrc = photo.analysisImage || photo.thumbnail || "";
-          return (
-            <button
-              key={photo.captionId}
-              type="button"
-              onClick={() => setLightboxSrc(lightboxPreviewSrc)}
-              className="group relative h-14 w-14 flex-shrink-0 overflow-hidden rounded-lg border border-border transition-all hover:border-primary hover:ring-2 hover:ring-primary/30"
-            >
-              <img
-                src={thumbnailSrc}
-                alt={photo.caption || photo.file.name}
-                className="h-full w-full object-cover"
-              />
-              {photo.file.type.startsWith("video/") && (
-                <div className="absolute inset-0 flex items-center justify-center bg-black/20">
-                  <div className="h-4 w-4 rounded-full bg-white/80 pl-0.5 text-[8px] leading-4 text-black">▶</div>
-                </div>
-              )}
-            </button>
-          );
-        })}
-        {remaining > 0 && (
-          <div className="flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-lg border border-border bg-muted text-xs font-medium text-muted-foreground">
-            +{remaining}
-          </div>
-        )}
-      </div>
-      {lightboxSrc && <MediaLightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />}
-    </>
-  );
-}
-
-export function ImportPreview({ steps, onClear }: ImportPreviewProps) {
-  const [expanded, setExpanded] = useState(false);
+export function ImportPreview({ steps, onClear, onMoveMedia, onRemoveMedia }: ImportPreviewProps) {
+  const [expanded, setExpanded] = useState(true);
   const totalMedia = steps.reduce((n, s) => n + s.photos.length, 0);
+  const stepTargets = steps.map((step) => ({ id: step.key, label: step.locationName || "Untitled stop" }));
 
   return (
     <div className="rounded-xl border border-primary/20 bg-primary/5 overflow-hidden">
@@ -101,7 +35,7 @@ export function ImportPreview({ steps, onClear }: ImportPreviewProps) {
         >
           <div className="flex items-center gap-2 text-sm">
             <Check className="h-4 w-4 text-primary" />
-            <span className="text-foreground font-medium">
+              <span className="text-foreground font-medium">
               {steps.length} location{steps.length !== 1 ? "s" : ""}, {totalMedia} media file{totalMedia !== 1 ? "s" : ""} ready
             </span>
           </div>
@@ -161,7 +95,13 @@ export function ImportPreview({ steps, onClear }: ImportPreviewProps) {
                     </div>
                   </div>
                 </div>
-                <StepThumbnails photos={step.photos} />
+                 <PendingMediaGallery
+                   photos={step.photos}
+                   stepId={step.key}
+                   allSteps={stepTargets}
+                   onMove={onMoveMedia}
+                   onRemove={onRemoveMedia}
+                 />
               </div>
             );
           })}
