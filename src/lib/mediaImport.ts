@@ -455,6 +455,8 @@ export async function processImportedMediaFiles(
 
     // Serialize: 1-at-a-time to keep requests predictable on large imports.
     for (const { photo, step } of allVideoMedia) {
+      let storagePath: string | null = null;
+
       try {
         // Upload raw video to Storage via TUS resumable protocol.
         const {
@@ -462,27 +464,18 @@ export async function processImportedMediaFiles(
         } = await supabase.auth.getUser();
         if (!user) {
           console.error("No authenticated user for video upload");
-          videoDone++;
-          onProgress?.("Analyzing videos", videoDone, allVideoMedia.length);
           continue;
         }
 
         const ext = photo.file.name.split(".").pop()?.toLowerCase() || "mp4";
-        const storagePath = `${user.id}/video-analysis/${crypto.randomUUID()}.${ext}`;
+        storagePath = `${user.id}/video-analysis/${crypto.randomUUID()}.${ext}`;
 
-        try {
-          await resumableUpload({
-            bucketName: "trip-photos",
-            objectName: storagePath,
-            file: photo.file,
-            contentType: photo.file.type || "video/mp4",
-          });
-        } catch (uploadError) {
-          console.error(`Storage upload failed for ${photo.file.name}:`, uploadError);
-          videoDone++;
-          onProgress?.("Analyzing videos", videoDone, allVideoMedia.length);
-          continue;
-        }
+        await resumableUpload({
+          bucketName: "trip-photos",
+          objectName: storagePath,
+          file: photo.file,
+          contentType: photo.file.type || "video/mp4",
+        });
 
         let mimeType = photo.file.type || "video/mp4";
         if (mimeType === "video/quicktime" || mimeType === "video/mov") {
@@ -515,14 +508,16 @@ export async function processImportedMediaFiles(
           const errMsg = error?.message || data?.error || "Unknown video analysis error";
           console.error(`Video analysis failed for ${photo.file.name}:`, errMsg);
         }
-
-        await supabase.storage.from("trip-photos").remove([storagePath]).catch(() => {});
       } catch (err) {
         console.error(`Video analysis failed for ${photo.file.name}:`, err);
-      }
+      } finally {
+        if (storagePath) {
+          await supabase.storage.from("trip-photos").remove([storagePath]).catch(() => {});
+        }
 
-      videoDone++;
-      onProgress?.("Analyzing videos", videoDone, allVideoMedia.length);
+        videoDone++;
+        onProgress?.("Analyzing videos", videoDone, allVideoMedia.length);
+      }
     }
   }
 
