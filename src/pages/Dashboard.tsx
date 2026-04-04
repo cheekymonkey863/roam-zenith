@@ -157,12 +157,10 @@ const Dashboard = () => {
       </section>
 
       {/* Stats */}
-      <section className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-5">
+      <section className="grid grid-cols-2 gap-4 md:grid-cols-3">
         <StatCard icon={Globe} label="Countries" value={countries.length} />
         <StatCard icon={MapPin} label="Cities" value={cities.length} />
-        <StatCard icon={Route} label="Steps" value={steps.length} />
         <StatCard icon={Compass} label="Trips" value={trips.length} />
-        <StatCard icon={Calendar} label="Active" value={trips.some(t => t.is_active) ? "Yes" : "No"} />
       </section>
 
       {/* Map */}
