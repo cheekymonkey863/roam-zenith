@@ -1007,10 +1007,9 @@ export interface ReverseGeocodeResult {
   placeTypes: string[];
 }
 
-const GOOGLE_JS_CALLBACK_TIMEOUT_MS = 5000;
-const GEOCODE_FETCH_TIMEOUT_MS = 5000;
-const EXACT_PLACE_DISTANCE_METERS = 5;
-const EXACT_PLACE_NEARBY_RADIUS_METERS = 50;
+const GEOCODE_FETCH_TIMEOUT_MS = 8000;
+const EXACT_PLACE_DISTANCE_METERS = 50;
+const NEARBY_SEARCH_RADIUS_METERS = 150;
 
 function getDistanceMeters(lat1: number, lng1: number, lat2: number, lng2: number) {
   const dLat = (lat2 - lat1) * 111320;
@@ -1020,193 +1019,6 @@ function getDistanceMeters(lat1: number, lng1: number, lat2: number, lng2: numbe
 
 function normalizePlaceType(value: string) {
   return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
-}
-
-function pickExactAddressLabel(address: Record<string, unknown>, fallback: string | null = null) {
-  const candidates = [
-    address.amenity,
-    address.attraction,
-    address.tourism,
-    address.leisure,
-    address.shop,
-    address.building,
-    address.hotel,
-    address.house_name,
-    address.road,
-    address.pedestrian,
-    address.footway,
-    address.path,
-  ];
-
-  for (const candidate of candidates) {
-    if (typeof candidate === "string" && candidate.trim().length > 0) {
-      return candidate.trim();
-    }
-  }
-
-  return fallback;
-}
-
-function getGoogleResultDistanceMeters(lat: number, lng: number, result: any) {
-  if (!result?.geometry?.location) {
-    return Number.POSITIVE_INFINITY;
-  }
-
-  const resultLat = typeof result.geometry.location.lat === "function" ? result.geometry.location.lat() : result.geometry.location.lat;
-  const resultLng = typeof result.geometry.location.lng === "function" ? result.geometry.location.lng() : result.geometry.location.lng;
-
-  if (typeof resultLat !== "number" || typeof resultLng !== "number") {
-    return Number.POSITIVE_INFINITY;
-  }
-
-  return getDistanceMeters(lat, lng, resultLat, resultLng);
-}
-
-function getGoogleResultTypes(result: any) {
-  const resultTypes = Array.isArray(result?.types) ? result.types : [];
-  const componentTypes = Array.isArray(result?.address_components)
-    ? result.address_components.flatMap((component: any) => (Array.isArray(component?.types) ? component.types : []))
-    : [];
-
-  return Array.from(
-    new Set(
-      [...resultTypes, ...componentTypes]
-        .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
-        .map(normalizePlaceType),
-    ),
-  );
-}
-
-function getGoogleResultLabel(result: any) {
-  const components: any[] = Array.isArray(result?.address_components) ? result.address_components : [];
-  const preferredComponent = components.find((component) =>
-    component?.types?.some((type: string) =>
-      [
-        "point_of_interest",
-        "premise",
-        "subpremise",
-        "establishment",
-        "stadium",
-        "tourist_attraction",
-        "lodging",
-        "restaurant",
-        "bar",
-        "night_club",
-        "museum",
-        "airport",
-        "train_station",
-        "bus_station",
-        "subway_station",
-        "transit_station",
-      ].includes(type),
-    ),
-  );
-
-  if (typeof preferredComponent?.long_name === "string" && preferredComponent.long_name.trim().length > 0) {
-    return preferredComponent.long_name.trim();
-  }
-
-  if (typeof result?.formatted_address === "string" && result.formatted_address.trim().length > 0) {
-    return result.formatted_address.split(",")[0].trim();
-  }
-
-  return null;
-}
-
-function isGenericGoogleLabel(label: string, locality: string, country: string) {
-  const normalizedLabel = label.trim().toLowerCase();
-  return !normalizedLabel || normalizedLabel === locality.trim().toLowerCase() || normalizedLabel === country.trim().toLowerCase();
-}
-
-function pickExactGoogleGeocodeMatch(
-  results: any[] | null,
-  lat: number,
-  lng: number,
-  locality: string,
-  country: string,
-): ReverseGeocodeResult | null {
-  if (!results?.length) return null;
-
-  const SPECIFIC_TYPES = new Set([
-    "point_of_interest",
-    "premise",
-    "subpremise",
-    "establishment",
-    "stadium",
-    "tourist_attraction",
-    "lodging",
-    "restaurant",
-    "bar",
-    "night_club",
-    "museum",
-    "airport",
-    "train_station",
-    "bus_station",
-    "subway_station",
-    "transit_station",
-    "street_address",
-    "route",
-  ]);
-
-  const exactMatches = results
-    .map((result) => {
-      const label = getGoogleResultLabel(result);
-      const placeTypes = getGoogleResultTypes(result);
-      const exactDistance = getGoogleResultDistanceMeters(lat, lng, result);
-      const specificityScore = placeTypes.reduce((score, type) => {
-        return score + (SPECIFIC_TYPES.has(type) ? 2 : 0) + (["point_of_interest", "premise", "subpremise"].includes(type) ? 3 : 0);
-      }, 0);
-
-      return { label, placeTypes, exactDistance, specificityScore };
-    })
-    .filter(
-      (
-        result,
-      ): result is { label: string; placeTypes: string[]; exactDistance: number; specificityScore: number } =>
-        typeof result.label === "string" &&
-        result.exactDistance <= EXACT_PLACE_DISTANCE_METERS &&
-        !isGenericGoogleLabel(result.label, locality, country),
-    )
-    .sort((a, b) => b.specificityScore - a.specificityScore || a.exactDistance - b.exactDistance);
-
-  if (!exactMatches.length) return null;
-
-  return {
-    name: exactMatches[0].label,
-    country,
-    locality,
-    placeTypes: exactMatches[0].placeTypes,
-  };
-}
-
-function withCallbackTimeout<T>(
-  run: (finish: (value: T) => void) => void,
-  fallback: T,
-  label: string,
-  timeoutMs = GOOGLE_JS_CALLBACK_TIMEOUT_MS,
-): Promise<T> {
-  return new Promise((resolve) => {
-    let settled = false;
-
-    const finish = (value: T) => {
-      if (settled) return;
-      settled = true;
-      window.clearTimeout(timer);
-      resolve(value);
-    };
-
-    const timer = window.setTimeout(() => {
-      console.warn(`${label} timed out after ${timeoutMs}ms`);
-      finish(fallback);
-    }, timeoutMs);
-
-    try {
-      run(finish);
-    } catch (error) {
-      console.warn(`${label} failed`, error);
-      finish(fallback);
-    }
-  });
 }
 
 async function fetchJsonWithTimeout<T>(url: string, timeoutMs = GEOCODE_FETCH_TIMEOUT_MS): Promise<T | null> {
@@ -1224,226 +1036,154 @@ async function fetchJsonWithTimeout<T>(url: string, timeoutMs = GEOCODE_FETCH_TI
   }
 }
 
-function getPlacesService(): any | null {
-  const g = getGoogle();
-  if (!g?.maps?.places) return null;
-  if (!_placesServiceHost) {
-    _placesServiceHost = document.createElement("div");
-  }
-  return new g.maps.places.PlacesService(_placesServiceHost);
-}
-
 function scoreGooglePlaceTypes(placeTypes: string[]) {
   const TYPE_WEIGHTS: Record<string, number> = {
-    stadium: 12,
-    live_music_venue: 11,
-    concert_hall: 11,
-    theatre: 10,
-    theater: 10,
-    movie_theater: 10,
-    night_club: 9,
-    tourist_attraction: 8,
-    museum: 8,
-    lodging: 8,
-    restaurant: 8,
-    bar: 8,
-    airport: 8,
-    train_station: 8,
-    bus_station: 8,
-    subway_station: 8,
-    transit_station: 8,
-    point_of_interest: 2,
-    establishment: 1,
+    stadium: 12, live_music_venue: 11, concert_hall: 11, theatre: 10, theater: 10,
+    movie_theater: 10, night_club: 9, tourist_attraction: 8, museum: 8, lodging: 8,
+    restaurant: 8, bar: 8, airport: 8, train_station: 8, bus_station: 8,
+    subway_station: 8, transit_station: 8, point_of_interest: 2, establishment: 1,
   };
-
   return placeTypes.reduce((score, type) => score + (TYPE_WEIGHTS[type] ?? 0), 0);
 }
 
-async function reverseGeocodeWithJsApi(lat: number, lng: number): Promise<ReverseGeocodeResult | null> {
-  try {
-    await ensureGoogleMapsLoaded();
-    const g = getGoogle();
-    if (!g?.maps) return null;
-
-    const location = new g.maps.LatLng(lat, lng);
-    const geocoder = new g.maps.Geocoder();
-    const geoResult = await withCallbackTimeout<any[] | null>(
-      (finish) => {
-        geocoder.geocode({ location }, (results: any[], status: string) => {
-          if (status !== "OK") {
-            if (status && status !== "ZERO_RESULTS") {
-              console.warn(`[reverse-geo] Geocoder status ${status} at ${lat},${lng}`);
-            }
-            finish(null);
-            return;
-          }
-
-          finish(results?.length > 0 ? results : null);
-        });
-      },
-      null,
-      `[reverse-geo] Geocoder at ${lat},${lng}`,
-    );
-
-    // If geocoder timed out, retry once with a longer timeout
-    if (geoResult === null) {
-      const retryResult = await withCallbackTimeout<any[] | null>(
-        (finish) => {
-          geocoder.geocode({ location }, (results: any[], status: string) => {
-            finish(status === "OK" && results?.length > 0 ? results : null);
-          });
-        },
-        null,
-        `[reverse-geo] Geocoder retry at ${lat},${lng}`,
-        8000,
+function extractLocalityAndCountry(results: any[]): { locality: string; country: string } {
+  let country = "Unknown";
+  let locality = "Unknown";
+  for (const result of results) {
+    const comps: any[] = result.address_components || [];
+    if (country === "Unknown") {
+      const c = comps.find((comp: any) => comp.types?.includes("country"));
+      if (c) country = c.long_name;
+    }
+    if (locality === "Unknown") {
+      const l = comps.find((comp: any) =>
+        comp.types?.includes("locality") || comp.types?.includes("sublocality") || comp.types?.includes("postal_town"),
       );
-
-      if (retryResult) {
-        let country = "Unknown";
-        let locality = "Unknown";
-        for (const result of retryResult) {
-          const comps: any[] = result.address_components || [];
-          if (country === "Unknown") {
-            const countryComp = comps.find((c: any) => c.types.includes("country"));
-            if (countryComp) country = countryComp.long_name;
-          }
-          if (locality === "Unknown") {
-            const loc = comps.find((c: any) =>
-              c.types.includes("locality") || c.types.includes("sublocality") || c.types.includes("postal_town"),
-            );
-            if (loc) locality = loc.long_name;
-          }
-          if (country !== "Unknown" && locality !== "Unknown") break;
-        }
-
-        const exactRetryMatch = pickExactGoogleGeocodeMatch(retryResult, lat, lng, locality, country);
-        if (exactRetryMatch) return exactRetryMatch;
-
-        if (locality !== "Unknown") {
-          return { name: locality, country, locality, placeTypes: ["locality"] };
-        }
-
-        if (retryResult[0]?.formatted_address) {
-          const name = retryResult[0].formatted_address.split(",")[0].trim();
-          return { name, country, locality, placeTypes: getGoogleResultTypes(retryResult[0]) };
-        }
-      }
+      if (l) locality = l.long_name;
     }
-
-    let country = "Unknown";
-    let locality = "Unknown";
-
-    if (geoResult) {
-      for (const result of geoResult) {
-        const comps: any[] = result.address_components || [];
-        if (country === "Unknown") {
-          const countryComp = comps.find((component: any) => component.types.includes("country"));
-          if (countryComp) country = countryComp.long_name;
-        }
-        if (locality === "Unknown") {
-          const loc = comps.find((component: any) =>
-            component.types.includes("locality") || component.types.includes("sublocality") || component.types.includes("postal_town"),
-          );
-          if (loc) locality = loc.long_name;
-        }
-        if (country !== "Unknown" && locality !== "Unknown") break;
-      }
-    }
-
-    const exactGeocoderMatch = pickExactGoogleGeocodeMatch(geoResult, lat, lng, locality, country);
-    if (exactGeocoderMatch) {
-      console.log(`[reverse-geo] Exact geocoder match: "${exactGeocoderMatch.name}" (${country}) at ${lat},${lng}`);
-      return exactGeocoderMatch;
-    }
-
-    const placesService = getPlacesService();
-    if (placesService) {
-      const poiResult = await withCallbackTimeout<ReverseGeocodeResult | null>(
-        (finish) => {
-          placesService.nearbySearch(
-            { location, radius: EXACT_PLACE_NEARBY_RADIUS_METERS, type: "point_of_interest" },
-            (results: any[], status: string) => {
-              if (status !== "OK" || !results?.length) {
-                if (status && status !== "ZERO_RESULTS") {
-                  console.warn(`[reverse-geo] Places status ${status} at ${lat},${lng}`);
-                }
-                finish(null);
-                return;
-              }
-
-              const nearby = results
-                .map((result: any) => {
-                  if (!result.geometry?.location || typeof result.name !== "string" || !result.name.trim()) {
-                    return null;
-                  }
-
-                  const resultLat = typeof result.geometry.location.lat === "function" ? result.geometry.location.lat() : result.geometry.location.lat;
-                  const resultLng = typeof result.geometry.location.lng === "function" ? result.geometry.location.lng() : result.geometry.location.lng;
-                  if (typeof resultLat !== "number" || typeof resultLng !== "number") {
-                    return null;
-                  }
-
-                  const placeTypes = Array.isArray(result.types)
-                    ? result.types.filter((value: unknown): value is string => typeof value === "string").map(normalizePlaceType)
-                    : [];
-
-                  return {
-                    name: result.name.trim(),
-                    placeTypes,
-                    exactDistance: getDistanceMeters(lat, lng, resultLat, resultLng),
-                  };
-                })
-                .filter(
-                  (result): result is { name: string; placeTypes: string[]; exactDistance: number } =>
-                    result !== null && result.exactDistance <= EXACT_PLACE_DISTANCE_METERS,
-                )
-                .sort((a, b) => scoreGooglePlaceTypes(b.placeTypes) - scoreGooglePlaceTypes(a.placeTypes) || a.exactDistance - b.exactDistance);
-
-              if (!nearby.length) {
-                finish(null);
-                return;
-              }
-
-              finish({
-                name: nearby[0].name,
-                country,
-                locality,
-                placeTypes: nearby[0].placeTypes,
-              });
-            },
-          );
-        },
-        null,
-        `[reverse-geo] Places lookup at ${lat},${lng}`,
-      );
-
-      if (poiResult) {
-        console.log(`[reverse-geo] JS Places API found: "${poiResult.name}" (${country}) at ${lat},${lng}`);
-        return poiResult;
-      }
-    }
-
-    if (locality !== "Unknown") {
-      console.log(`[reverse-geo] Geocoder locality: "${locality}" (${country}) at ${lat},${lng}`);
-      return { name: locality, country, locality, placeTypes: ["locality"] };
-    }
-
-    if (geoResult?.[0]?.formatted_address) {
-      const name = geoResult[0].formatted_address.split(",")[0].trim();
-      return { name, country, locality, placeTypes: getGoogleResultTypes(geoResult[0]) };
-    }
-
-    return null;
-  } catch (e) {
-    console.warn("[reverse-geo] JS API error:", e);
-    return null;
+    if (country !== "Unknown" && locality !== "Unknown") break;
   }
+  return { locality, country };
+}
+
+function findBestPOIFromGeocodeResults(
+  results: any[],
+  lat: number,
+  lng: number,
+  locality: string,
+  country: string,
+): ReverseGeocodeResult | null {
+  const SPECIFIC_TYPES = new Set([
+    "point_of_interest", "premise", "establishment", "stadium", "tourist_attraction",
+    "lodging", "restaurant", "bar", "night_club", "museum", "airport", "train_station",
+    "bus_station", "subway_station", "transit_station", "street_address", "route",
+  ]);
+
+  const candidates = results
+    .map((result) => {
+      const comps: any[] = result.address_components || [];
+      const resultTypes: string[] = (result.types || []).map(normalizePlaceType);
+      const allTypes = Array.from(new Set([
+        ...resultTypes,
+        ...comps.flatMap((c: any) => (c.types || []).map(normalizePlaceType)),
+      ]));
+
+      // Get distance from result geometry
+      const geo = result.geometry?.location;
+      const rLat = typeof geo?.lat === "number" ? geo.lat : null;
+      const rLng = typeof geo?.lng === "number" ? geo.lng : null;
+      const dist = rLat !== null && rLng !== null ? getDistanceMeters(lat, lng, rLat, rLng) : Number.POSITIVE_INFINITY;
+
+      // Get label: prefer POI component, then first part of formatted_address
+      const poiComp = comps.find((c: any) =>
+        c.types?.some((t: string) => SPECIFIC_TYPES.has(t)),
+      );
+      let label = poiComp?.long_name?.trim() || null;
+      if (!label && result.formatted_address) {
+        label = result.formatted_address.split(",")[0].trim();
+      }
+
+      // Skip if label is just the city or country
+      if (label && (label.toLowerCase() === locality.toLowerCase() || label.toLowerCase() === country.toLowerCase())) {
+        label = null;
+      }
+
+      const specificityScore = allTypes.reduce((s, t) => s + (SPECIFIC_TYPES.has(t) ? 2 : 0), 0);
+
+      return { label, placeTypes: allTypes, dist, specificityScore };
+    })
+    .filter((r): r is typeof r & { label: string } =>
+      r.label !== null && r.dist <= EXACT_PLACE_DISTANCE_METERS,
+    )
+    .sort((a, b) => b.specificityScore - a.specificityScore || a.dist - b.dist);
+
+  if (!candidates.length) return null;
+  return { name: candidates[0].label, country, locality, placeTypes: candidates[0].placeTypes };
+}
+
+async function reverseGeocodeWithRestApi(lat: number, lng: number): Promise<ReverseGeocodeResult | null> {
+  // Step 1: Google Geocoding REST API
+  const geoData = await fetchJsonWithTimeout<any>(
+    `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=${GOOGLE_MAPS_API_KEY}`,
+  );
+
+  if (!geoData?.results?.length) return null;
+
+  const { locality, country } = extractLocalityAndCountry(geoData.results);
+  const poiMatch = findBestPOIFromGeocodeResults(geoData.results, lat, lng, locality, country);
+  if (poiMatch) {
+    console.log(`[reverse-geo] REST Geocode POI: "${poiMatch.name}" (${country}) at ${lat},${lng}`);
+    return poiMatch;
+  }
+
+  // Step 2: Google Places Nearby Search REST API for POI names
+  const placesData = await fetchJsonWithTimeout<any>(
+    `https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=${lat},${lng}&radius=${NEARBY_SEARCH_RADIUS_METERS}&type=point_of_interest&key=${GOOGLE_MAPS_API_KEY}`,
+  );
+
+  if (placesData?.results?.length) {
+    const nearby = placesData.results
+      .map((result: any) => {
+        const rLat = result.geometry?.location?.lat;
+        const rLng = result.geometry?.location?.lng;
+        if (typeof rLat !== "number" || typeof rLng !== "number" || !result.name?.trim()) return null;
+
+        const placeTypes = (result.types || []).map(normalizePlaceType);
+        const dist = getDistanceMeters(lat, lng, rLat, rLng);
+        return { name: result.name.trim(), placeTypes, dist };
+      })
+      .filter((r: any): r is { name: string; placeTypes: string[]; dist: number } =>
+        r !== null && r.dist <= NEARBY_SEARCH_RADIUS_METERS &&
+        r.name.toLowerCase() !== locality.toLowerCase(),
+      )
+      .sort((a: any, b: any) => scoreGooglePlaceTypes(b.placeTypes) - scoreGooglePlaceTypes(a.placeTypes) || a.dist - b.dist);
+
+    if (nearby.length > 0) {
+      console.log(`[reverse-geo] REST Places: "${nearby[0].name}" (${country}) at ${lat},${lng}`);
+      return { name: nearby[0].name, country, locality, placeTypes: nearby[0].placeTypes };
+    }
+  }
+
+  // Step 3: Fall back to locality
+  if (locality !== "Unknown") {
+    console.log(`[reverse-geo] REST locality: "${locality}" (${country}) at ${lat},${lng}`);
+    return { name: locality, country, locality, placeTypes: ["locality"] };
+  }
+
+  // Step 4: Use first formatted address
+  if (geoData.results[0]?.formatted_address) {
+    const name = geoData.results[0].formatted_address.split(",")[0].trim();
+    return { name, country, locality, placeTypes: [] };
+  }
+
+  return null;
 }
 
 export async function reverseGeocode(lat: number, lng: number): Promise<ReverseGeocodeResult> {
-  const jsResult = await reverseGeocodeWithJsApi(lat, lng);
-  if (jsResult) return jsResult;
+  const restResult = await reverseGeocodeWithRestApi(lat, lng);
+  if (restResult) return restResult;
 
+  // Final fallback: Nominatim
   try {
     const data = await fetchJsonWithTimeout<any>(
       `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1&extratags=1&namedetails=1`,
@@ -1455,34 +1195,22 @@ export async function reverseGeocode(lat: number, lng: number): Promise<ReverseG
     const addr = data.address || {};
     const country = addr.country || "Unknown";
     const nomLocality = addr.city || addr.town || addr.village || addr.hamlet || "Unknown";
-    const reverseLat = Number(data.lat);
-    const reverseLng = Number(data.lon);
-    const exactDistance = Number.isFinite(reverseLat) && Number.isFinite(reverseLng)
-      ? getDistanceMeters(lat, lng, reverseLat, reverseLng)
-      : Number.POSITIVE_INFINITY;
 
     const placeTypes = Array.from(
       new Set(
-        [
-          data.category,
-          data.type,
-          addr.amenity,
-          addr.attraction,
-          addr.tourism,
-          addr.leisure,
-          addr.shop,
-          addr.building,
-          addr.hotel,
-        ]
+        [data.category, data.type, addr.amenity, addr.attraction, addr.tourism, addr.leisure, addr.shop, addr.building, addr.hotel]
           .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
           .map(normalizePlaceType),
       ),
     );
 
-    const exactName = pickExactAddressLabel(addr, typeof data.name === "string" ? data.name.trim() : null);
-
-    if (exactName && exactDistance <= EXACT_PLACE_DISTANCE_METERS) {
+    const exactName = typeof data.name === "string" && data.name.trim().length > 0 ? data.name.trim() : null;
+    if (exactName) {
       return { name: exactName, country, locality: nomLocality, placeTypes };
+    }
+
+    if (nomLocality !== "Unknown") {
+      return { name: nomLocality, country, locality: nomLocality, placeTypes };
     }
 
     return { name: "Unknown", country, locality: nomLocality, placeTypes };
