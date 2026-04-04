@@ -28,7 +28,7 @@ function isValidCoordinate(latitude: number | null | undefined, longitude: numbe
 }
 
 function buildCoordinateKey(step: Pick<TripStep, "latitude" | "longitude">) {
-  return `${step.latitude.toFixed(3)}:${step.longitude.toFixed(3)}`;
+  return `${step.latitude.toFixed(4)}:${step.longitude.toFixed(4)}`;
 }
 
 function getLocationNameFallback(step: Pick<TripStep, "location_name">) {
