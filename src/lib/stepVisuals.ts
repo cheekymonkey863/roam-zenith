@@ -137,6 +137,8 @@ export function inferStepVisualType(step: StepVisualInput, googlePlaceTypes: str
       return "border";
     case "transport":
       if (isFlight) return "flight";
+      if (isCruise) return "cruise";
+      if (isYacht) return "yacht_boat";
       if (isTrain) return "train";
       if (isFerry) return "ferry";
       if (isBus) return "bus";
@@ -146,6 +148,8 @@ export function inferStepVisualType(step: StepVisualInput, googlePlaceTypes: str
     case "arrival":
     case "departure":
       if (isFlight) return "flight";
+      if (isCruise) return "cruise";
+      if (isYacht) return "yacht_boat";
       if (isTrain) return "train";
       if (isFerry) return "ferry";
       if (isBus) return "bus";
