@@ -388,7 +388,7 @@ export function ItineraryImport({ tripId, onImportComplete, onCancel }: Itinerar
                             onChange={(e) => updateActivity(index, { eventType: e.target.value })}
                             className="rounded-lg border border-border bg-background px-3 py-1.5 text-sm"
                           >
-                            {EVENT_TYPES.map((t) => (
+                            {ALL_EVENT_TYPES.map((t) => (
                               <option key={t.value} value={t.value}>{t.label}</option>
                             ))}
                           </select>
