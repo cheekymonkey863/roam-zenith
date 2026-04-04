@@ -30,7 +30,13 @@ export function getTripStatusStyle(status: TripStatus): string {
 
 export function formatTripDateRange(startDate: string | null, endDate: string | null): string {
   const fmt = (d: string) => new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-  if (startDate && endDate) return `${fmt(startDate)} – ${fmt(endDate)}`;
+  
+  const durationStr = (s: string, e: string) => {
+    const days = Math.round((new Date(e).getTime() - new Date(s).getTime()) / 86400000) + 1;
+    return ` (${days} day${days !== 1 ? "s" : ""})`;
+  };
+
+  if (startDate && endDate) return `${fmt(startDate)} – ${fmt(endDate)}${durationStr(startDate, endDate)}`;
   if (startDate) return `From ${fmt(startDate)}`;
   if (endDate) return `Until ${fmt(endDate)}`;
   return "No dates set";

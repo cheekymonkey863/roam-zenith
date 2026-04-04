@@ -103,10 +103,15 @@ const TripDetail = () => {
                 {countries.join(", ")}
               </span>
             )}
-            <span className="flex items-center gap-1.5">
-              <Route className="h-4 w-4" />
-              {steps.length} steps
-            </span>
+            {(() => {
+              const cities = [...new Set(steps.map((s) => s.location_name).filter(Boolean))];
+              return cities.length > 0 ? (
+                <span className="flex items-center gap-1.5">
+                  <Route className="h-4 w-4" />
+                  {cities.length} {cities.length === 1 ? "city" : "cities"}
+                </span>
+              ) : null;
+            })()}
           </div>
         </div>
       </div>
