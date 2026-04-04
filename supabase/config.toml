@@ -5,3 +5,6 @@ verify_jwt = false
 
 [functions.extract-video-metadata]
 verify_jwt = false
+
+[functions.analyze-video]
+verify_jwt = false
