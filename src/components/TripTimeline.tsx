@@ -8,7 +8,7 @@ import { getEventType } from "@/lib/eventTypes";
 import {
   Plane, TrainFront, Bus, Ship, Car, Footprints, Bike,
   Hotel, Building, Home, Castle, Trees, Mountain, Tent,
-  Map, Camera, UtensilsCrossed, Users, Music, Theater, Sparkles, Heart,
+  Map as MapIcon, Camera, UtensilsCrossed, Users, Music, Theater, Sparkles, Heart,
   Flag, CircleDot, ArrowRightLeft,
 } from "lucide-react";
 import type { Tables } from "@/integrations/supabase/types";
