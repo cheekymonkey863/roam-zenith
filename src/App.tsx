@@ -37,6 +37,7 @@ function AppRoutes() {
           <Route path="/trips/new" element={<NewTrip />} />
           <Route path="/trips/:id" element={<TripDetail />} />
           <Route path="/stats" element={<StatsPage />} />
+          <Route path="/join/:token" element={<JoinTrip />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </main>
