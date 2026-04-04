@@ -1,14 +1,10 @@
 import { useState, useCallback } from "react";
-import type { Json } from "@/integrations/supabase/types";
 import { Upload, MapPin, Calendar, Check, Image as ImageIcon, Loader2, Pencil, X, Play, Merge } from "lucide-react";
 import {
-  extractExifFromFiles,
-  geocodeLocationName,
-  groupMediaByTime,
-  groupPhotosByLocation,
-  reverseGeocode,
   type PhotoExifData,
 } from "@/lib/exif";
+import { processImportedMediaFiles } from "@/lib/mediaImport";
+import { buildStoredMediaMetadata } from "@/lib/mediaMetadata";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
@@ -258,126 +254,17 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
     toast.info(`Processing ${mediaFiles.length} file(s) with metadata + visual recognition...`);
 
     try {
-      const exifResults = await extractExifFromFiles(mediaFiles);
-      const groups = groupPhotosByLocation(exifResults, LOCATION_GROUP_RADIUS_METERS, LOCATION_GROUP_MAX_GAP_HOURS);
+      const result = await processImportedMediaFiles(mediaFiles);
+      const nextSuggestions: SuggestedStep[] = result.steps.map((step) => ({ ...step }));
+      setNoGpsPhotos(result.noGpsPhotos);
+      setSuggestions(nextSuggestions);
 
-      const baseSteps: SuggestedStep[] = await Promise.all(
-        Array.from(groups.entries()).map(async ([key, photos]): Promise<SuggestedStep> => {
-          const sortedPhotos = sortMediaByCapturedTime(photos);
-          const { latitude, longitude } = getRepresentativeCoordinates(sortedPhotos);
-          const geo = await reverseGeocode(latitude, longitude);
-          const dates = sortedPhotos.map((p) => p.takenAt).filter(Boolean) as Date[];
-          const earliestDate = dates.length > 0 ? new Date(Math.min(...dates.map((d) => d.getTime()))) : null;
-
-          return {
-            key,
-            locationName: geo.name,
-            country: geo.country,
-            latitude,
-            longitude,
-            photos: applyMediaCaptions(sortedPhotos, undefined, geo.name),
-            earliestDate,
-            selected: true,
-            confidence: "low" as const,
-            summary: buildLocationSummary(geo.name, geo.country),
-            description: buildEventDescription(geo.name, geo.country),
-          };
-        })
-      );
-
-      const ungroupedNoGps = exifResults.filter((photo) => photo.latitude === null || photo.longitude === null);
-      const unresolvedNoGpsMedia: PhotoExifData[] = [...ungroupedNoGps];
-
-      const noGpsGroups = Array.from(groupMediaByTime(unresolvedNoGpsMedia, 6).values()).map((photos, index) => ({
-        key: `no-gps-${index}`,
-        photos,
-      }));
-
-      setNoGpsPhotos(unresolvedNoGpsMedia);
-
-      let inferredLocations = new Map<string, HybridLocationResult>();
-      try {
-        inferredLocations = await inferLocationsWithVision(baseSteps, noGpsGroups);
-      } catch (e) {
-        console.error("Visual location inference error:", e);
-        toast.warning("Visual recognition was unavailable, so only GPS-matched media was grouped.");
+      const issueParts: string[] = [];
+      if (result.unresolvedCount > 0) {
+        issueParts.push(`${result.unresolvedCount} file${result.unresolvedCount > 1 ? "s" : ""} couldn't be located.`);
       }
 
-      const steps: SuggestedStep[] = baseSteps.map((step): SuggestedStep => {
-        const inferred = inferredLocations.get(step.key);
-        const locationName = isKnownLocationName(step.locationName)
-          ? step.locationName
-          : inferred?.locationName || step.locationName;
-        const country = step.country && step.country !== "Unknown"
-          ? step.country
-          : inferred?.country || step.country;
-
-        return {
-          ...step,
-          locationName,
-          country,
-          photos: applyMediaCaptions(step.photos, inferred?.photoCaptions, locationName),
-          confidence: inferred?.confidence ? pickHigherConfidence(step.confidence, inferred.confidence) : step.confidence,
-          summary: inferred?.summary || buildLocationSummary(locationName, country),
-          description: inferred?.eventDescription || buildEventDescription(locationName, country),
-        };
-      });
-
-
-      const inferredNoGpsSteps = (
-        await Promise.all(
-          noGpsGroups.map(async (group): Promise<SuggestedStep | null> => {
-            const inferred = inferredLocations.get(group.key);
-            if (!inferred) return null;
-
-            let latitude = inferred.latitude;
-            let longitude = inferred.longitude;
-
-            if ((latitude === null || longitude === null) && inferred.locationName) {
-              const geocoded = await geocodeLocationName(inferred.locationName, inferred.country);
-              latitude = geocoded?.latitude ?? null;
-              longitude = geocoded?.longitude ?? null;
-            }
-
-            if (latitude === null || longitude === null) return null;
-
-            const locationName = inferred.locationName || "Visually Identified Location";
-            const country = inferred.country || "Unknown";
-            const photos = applyMediaCaptions(group.photos, inferred.photoCaptions, locationName);
-            const dates = photos.map((photo) => photo.takenAt).filter(Boolean) as Date[];
-            const earliestDate = dates.length > 0 ? new Date(Math.min(...dates.map((date) => date.getTime()))) : null;
-
-            return {
-              key: group.key,
-              locationName,
-              country,
-              latitude,
-              longitude,
-              photos,
-              earliestDate,
-              selected: true,
-              confidence: inferred.confidence,
-              summary: inferred.summary || buildLocationSummary(locationName, country),
-              description: inferred.eventDescription || buildEventDescription(locationName, country),
-            };
-          })
-        )
-      ).filter((step): step is SuggestedStep => step !== null);
-
-      steps.push(...inferredNoGpsSteps);
-      steps.sort((a, b) => (a.earliestDate?.getTime() ?? Infinity) - (b.earliestDate?.getTime() ?? Infinity));
-      setSuggestions(steps);
-
-      const resolvedNoGpsKeys = new Set(inferredNoGpsSteps.map((step) => step.key));
-      const resolvedNoGpsCount = noGpsGroups.reduce(
-        (count, group) => count + (resolvedNoGpsKeys.has(group.key) ? group.photos.length : 0),
-        0
-      );
-      const unresolvedCount = unresolvedNoGpsMedia.length - resolvedNoGpsCount;
-      const issueParts: string[] = [];
-      if (unresolvedCount > 0) issueParts.push(`${unresolvedCount} file${unresolvedCount > 1 ? "s" : ""} couldn't be located.`);
-
-      toast.success(`Found ${steps.length} location(s)` + (issueParts.length > 0 ? `. ${issueParts.join(" ")}` : ""));
+      toast.success(`Found ${nextSuggestions.length} location(s)` + (issueParts.length > 0 ? `. ${issueParts.join(" ")}` : ""));
     } catch (err) {
       console.error("Photo processing error:", err);
       toast.error("Failed to process media. Please try again.");
@@ -522,12 +409,10 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
         if (uploadError) {
           console.error("Photo upload error:", uploadError);
         } else {
-          const exifData = {
-            ...(photo.exifRaw ?? {}),
-            caption: photo.caption ?? null,
-            caption_id: photo.captionId,
-            media_type: uploadFile.type.startsWith("video/") ? "video" : "image",
-          };
+          const exifData = buildStoredMediaMetadata(photo, {
+            locationName: step.locationName,
+            country: step.country,
+          });
 
           await supabase.from("step_photos").insert({
             step_id: stepId,
@@ -537,7 +422,7 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
             latitude: photo.latitude,
             longitude: photo.longitude,
             taken_at: photo.takenAt?.toISOString(),
-            exif_data: exifData as Json,
+            exif_data: exifData,
           });
         }
       }
