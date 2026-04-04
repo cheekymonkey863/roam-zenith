@@ -462,8 +462,16 @@ export async function processImportedMediaFiles(
 
       try {
         // Upload raw video to Supabase Storage via TUS resumable protocol
+        // Path must be prefixed with user ID to satisfy storage RLS policies
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) {
+          console.error("No authenticated user for video upload");
+          videoDone++;
+          onProgress?.("Analyzing videos", videoDone, allVideoMedia.length);
+          continue;
+        }
         const ext = photo.file.name.split(".").pop()?.toLowerCase() || "mp4";
-        const storagePath = `video-analysis/${crypto.randomUUID()}.${ext}`;
+        const storagePath = `${user.id}/video-analysis/${crypto.randomUUID()}.${ext}`;
 
         try {
           await resumableUpload({
