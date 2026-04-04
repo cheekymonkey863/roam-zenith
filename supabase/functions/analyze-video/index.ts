@@ -1,4 +1,4 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
+// No external imports needed — uses direct fetch for Storage + Gemini APIs
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -279,22 +279,31 @@ Deno.serve(async (req) => {
       mimeType = "video/mp4";
     }
 
-    // Download video from Supabase Storage
+    // Download only the first ~10MB of the video to stay within edge function memory limits.
+    // Gemini can analyze content from a partial file — audio and key frames are typically
+    // in the first portion of MOV/MP4 files.
+    const MAX_DOWNLOAD_BYTES = 10 * 1024 * 1024; // 10MB
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const supabaseClient = createClient(supabaseUrl, supabaseServiceKey);
 
-    console.log(`Downloading video "${fileName}" from storage: ${storagePath}...`);
-    const { data: fileData, error: downloadError } = await supabaseClient.storage
-      .from("trip-photos")
-      .download(storagePath);
+    console.log(`Downloading first ${MAX_DOWNLOAD_BYTES / 1024 / 1024}MB of "${fileName}" from storage: ${storagePath}...`);
 
-    if (downloadError || !fileData) {
-      console.error("Storage download error:", downloadError);
-      return jsonResponse({ error: `Failed to download video: ${downloadError?.message}` }, 500);
+    // Use a direct HTTP request with Range header to avoid loading the full file
+    const objectUrl = `${supabaseUrl}/storage/v1/object/trip-photos/${storagePath}`;
+    const downloadRes = await fetch(objectUrl, {
+      headers: {
+        Authorization: `Bearer ${supabaseServiceKey}`,
+        Range: `bytes=0-${MAX_DOWNLOAD_BYTES - 1}`,
+      },
+    });
+
+    if (!downloadRes.ok && downloadRes.status !== 206) {
+      const errText = await downloadRes.text();
+      console.error("Storage download error:", downloadRes.status, errText);
+      return jsonResponse({ error: `Failed to download video: ${downloadRes.status} ${errText}` }, 500);
     }
 
-    const videoBytes = new Uint8Array(await fileData.arrayBuffer());
+    const videoBytes = new Uint8Array(await downloadRes.arrayBuffer());
     const sizeMB = (videoBytes.byteLength / 1024 / 1024).toFixed(1);
     console.log(`Downloaded ${sizeMB}MB. Uploading to Gemini File API...`);
 
