@@ -76,7 +76,10 @@ OUTPUT RULES:
         contents: [
           {
             parts: [
-              { inlineData: { mimeType, data: videoBase64 } },
+              {
+                inlineData: { mimeType, data: videoBase64 },
+                videoMetadata: { startOffset: "0s", endOffset: "30s" },
+              },
               { text: prompt },
             ],
           },
@@ -155,10 +158,10 @@ Deno.serve(async (req) => {
       country = null,
     } = body;
 
-    // Normalize MIME type — Gemini doesn't accept video/quicktime
+    // Normalize MIME type — Gemini accepts video/mp4 most reliably
     let mimeType = body.mimeType || "video/mp4";
-    if (mimeType === "video/quicktime") {
-      mimeType = "video/mov";
+    if (mimeType === "video/quicktime" || mimeType === "video/mov") {
+      mimeType = "video/mp4";
     }
 
     if (!videoBase64 || typeof videoBase64 !== "string") {
