@@ -130,6 +130,18 @@ async function parseMediaExif(file: File) {
  * Try to extract creation date from MP4/MOV file header (mvhd atom).
  * The mvhd atom stores creation_time as seconds since 1904-01-01.
  */
+async function readVideoChunks(file: File): Promise<ArrayBuffer[]> {
+  const HEAD_SIZE = 256 * 1024;
+  const TAIL_SIZE = 512 * 1024;
+  const chunks: ArrayBuffer[] = [];
+  chunks.push(await file.slice(0, Math.min(file.size, HEAD_SIZE)).arrayBuffer());
+  if (file.size > HEAD_SIZE) {
+    const tailStart = Math.max(file.size - TAIL_SIZE, HEAD_SIZE);
+    chunks.push(await file.slice(tailStart, file.size).arrayBuffer());
+  }
+  return chunks;
+}
+
 async function parseVideoCreationDate(file: File): Promise<Date | null> {
   try {
     const chunks = await readVideoChunks(file);
