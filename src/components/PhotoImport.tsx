@@ -1,7 +1,14 @@
 import { useState, useCallback } from "react";
 import type { Json } from "@/integrations/supabase/types";
 import { Upload, MapPin, Calendar, Check, Image as ImageIcon, Loader2, Pencil, X, Play, Merge } from "lucide-react";
-import { extractExifFromFiles, groupPhotosByLocation, reverseGeocode, type PhotoExifData } from "@/lib/exif";
+import {
+  extractExifFromFiles,
+  geocodeLocationName,
+  groupMediaByTime,
+  groupPhotosByLocation,
+  reverseGeocode,
+  type PhotoExifData,
+} from "@/lib/exif";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
@@ -84,29 +91,65 @@ function findStepForUngroupedMedia(media: PhotoExifData, steps: SuggestedStep[])
 
 async function inferLocationsWithVision(
   steps: SuggestedStep[],
-  noGpsPhotos: PhotoExifData[] = []
+  noGpsGroups: Array<{ key: string; photos: PhotoExifData[] }> = []
 ): Promise<Map<string, HybridLocationResult>> {
-  const gpsGroups = steps.map((step) => ({
-    key: step.key,
-    exifLocation: { latitude: step.latitude, longitude: step.longitude, name: step.locationName, country: step.country },
-    photos: step.photos.filter((p) => Boolean(p.analysisImage)).slice(0, 3).map((p) => ({
-      fileName: p.file.name, takenAt: p.takenAt?.toISOString() ?? null, analysisImage: p.analysisImage ?? null,
-    })),
-  })).filter((g) => g.photos.length > 0);
+  const preparedNoGpsGroups = noGpsGroups
+    .map((group) => ({
+      key: group.key,
+      exifLocation: null,
+      photos: group.photos
+        .filter((photo) => Boolean(photo.analysisImage))
+        .slice(0, 2)
+        .map((photo) => ({
+          fileName: photo.file.name,
+          takenAt: photo.takenAt?.toISOString() ?? null,
+          analysisImage: photo.analysisImage ?? null,
+        })),
+    }))
+    .filter((group) => group.photos.length > 0);
 
-  const noGpsGroups = noGpsPhotos.filter((p) => Boolean(p.analysisImage)).map((photo, i) => ({
-    key: `no-gps-${i}`, exifLocation: null,
-    photos: [{ fileName: photo.file.name, takenAt: photo.takenAt?.toISOString() ?? null, analysisImage: photo.analysisImage ?? null }],
-  }));
+  const gpsGroups = steps
+    .filter((step) => step.photos.some((photo) => Boolean(photo.analysisImage)))
+    .slice(0, 8)
+    .map((step) => ({
+      key: step.key,
+      exifLocation: { latitude: step.latitude, longitude: step.longitude, name: step.locationName, country: step.country },
+      photos: step.photos
+        .filter((photo) => Boolean(photo.analysisImage))
+        .slice(0, 1)
+        .map((photo) => ({
+          fileName: photo.file.name,
+          takenAt: photo.takenAt?.toISOString() ?? null,
+          analysisImage: photo.analysisImage ?? null,
+        })),
+    }))
+    .filter((group) => group.photos.length > 0);
 
-  const allGroups = [...gpsGroups, ...noGpsGroups];
+  const allGroups = [...preparedNoGpsGroups, ...gpsGroups];
   if (allGroups.length === 0) return new Map();
 
-  const { data, error } = await supabase.functions.invoke("photo-location-inference", { body: { groups: allGroups } });
-  if (error) throw error;
+  const batches = Array.from({ length: Math.ceil(allGroups.length / 12) }, (_, index) =>
+    allGroups.slice(index * 12, index * 12 + 12)
+  );
 
-  const results = Array.isArray(data?.results) ? data.results : [];
-  return new Map(results.filter((r: any): r is HybridLocationResult => typeof r?.key === "string").map((r: HybridLocationResult) => [r.key, r]));
+  const batchResults = await Promise.all(
+    batches.map(async (batch) => {
+      const { data, error } = await supabase.functions.invoke("photo-location-inference", { body: { groups: batch } });
+      if (error) {
+        console.error("Visual location inference batch error:", error);
+        return [];
+      }
+
+      return Array.isArray(data?.results) ? data.results : [];
+    })
+  );
+
+  const results = batchResults.flat();
+  return new Map(
+    results
+      .filter((result: any): result is HybridLocationResult => typeof result?.key === "string")
+      .map((result: HybridLocationResult) => [result.key, result])
+  );
 }
 
 export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps = [] }: PhotoImportProps) {
@@ -161,8 +204,8 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
         })
       );
 
-      const ungroupedNoGps = exifResults.filter((p) => p.latitude === null || p.longitude === null);
-      const noGpsForVision: PhotoExifData[] = [];
+      const ungroupedNoGps = exifResults.filter((photo) => photo.latitude === null || photo.longitude === null);
+      const unresolvedNoGpsMedia: PhotoExifData[] = [];
 
       for (const media of ungroupedNoGps) {
         const matchedStep = findStepForUngroupedMedia(media, baseSteps);
@@ -174,17 +217,19 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
           continue;
         }
 
-        // Send all no-GPS media (photos AND videos) to AI visual recognition
-        if (media.analysisImage) {
-          noGpsForVision.push(media);
-        }
+        unresolvedNoGpsMedia.push(media);
       }
 
-      setNoGpsPhotos(noGpsForVision);
+      const noGpsGroups = Array.from(groupMediaByTime(unresolvedNoGpsMedia, 6).values()).map((photos, index) => ({
+        key: `no-gps-${index}`,
+        photos,
+      }));
+
+      setNoGpsPhotos(unresolvedNoGpsMedia);
 
       let inferredLocations = new Map<string, HybridLocationResult>();
       try {
-        inferredLocations = await inferLocationsWithVision(baseSteps, noGpsForVision);
+        inferredLocations = await inferLocationsWithVision(baseSteps, noGpsGroups);
       } catch (e) {
         console.error("Visual location inference error:", e);
         toast.warning("Visual recognition was unavailable, so only GPS-matched media was grouped.");
@@ -204,35 +249,53 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
         };
       });
 
-      for (const [index, media] of noGpsForVision.entries()) {
-        const key = `no-gps-${index}`;
-        const inferred = inferredLocations.get(key);
-        if (inferred && inferred.latitude !== null && inferred.longitude !== null) {
-          steps.push({
-            key,
-            locationName: inferred.locationName || "Visually Identified Location",
-            country: inferred.country || "Unknown",
-            latitude: inferred.latitude,
-            longitude: inferred.longitude,
-            photos: [media],
-            earliestDate: media.takenAt,
-            selected: true,
-            confidence: inferred.confidence,
-            summary: inferred.summary || "Location identified visually.",
-            description: inferred.summary || "",
-          });
-        }
-      }
+      const inferredNoGpsSteps = (
+        await Promise.all(
+          noGpsGroups.map(async (group): Promise<SuggestedStep | null> => {
+            const inferred = inferredLocations.get(group.key);
+            if (!inferred) return null;
 
+            let latitude = inferred.latitude;
+            let longitude = inferred.longitude;
+
+            if ((latitude === null || longitude === null) && inferred.locationName) {
+              const geocoded = await geocodeLocationName(inferred.locationName, inferred.country);
+              latitude = geocoded?.latitude ?? null;
+              longitude = geocoded?.longitude ?? null;
+            }
+
+            if (latitude === null || longitude === null) return null;
+
+            const dates = group.photos.map((photo) => photo.takenAt).filter(Boolean) as Date[];
+            const earliestDate = dates.length > 0 ? new Date(Math.min(...dates.map((date) => date.getTime()))) : null;
+
+            return {
+              key: group.key,
+              locationName: inferred.locationName || "Visually Identified Location",
+              country: inferred.country || "Unknown",
+              latitude,
+              longitude,
+              photos: group.photos,
+              earliestDate,
+              selected: true,
+              confidence: inferred.confidence,
+              summary: inferred.summary || "Location identified visually.",
+              description: inferred.summary || "",
+            };
+          })
+        )
+      ).filter((step): step is SuggestedStep => step !== null);
+
+      steps.push(...inferredNoGpsSteps);
       steps.sort((a, b) => (a.earliestDate?.getTime() ?? Infinity) - (b.earliestDate?.getTime() ?? Infinity));
       setSuggestions(steps);
 
-      const visuallyInferredCount = noGpsForVision.filter((_, i) => {
-        const result = inferredLocations.get(`no-gps-${i}`);
-        return result && result.latitude !== null;
-      }).length;
-
-      const unresolvedCount = noGpsForVision.length - visuallyInferredCount;
+      const resolvedNoGpsKeys = new Set(inferredNoGpsSteps.map((step) => step.key));
+      const resolvedNoGpsCount = noGpsGroups.reduce(
+        (count, group) => count + (resolvedNoGpsKeys.has(group.key) ? group.photos.length : 0),
+        0
+      );
+      const unresolvedCount = unresolvedNoGpsMedia.length - resolvedNoGpsCount;
       const issueParts: string[] = [];
       if (unresolvedCount > 0) issueParts.push(`${unresolvedCount} file${unresolvedCount > 1 ? "s" : ""} couldn't be located.`);
 

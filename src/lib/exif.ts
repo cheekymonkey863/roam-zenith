@@ -204,10 +204,14 @@ export async function extractExifFromFiles(files: File[]): Promise<PhotoExifData
   return Promise.all(files.map(extractExifFromFile));
 }
 
+const EXTENDED_TIME_WINDOW_MS = 12 * 60 * 60 * 1000;
+const SHORT_WINDOW_MS = 3 * 60 * 60 * 1000;
+const RELAXED_DISTANCE_MULTIPLIER = 3;
+
 export function groupPhotosByLocation(photos: PhotoExifData[], radiusMeters = 2000): Map<string, PhotoExifData[]> {
   const geoPhotos = photos
     .filter((photo) => photo.latitude !== null && photo.longitude !== null)
-    .sort((a, b) => (a.takenAt?.getTime() ?? 0) - (b.takenAt?.getTime() ?? 0));
+    .sort((a, b) => (a.takenAt?.getTime() ?? a.file.lastModified ?? 0) - (b.takenAt?.getTime() ?? b.file.lastModified ?? 0));
 
   const groups = new Map<string, PhotoExifData[]>();
 
@@ -217,12 +221,19 @@ export function groupPhotosByLocation(photos: PhotoExifData[], radiusMeters = 20
 
     for (const [key, group] of groups) {
       const closestDistance = getClosestGroupDistance(photo, group);
+      const centerDistance = getGroupCenterDistance(photo, group);
       const closestTimeDistance = getClosestGroupTimeDistance(photo, group);
       const sharesDay = isCompatibleDay(photo, group);
-      const withinTimeWindow = closestTimeDistance === null || closestTimeDistance <= 6 * 60 * 60 * 1000;
+      const withinTimeWindow = closestTimeDistance === null || closestTimeDistance <= EXTENDED_TIME_WINDOW_MS;
+      const closestLocationDistance = Math.min(closestDistance, centerDistance);
+      const strictLocationMatch = closestLocationDistance <= radiusMeters;
+      const relaxedLocationMatch =
+        closestTimeDistance !== null &&
+        closestTimeDistance <= SHORT_WINDOW_MS &&
+        closestLocationDistance <= radiusMeters * RELAXED_DISTANCE_MULTIPLIER;
 
-      if (sharesDay && withinTimeWindow && closestDistance <= radiusMeters) {
-        const score = closestDistance + (closestTimeDistance ?? 0) / 1000;
+      if (sharesDay && withinTimeWindow && (strictLocationMatch || relaxedLocationMatch)) {
+        const score = closestLocationDistance + (closestTimeDistance ?? 0) / 1000;
         if (score < bestScore) {
           bestScore = score;
           bestGroupKey = key;
@@ -234,7 +245,43 @@ export function groupPhotosByLocation(photos: PhotoExifData[], radiusMeters = 20
       groups.get(bestGroupKey)?.push(photo);
     } else {
       const day = photo.takenAt ? dayKey(photo.takenAt) : "no-date";
-      groups.set(`${photo.latitude!.toFixed(3)},${photo.longitude!.toFixed(3)}-${day}`, [photo]);
+      const timeKey = photo.takenAt?.getTime() ?? groups.size;
+      groups.set(`${day}-${timeKey}`, [photo]);
+    }
+  }
+
+  return groups;
+}
+
+export function groupMediaByTime(photos: PhotoExifData[], maxGapHours = 6): Map<string, PhotoExifData[]> {
+  const sortedPhotos = [...photos].sort(
+    (a, b) => (a.takenAt?.getTime() ?? a.file.lastModified ?? 0) - (b.takenAt?.getTime() ?? b.file.lastModified ?? 0)
+  );
+  const groups = new Map<string, PhotoExifData[]>();
+  const maxGapMs = maxGapHours * 60 * 60 * 1000;
+
+  for (const photo of sortedPhotos) {
+    if (!photo.takenAt) {
+      groups.set(`no-date-${groups.size}`, [photo]);
+      continue;
+    }
+
+    let bestGroupKey: string | null = null;
+    let bestGap = Number.POSITIVE_INFINITY;
+
+    for (const [key, group] of groups) {
+      if (!isCompatibleDay(photo, group)) continue;
+      const gap = getClosestGroupTimeDistance(photo, group);
+      if (gap !== null && gap <= maxGapMs && gap < bestGap) {
+        bestGap = gap;
+        bestGroupKey = key;
+      }
+    }
+
+    if (bestGroupKey) {
+      groups.get(bestGroupKey)?.push(photo);
+    } else {
+      groups.set(`${dayKey(photo.takenAt)}-${photo.takenAt.getTime()}`, [photo]);
     }
   }
 
@@ -243,7 +290,7 @@ export function groupPhotosByLocation(photos: PhotoExifData[], radiusMeters = 20
 
 function isCompatibleDay(photo: PhotoExifData, group: PhotoExifData[]) {
   if (!photo.takenAt) return true;
-  return group.some((member) => !member.takenAt || dayKey(member.takenAt) === dayKey(photo.takenAt!));
+  return group.some((member) => !member.takenAt || dayKey(member.takenAt) === dayKey(photo.takenAt));
 }
 
 function getClosestGroupDistance(photo: PhotoExifData, group: PhotoExifData[]) {
@@ -252,11 +299,23 @@ function getClosestGroupDistance(photo: PhotoExifData, group: PhotoExifData[]) {
   );
 }
 
+function getGroupCenterDistance(photo: PhotoExifData, group: PhotoExifData[]) {
+  const { latitude, longitude } = getRepresentativeCoordinates(group);
+  return haversine(latitude, longitude, photo.latitude!, photo.longitude!);
+}
+
+function getRepresentativeCoordinates(group: PhotoExifData[]) {
+  const latitudes = group.map((member) => member.latitude).filter((value): value is number => value !== null).sort((a, b) => a - b);
+  const longitudes = group.map((member) => member.longitude).filter((value): value is number => value !== null).sort((a, b) => a - b);
+  const midpoint = Math.floor(latitudes.length / 2);
+  return { latitude: latitudes[midpoint], longitude: longitudes[midpoint] };
+}
+
 function getClosestGroupTimeDistance(photo: PhotoExifData, group: PhotoExifData[]): number | null {
   if (!photo.takenAt) return null;
 
   const distances = group
-    .map((member) => (member.takenAt ? Math.abs(member.takenAt.getTime() - photo.takenAt!.getTime()) : null))
+    .map((member) => (member.takenAt ? Math.abs(member.takenAt.getTime() - photo.takenAt.getTime()) : null))
     .filter((value): value is number => value !== null);
 
   return distances.length > 0 ? Math.min(...distances) : null;
@@ -330,4 +389,44 @@ export async function reverseGeocode(lat: number, lng: number): Promise<{ name: 
   } catch {
     return { name: "Unknown", country: "Unknown" };
   }
+}
+
+export async function geocodeLocationName(
+  locationName: string,
+  country?: string
+): Promise<{ latitude: number; longitude: number } | null> {
+  const query = [locationName, country].filter(Boolean).join(", ");
+  if (!query) return null;
+
+  try {
+    const gRes = await fetch(
+      `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(query)}&key=${GOOGLE_MAPS_API_KEY}`
+    );
+    const gData = await gRes.json();
+    const location = gData.results?.[0]?.geometry?.location;
+
+    if (typeof location?.lat === "number" && typeof location?.lng === "number") {
+      return { latitude: location.lat, longitude: location.lng };
+    }
+  } catch {
+    // Fall through to Nominatim
+  }
+
+  try {
+    const res = await fetch(
+      `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&q=${encodeURIComponent(query)}`
+    );
+    const data = await res.json();
+    const match = Array.isArray(data) ? data[0] : null;
+    const latitude = Number(match?.lat);
+    const longitude = Number(match?.lon);
+
+    if (Number.isFinite(latitude) && Number.isFinite(longitude)) {
+      return { latitude, longitude };
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
 }
