@@ -438,6 +438,9 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
             <h3 className="font-display text-lg font-semibold text-foreground">
               Detected Locations ({suggestions.filter((s) => s.selected).length}/{suggestions.length})
             </h3>
+            <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Merge className="h-3 w-3" /> Drag one event onto another to merge
+            </p>
             <div className="flex items-center gap-2">
               {onCancel && (
                 <button onClick={onCancel} className="flex items-center gap-1.5 rounded-xl bg-secondary px-4 py-2 text-sm font-medium text-secondary-foreground hover:bg-secondary/80 transition-colors">
