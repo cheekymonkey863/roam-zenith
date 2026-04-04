@@ -4,6 +4,7 @@ import { Globe, MapPin, Compass, Plus, ChevronDown, ChevronUp, Calendar, Pencil,
 import { getTripStatus, getTripStatusLabel, getTripStatusStyle, formatTripDateRange } from "@/lib/tripStatus";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { useResolvedCities } from "@/hooks/useResolvedCities";
 import { WorldMap } from "@/components/WorldMap";
 import { StatCard } from "@/components/StatCard";
 import { DashboardTripForm } from "@/components/DashboardTripForm";
@@ -50,7 +51,7 @@ const Dashboard = () => {
   }, [fetchData]);
 
   const countries = [...new Set(steps.map((s) => s.country).filter(Boolean))];
-  const cities = [...new Set(steps.map((s) => s.location_name).filter(Boolean))];
+  const { cityCount, isResolvingCities } = useResolvedCities(steps);
 
   return (
     <div className="flex flex-col gap-10">
@@ -86,7 +87,7 @@ const Dashboard = () => {
       {/* Stats */}
       <section className="grid grid-cols-2 gap-4 md:grid-cols-3">
         <StatCard icon={Globe} label="Countries" value={countries.length} />
-        <StatCard icon={MapPin} label="Cities" value={cities.length} />
+        <StatCard icon={MapPin} label="Cities" value={isResolvingCities && steps.length > 0 ? "…" : cityCount} />
         <StatCard icon={Compass} label="Trips" value={trips.length} />
       </section>
 
