@@ -465,10 +465,26 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
           <div className="flex flex-col gap-3">
             {suggestions.map((step) => {
               const isEditing = editingKey === step.key;
+              const isDragSource = dragSourceKey === step.key;
+              const isDragTarget = dragOverKey === step.key && dragSourceKey !== step.key;
               return (
                 <div
                   key={step.key}
-                  className={`rounded-2xl border-2 p-4 transition-all ${step.selected ? "border-primary bg-primary/5" : "border-border bg-card opacity-60"}`}
+                  draggable
+                  onDragStart={(e) => handleStepDragStart(e, step.key)}
+                  onDragOver={(e) => handleStepDragOver(e, step.key)}
+                  onDragLeave={handleStepDragLeave}
+                  onDrop={(e) => handleStepDrop(e, step.key)}
+                  onDragEnd={handleStepDragEnd}
+                  className={`rounded-2xl border-2 p-4 transition-all cursor-grab active:cursor-grabbing ${
+                    isDragTarget
+                      ? "border-primary bg-primary/15 ring-2 ring-primary/30"
+                      : isDragSource
+                      ? "opacity-40 border-border"
+                      : step.selected
+                      ? "border-primary bg-primary/5"
+                      : "border-border bg-card opacity-60"
+                  }`}
                 >
                   <div className="flex items-start gap-4">
                     <div
