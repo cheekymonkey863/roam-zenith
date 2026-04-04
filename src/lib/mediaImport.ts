@@ -66,6 +66,7 @@ export type ImportProgressCallback = (phase: string, current: number, total: num
 const LOCATION_GROUP_RADIUS_METERS = 500;
 const LOCATION_GROUP_MAX_GAP_HOURS = 6;
 const UNGROUPED_MEDIA_MATCH_WINDOW_MS = LOCATION_GROUP_MAX_GAP_HOURS * 60 * 60 * 1000;
+const REVERSE_GEOCODE_CONCURRENCY = 2;
 
 const CONFIDENCE_RANK: Record<StepConfidence, number> = {
   low: 0,
@@ -82,6 +83,19 @@ function sortMediaByCapturedTime<T extends PhotoExifData>(media: T[]) {
 function isKnownLocationName(value: string) {
   const normalized = value.trim().toLowerCase();
   return normalized.length > 0 && normalized !== "unknown" && normalized !== "unknown location";
+}
+
+function buildDisplayLocationName(name: string, locality: string) {
+  const safeName = isKnownLocationName(name) ? name.trim() : "";
+  const safeLocality = locality.trim().length > 0 && locality.trim().toLowerCase() !== "unknown"
+    ? locality.trim()
+    : "";
+
+  if (safeName && safeLocality && safeName.toLowerCase() !== safeLocality.toLowerCase()) {
+    return `${safeName}, ${safeLocality}`;
+  }
+
+  return safeName || safeLocality || "Unknown";
 }
 
 function buildLocationSummary(locationName: string, country: string, eventType = "activity") {
@@ -165,6 +179,34 @@ function findStepForUngroupedMedia(media: PhotoExifData, steps: ImportedMediaSte
   }
 
   return null;
+}
+
+async function mapWithConcurrency<T, U>(
+  items: T[],
+  concurrency: number,
+  mapper: (item: T, index: number) => Promise<U>,
+): Promise<U[]> {
+  if (items.length === 0) return [];
+
+  const results = new Array<U>(items.length);
+  let nextIndex = 0;
+
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+      while (true) {
+        const currentIndex = nextIndex;
+        nextIndex += 1;
+
+        if (currentIndex >= items.length) {
+          return;
+        }
+
+        results[currentIndex] = await mapper(items[currentIndex], currentIndex);
+      }
+    }),
+  );
+
+  return results;
 }
 
 function prepareMediaForInference(photos: PhotoExifData[]) {
@@ -271,16 +313,16 @@ export async function processImportedMediaFiles(
   const groupEntries = Array.from(groups.entries());
   onProgress?.("Resolving locations", 0, groupEntries.length);
   let geoResolved = 0;
-  const baseSteps: ImportedMediaStep[] = await Promise.all(
-    groupEntries.map(async ([key, photos]) => {
+  const baseSteps: ImportedMediaStep[] = await mapWithConcurrency(
+    groupEntries,
+    REVERSE_GEOCODE_CONCURRENCY,
+    async ([key, photos]) => {
       const sortedPhotos = sortMediaByCapturedTime(photos);
       const { latitude, longitude } = getRepresentativeCoordinates(sortedPhotos);
       const geo = await reverseGeocode(latitude, longitude);
       geoResolved++;
       onProgress?.("Resolving locations", geoResolved, groupEntries.length);
-      const displayName = geo.locality && geo.locality !== "Unknown" && geo.name !== geo.locality && geo.name !== "Unknown"
-        ? `${geo.name}, ${geo.locality}`
-        : geo.name;
+      const displayName = buildDisplayLocationName(geo.name, geo.locality);
       const stepDetails = buildImportedStepDetails({
         locationName: displayName,
         country: geo.country,
@@ -304,7 +346,7 @@ export async function processImportedMediaFiles(
         summary: buildLocationSummary(displayName, geo.country, stepDetails.eventType),
         description: buildEventDescription(displayName, geo.country, stepDetails.eventType),
       };
-    }),
+    },
   );
 
   const noGpsPhotos = sortMediaByCapturedTime(

@@ -4,7 +4,7 @@ import { Upload, MapPin, Calendar, Check, Image as ImageIcon, Loader2, Pencil, X
 function MediaLightbox({ src, onClose }: { src: string; onClose: () => void }) {
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-4 backdrop-blur-sm"
       onClick={onClose}
     >
       <button
@@ -17,7 +17,7 @@ function MediaLightbox({ src, onClose }: { src: string; onClose: () => void }) {
       <img
         src={src}
         alt="Preview"
-        className="max-h-[85vh] max-w-[90vw] rounded-lg object-contain"
+        className="max-h-[92vh] max-w-[96vw] rounded-xl object-contain shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       />
     </div>
@@ -697,16 +697,17 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
                       <div className="mt-1 flex gap-1.5 overflow-x-auto">
                         {step.photos.slice(0, 6).map((photo, index) => {
                           const isVideo = photo.file.type.startsWith("video/");
-                          const previewSrc = photo.thumbnail || photo.analysisImage;
+                          const thumbnailSrc = photo.thumbnail || photo.analysisImage;
+                          const lightboxPreviewSrc = photo.analysisImage || photo.thumbnail;
 
-                          return previewSrc ? (
+                          return thumbnailSrc && lightboxPreviewSrc ? (
                             <button
                               key={index}
                               type="button"
-                              onClick={(e) => { e.stopPropagation(); setLightboxSrc(previewSrc); }}
+                              onClick={(e) => { e.stopPropagation(); setLightboxSrc(lightboxPreviewSrc); }}
                               className="group relative h-14 w-14 shrink-0 overflow-hidden rounded-lg border border-border transition-all hover:border-primary hover:ring-2 hover:ring-primary/30"
                             >
-                              <img src={previewSrc} alt={photo.caption || photo.file.name} className="h-full w-full object-cover" />
+                              <img src={thumbnailSrc} alt={photo.caption || photo.file.name} className="h-full w-full object-cover" />
                               {isVideo && (
                                 <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-black/30">
                                   <Play className="h-4 w-4 text-white fill-white" />

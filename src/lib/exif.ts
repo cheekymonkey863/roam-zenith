@@ -1007,7 +1007,7 @@ export interface ReverseGeocodeResult {
   placeTypes: string[];
 }
 
-const GOOGLE_JS_CALLBACK_TIMEOUT_MS = 1800;
+const GOOGLE_JS_CALLBACK_TIMEOUT_MS = 3000;
 const GEOCODE_FETCH_TIMEOUT_MS = 5000;
 const EXACT_PLACE_DISTANCE_METERS = 5;
 const EXACT_PLACE_NEARBY_RADIUS_METERS = 25;
