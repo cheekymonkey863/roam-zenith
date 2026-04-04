@@ -125,7 +125,12 @@ export function TripTimeline({
           const StepIcon = config.icon;
 
           return (
-            <div key={step.id} className="relative flex gap-5 pb-8 last:pb-0">
+            <div
+              key={step.id}
+              data-step-id={step.id}
+              ref={(el) => { if (el) stepRefs.current.set(step.id, el); }}
+              className="relative flex gap-5 pb-8 last:pb-0"
+            >
               <div className={`relative z-10 flex h-10 w-10 shrink-0 items-center justify-center rounded-full shadow-card ring-4 ring-background ${config.bg}`}>
                 <StepIcon className={`h-4 w-4 ${config.text}`} />
               </div>
