@@ -1,5 +1,28 @@
 import { useState, useCallback } from "react";
 import { Upload, MapPin, Calendar, Check, Image as ImageIcon, Loader2, Pencil, X, Play, Merge } from "lucide-react";
+
+function MediaLightbox({ src, onClose }: { src: string; onClose: () => void }) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <button
+        type="button"
+        onClick={onClose}
+        className="absolute right-4 top-4 rounded-full bg-black/50 p-2 text-white hover:bg-black/70"
+      >
+        <X className="h-5 w-5" />
+      </button>
+      <img
+        src={src}
+        alt="Preview"
+        className="max-h-[85vh] max-w-[90vw] rounded-lg object-contain"
+        onClick={(e) => e.stopPropagation()}
+      />
+    </div>
+  );
+}
 import {
   type PhotoExifData,
 } from "@/lib/exif";
@@ -230,6 +253,7 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
   const [editingKey, setEditingKey] = useState<string | null>(null);
   const [dragSourceKey, setDragSourceKey] = useState<string | null>(null);
   const [dragOverKey, setDragOverKey] = useState<string | null>(null);
+  const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
 
   const processFiles = useCallback(async (files: File[]) => {
     setProcessing(true);
@@ -525,47 +549,50 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
 
       {suggestions.length > 0 && (
         <div className="flex flex-col gap-4">
-          <div className="flex items-center justify-between">
-            <h3 className="font-display text-lg font-semibold text-foreground">
-              Detected Locations ({suggestions.filter((s) => s.selected).length}/{suggestions.length})
-            </h3>
-            <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <Merge className="h-3 w-3" /> Drag one event onto another to merge
-            </p>
-            <div className="flex items-center gap-2">
-              {onCancel && (
-                <button onClick={onCancel} className="flex items-center gap-1.5 rounded-xl bg-secondary px-4 py-2 text-sm font-medium text-secondary-foreground hover:bg-secondary/80 transition-colors">
-                  <X className="h-4 w-4" />
-                  Cancel
+          <div className="flex flex-col gap-3">
+            <div className="flex items-center justify-between">
+              <h3 className="font-display text-lg font-semibold text-foreground">
+                Detected Locations ({suggestions.filter((s) => s.selected).length}/{suggestions.length})
+              </h3>
+              <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <Merge className="h-3 w-3" /> Drag to merge
+              </p>
+              <div className="flex items-center gap-2">
+                {onCancel && (
+                  <button type="button" onClick={onCancel} className="flex items-center gap-1.5 rounded-xl bg-secondary px-4 py-2 text-sm font-medium text-secondary-foreground hover:bg-secondary/80 transition-colors">
+                    <X className="h-4 w-4" />
+                    Cancel
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={importSelected}
+                  disabled={importing || suggestions.filter((s) => s.selected).length === 0}
+                  className="flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
+                >
+                  {importing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                  {importing
+                    ? `Importing… ${importProgress.total > 0 ? `(${Math.round((importProgress.current / importProgress.total) * 100)}%)` : ""}`
+                    : "Import Selected"}
                 </button>
-              )}
-               <button
-                 onClick={importSelected}
-                 disabled={importing || suggestions.filter((s) => s.selected).length === 0}
-                 className="flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
-               >
-                 {importing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-                 {importing
-                   ? `Importing… ${importProgress.total > 0 ? `(${Math.round((importProgress.current / importProgress.total) * 100)}%)` : ""}`
-                   : "Import Selected"}
-               </button>
-             </div>
+              </div>
+            </div>
 
-             {/* Import progress bar */}
-             {importing && importProgress.total > 0 && (
-               <div className="flex flex-col gap-1.5">
-                 <div className="flex items-center justify-between text-xs text-muted-foreground">
-                   <span>Uploading media…</span>
-                   <span>{Math.round((importProgress.current / importProgress.total) * 100)}%</span>
-                 </div>
-                 <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
-                   <div
-                     className="h-full rounded-full bg-primary transition-all duration-300 ease-out"
-                     style={{ width: `${(importProgress.current / importProgress.total) * 100}%` }}
-                   />
-                 </div>
-               </div>
-             )}
+            {/* Import progress bar */}
+            {importing && importProgress.total > 0 && (
+              <div className="flex flex-col gap-1.5">
+                <div className="flex items-center justify-between text-xs text-muted-foreground">
+                  <span>Uploading media…</span>
+                  <span>{Math.round((importProgress.current / importProgress.total) * 100)}%</span>
+                </div>
+                <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+                  <div
+                    className="h-full rounded-full bg-primary transition-all duration-300 ease-out"
+                    style={{ width: `${(importProgress.current / importProgress.total) * 100}%` }}
+                  />
+                </div>
+              </div>
+            )}
           </div>
 
           {noGpsPhotos.length > 0 && (
@@ -673,14 +700,19 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
                           const previewSrc = photo.thumbnail || photo.analysisImage;
 
                           return previewSrc ? (
-                            <div key={index} className="relative h-14 w-14 shrink-0">
-                              <img src={previewSrc} alt={photo.caption || photo.file.name} className="h-14 w-14 rounded-lg object-cover" />
+                            <button
+                              key={index}
+                              type="button"
+                              onClick={(e) => { e.stopPropagation(); setLightboxSrc(previewSrc); }}
+                              className="group relative h-14 w-14 shrink-0 overflow-hidden rounded-lg border border-border transition-all hover:border-primary hover:ring-2 hover:ring-primary/30"
+                            >
+                              <img src={previewSrc} alt={photo.caption || photo.file.name} className="h-full w-full object-cover" />
                               {isVideo && (
                                 <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-black/30">
                                   <Play className="h-4 w-4 text-white fill-white" />
                                 </div>
                               )}
-                            </div>
+                            </button>
                           ) : (
                             <div key={index} className="flex h-14 w-14 shrink-0 items-center justify-center rounded-lg bg-muted">
                               {isVideo ? <Play className="h-5 w-5 text-muted-foreground" /> : <ImageIcon className="h-5 w-5 text-muted-foreground" />}
@@ -714,6 +746,7 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
           </div>
         </div>
       )}
+      {lightboxSrc && <MediaLightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />}
     </div>
   );
 }
