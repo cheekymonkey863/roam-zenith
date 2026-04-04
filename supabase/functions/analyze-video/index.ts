@@ -98,7 +98,8 @@ async function uploadToFileApi(
         return fileUri;
       }
       if (statusData.state === "FAILED") {
-        throw new Error("File processing failed on Gemini side");
+        console.error("Gemini file processing failed:", JSON.stringify(statusData));
+        throw new Error(`File processing failed on Gemini side: ${statusData.error?.message || JSON.stringify(statusData)}`);
       }
     }
     await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));

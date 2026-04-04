@@ -452,10 +452,12 @@ export async function processImportedMediaFiles(
 
     await mapWithConcurrency(allVideoMedia, 2, async ({ photo, step }) => {
       try {
-        // Read video file — limit to first 5MB to control costs
-        const MAX_VIDEO_BYTES = 5 * 1024 * 1024;
-        const blob = photo.file.slice(0, MAX_VIDEO_BYTES);
-        const buffer = await blob.arrayBuffer();
+        // Read full video file (Gemini needs a valid container)
+        const MAX_VIDEO_BYTES = 20 * 1024 * 1024; // 20MB cap
+        const videoFile = photo.file.size > MAX_VIDEO_BYTES
+          ? photo.file.slice(0, MAX_VIDEO_BYTES)
+          : photo.file;
+        const buffer = await videoFile.arrayBuffer();
         const bytes = new Uint8Array(buffer);
 
         // Convert to base64
