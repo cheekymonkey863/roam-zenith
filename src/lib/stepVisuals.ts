@@ -106,6 +106,10 @@ export function inferStepVisualType(step: StepVisualInput, googlePlaceTypes: str
 
   if (directMap[step.event_type]) return directMap[step.event_type];
 
+  // Resort check takes priority - anything with "resort" is a resort
+  const isResort = RESORT_PATTERN.test(text);
+  if (isResort) return "resort";
+
   const isFlight = FLIGHT_PATTERN.test(text) || googleType === "flight";
   const isHotel = HOTEL_PATTERN.test(text) || HOTEL_EVENT_PATTERN.test(text) || googleType === "hotel";
   const isFood = FOOD_PATTERN.test(text) || googleType === "dining";
