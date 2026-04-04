@@ -94,13 +94,17 @@ async function uploadToFileApi(
     );
     if (statusResponse.ok) {
       const statusData = await statusResponse.json();
+      console.log(`File poll attempt ${attempt + 1}: state=${statusData.state}`);
       if (statusData.state === "ACTIVE") {
         return fileUri;
       }
       if (statusData.state === "FAILED") {
         console.error("Gemini file processing failed:", JSON.stringify(statusData));
-        throw new Error(`File processing failed on Gemini side: ${statusData.error?.message || JSON.stringify(statusData)}`);
+        throw new Error(`File processing failed on Gemini side: ${statusData.error?.message || "unknown reason"}`);
       }
+    } else {
+      const errText = await statusResponse.text();
+      console.error(`File poll failed [${statusResponse.status}]:`, errText);
     }
     await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
   }
