@@ -33,7 +33,7 @@ const VISUAL_CONFIG: Record<StepVisualType, { icon: React.ElementType; bg: strin
   camping: { icon: Tent, bg: "bg-green-700", text: "text-white" },
   food: { icon: UtensilsCrossed, bg: "bg-orange-500", text: "text-white" },
   sightseeing: { icon: Camera, bg: "bg-emerald-500", text: "text-white" },
-  tour: { icon: Map, bg: "bg-sky-500", text: "text-white" },
+  tour: { icon: MapIcon, bg: "bg-sky-500", text: "text-white" },
   dining: { icon: UtensilsCrossed, bg: "bg-orange-500", text: "text-white" },
   meeting: { icon: Users, bg: "bg-gray-500", text: "text-white" },
   concert: { icon: Music, bg: "bg-pink-500", text: "text-white" },
