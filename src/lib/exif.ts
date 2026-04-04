@@ -132,46 +132,43 @@ async function parseMediaExif(file: File) {
  */
 async function parseVideoCreationDate(file: File): Promise<Date | null> {
   try {
-    const buffer = await file.slice(0, Math.min(file.size, 64 * 1024)).arrayBuffer();
-    const view = new DataView(buffer);
-    
-    // Search for 'mvhd' atom in the first 64KB
-    for (let i = 0; i < view.byteLength - 8; i++) {
-      if (
-        view.getUint8(i) === 0x6D && // m
-        view.getUint8(i + 1) === 0x76 && // v
-        view.getUint8(i + 2) === 0x68 && // h
-        view.getUint8(i + 3) === 0x64    // d
-      ) {
-        const version = view.getUint8(i + 4);
-        let creationTime: number;
-        
-        if (version === 0) {
-          // 32-bit creation time at offset +8
-          if (i + 12 > view.byteLength) break;
-          creationTime = view.getUint32(i + 8);
-        } else {
-          // 64-bit creation time at offset +8
-          if (i + 16 > view.byteLength) break;
-          // Read as two 32-bit values (JS doesn't handle 64-bit ints natively)
-          const high = view.getUint32(i + 8);
-          const low = view.getUint32(i + 12);
-          creationTime = high * 0x100000000 + low;
+    const chunks = await readVideoChunks(file);
+    for (const buffer of chunks) {
+      const view = new DataView(buffer);
+      const bytes = new Uint8Array(buffer);
+
+      for (let i = 0; i < view.byteLength - 16; i++) {
+        if (view.getUint8(i) === 0x6D && view.getUint8(i + 1) === 0x76 && view.getUint8(i + 2) === 0x68 && view.getUint8(i + 3) === 0x64) {
+          const version = view.getUint8(i + 4);
+          let creationTime: number;
+          if (version === 0) {
+            if (i + 12 > view.byteLength) continue;
+            creationTime = view.getUint32(i + 8);
+          } else {
+            if (i + 16 > view.byteLength) continue;
+            creationTime = view.getUint32(i + 8) * 0x100000000 + view.getUint32(i + 12);
+          }
+          if (creationTime === 0) continue;
+          const date = new Date((creationTime - 2082844800) * 1000);
+          if (date.getFullYear() >= 2000 && date.getFullYear() <= 2100) {
+            console.log(`[video-date] Found mvhd in ${file.name}: ${date.toISOString()}`);
+            return date;
+          }
         }
-        
-        if (creationTime === 0) return null;
-        
-        // MP4 epoch is 1904-01-01, JS epoch is 1970-01-01
-        // Difference: 2082844800 seconds
-        const MP4_EPOCH_OFFSET = 2082844800;
-        const unixTimestamp = creationTime - MP4_EPOCH_OFFSET;
-        const date = new Date(unixTimestamp * 1000);
-        
-        // Sanity check: date should be between 2000 and 2100
-        if (date.getFullYear() >= 2000 && date.getFullYear() <= 2100) {
-          return date;
+      }
+
+      // Search for ©day atom
+      for (let i = 0; i < bytes.length - 12; i++) {
+        if (bytes[i] === 0xA9 && bytes[i + 1] === 0x64 && bytes[i + 2] === 0x61 && bytes[i + 3] === 0x79) {
+          const text = new TextDecoder().decode(bytes.slice(i + 8, Math.min(i + 48, bytes.length))).replace(/\0/g, "").trim();
+          if (text.length > 0) {
+            const date = new Date(text);
+            if (!isNaN(date.getTime()) && date.getFullYear() >= 2000) {
+              console.log(`[video-date] Found ©day in ${file.name}: ${date.toISOString()}`);
+              return date;
+            }
+          }
         }
-        return null;
       }
     }
   } catch {
@@ -186,28 +183,40 @@ async function parseVideoCreationDate(file: File): Promise<Date | null> {
  */
 async function parseVideoGPS(file: File): Promise<{ latitude: number; longitude: number } | null> {
   try {
-    const chunkSize = Math.min(file.size, 128 * 1024);
-    const buffer = await file.slice(0, chunkSize).arrayBuffer();
-    const bytes = new Uint8Array(buffer);
-    
-    // Search for ©xyz pattern (0xA9 0x78 0x79 0x7A)
-    for (let i = 0; i < bytes.length - 20; i++) {
-      if (bytes[i] === 0xA9 && bytes[i+1] === 0x78 && bytes[i+2] === 0x79 && bytes[i+3] === 0x7A) {
-        // Read the string after the atom header
-        // Format varies, but typically: data offset + ISO 6709 string
-        // Try to find the coordinate string nearby
-        const searchStart = i + 4;
-        const searchEnd = Math.min(i + 64, bytes.length);
-        const textBytes = bytes.slice(searchStart, searchEnd);
-        const text = new TextDecoder().decode(textBytes);
-        
-        // Match ISO 6709: +DD.DDDD-DDD.DDDD or +DD.DDDD+DDD.DDDD
-        const match = text.match(/([+-]\d+\.\d+)([+-]\d+\.\d+)/);
-        if (match) {
-          const lat = parseFloat(match[1]);
-          const lng = parseFloat(match[2]);
-          if (Math.abs(lat) <= 90 && Math.abs(lng) <= 180) {
-            return { latitude: lat, longitude: lng };
+    const chunks = await readVideoChunks(file);
+    for (const buffer of chunks) {
+      const bytes = new Uint8Array(buffer);
+      const view = new DataView(buffer);
+
+      // ©xyz atom — iPhone GPS in ISO 6709
+      for (let i = 0; i < bytes.length - 20; i++) {
+        if (bytes[i] === 0xA9 && bytes[i + 1] === 0x78 && bytes[i + 2] === 0x79 && bytes[i + 3] === 0x7A) {
+          const text = new TextDecoder().decode(bytes.slice(i + 4, Math.min(i + 64, bytes.length)));
+          const match = text.match(/([+-]\d+\.?\d*)([+-]\d+\.?\d*)/);
+          if (match) {
+            const lat = parseFloat(match[1]);
+            const lng = parseFloat(match[2]);
+            if (Math.abs(lat) <= 90 && Math.abs(lng) <= 180 && !(lat === 0 && lng === 0)) {
+              console.log(`[video-gps] Found ©xyz in ${file.name}: ${lat}, ${lng}`);
+              return { latitude: lat, longitude: lng };
+            }
+          }
+        }
+      }
+
+      // 'loci' atom — Android 3GPP GPS
+      for (let i = 0; i < bytes.length - 20; i++) {
+        if (bytes[i] === 0x6C && bytes[i + 1] === 0x6F && bytes[i + 2] === 0x63 && bytes[i + 3] === 0x69) {
+          let pos = i + 4 + 4 + 2;
+          while (pos < bytes.length && bytes[pos] !== 0) pos++;
+          pos += 2;
+          if (pos + 8 <= view.byteLength) {
+            const lat = view.getInt32(pos) / 65536.0;
+            const lng = view.getInt32(pos + 4) / 65536.0;
+            if (Math.abs(lat) <= 90 && Math.abs(lng) <= 180 && !(lat === 0 && lng === 0)) {
+              console.log(`[video-gps] Found loci in ${file.name}: ${lat}, ${lng}`);
+              return { latitude: lat, longitude: lng };
+            }
           }
         }
       }
@@ -328,60 +337,44 @@ export async function extractExifFromFile(file: File): Promise<PhotoExifData> {
 
   // For videos: use server-side metadata extraction for robust MP4/MOV parsing
   if (isVideo) {
-    const serverMeta = await extractVideoMetadataServerSide(file);
-    if (serverMeta) {
-      if ((latitude === null || longitude === null) && serverMeta.latitude !== null && serverMeta.longitude !== null) {
-        latitude = serverMeta.latitude;
-        longitude = serverMeta.longitude;
-        metadataSources.add("video_container_gps");
-      }
-
-      if (!embeddedDate && serverMeta.creationDate) {
-        const serverDate = new Date(serverMeta.creationDate);
-        if (!isNaN(serverDate.getTime())) {
-          takenAt = serverDate;
-          metadataSources.delete("file_modified_time");
-          metadataSources.add("video_container_time");
-        }
-      }
-
-      if (duration === null && typeof serverMeta.duration === "number" && Number.isFinite(serverMeta.duration)) {
-        duration = serverMeta.duration;
-        metadataSources.add("video_container_duration");
-      }
-
-      if (!cameraMake && serverMeta.cameraMake) {
-        cameraMake = serverMeta.cameraMake;
-      }
-      if (!cameraModel && serverMeta.cameraModel) {
-        cameraModel = serverMeta.cameraModel;
-      }
-
-      if ((serverMeta.cameraMake || serverMeta.cameraModel) && (!exif?.Make || !exif?.Model)) {
-        metadataSources.add("video_container_camera");
-      }
-    }
-
-    // Client-side fallback if server-side didn't find GPS
+    // Client-side video atom parsing — reads head + tail of file
     if (latitude === null || longitude === null) {
       const videoGPS = await parseVideoGPS(file);
       if (videoGPS) {
         latitude = videoGPS.latitude;
         longitude = videoGPS.longitude;
-        metadataSources.add("video_gps_fallback");
+        metadataSources.add("video_container_gps");
       }
     }
-    
-    // Client-side fallback for date
+
     if (!embeddedDate && (!takenAt || metadataSources.has("file_modified_time"))) {
       const videoDate = await parseVideoCreationDate(file);
       if (videoDate) {
         takenAt = videoDate;
         metadataSources.delete("file_modified_time");
-        metadataSources.add("video_time_fallback");
+        metadataSources.add("video_container_time");
+      }
+    }
+
+    // Server-side fallback only when client-side didn't find everything
+    if (latitude === null || longitude === null || !takenAt || metadataSources.has("file_modified_time")) {
+      const serverMeta = await extractVideoMetadataServerSide(file);
+      if (serverMeta) {
+        if ((latitude === null || longitude === null) && serverMeta.latitude !== null && serverMeta.longitude !== null) {
+          latitude = serverMeta.latitude; longitude = serverMeta.longitude; metadataSources.add("video_server_gps");
+        }
+        if ((!takenAt || metadataSources.has("file_modified_time")) && serverMeta.creationDate) {
+          const d = new Date(serverMeta.creationDate);
+          if (!isNaN(d.getTime())) { takenAt = d; metadataSources.delete("file_modified_time"); metadataSources.add("video_server_time"); }
+        }
+        if (duration === null && typeof serverMeta.duration === "number") { duration = serverMeta.duration; }
+        if (!cameraMake && serverMeta.cameraMake) cameraMake = serverMeta.cameraMake;
+        if (!cameraModel && serverMeta.cameraModel) cameraModel = serverMeta.cameraModel;
       }
     }
   }
+
+  console.log(`[exif] ${file.name}: GPS=${latitude},${longitude} date=${takenAt?.toISOString() ?? "none"} sources=[${Array.from(metadataSources).join(",")}]`);
 
   return {
     file,
