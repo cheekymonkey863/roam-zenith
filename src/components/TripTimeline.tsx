@@ -31,6 +31,8 @@ const VISUAL_CONFIG: Record<StepVisualType, { icon: React.ElementType; bg: strin
   safari_accommodation: { icon: Trees, bg: "bg-yellow-600", text: "text-white" },
   glamping: { icon: Mountain, bg: "bg-emerald-600", text: "text-white" },
   camping: { icon: Tent, bg: "bg-green-700", text: "text-white" },
+  resort: { icon: Palmtree, bg: "bg-cyan-500", text: "text-white" },
+  ski_lodge: { icon: Snowflake, bg: "bg-sky-700", text: "text-white" },
   food: { icon: UtensilsCrossed, bg: "bg-orange-500", text: "text-white" },
   sightseeing: { icon: Camera, bg: "bg-emerald-500", text: "text-white" },
   tour: { icon: MapIcon, bg: "bg-sky-500", text: "text-white" },
