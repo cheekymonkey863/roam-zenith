@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState, useCallback, Fragment } from "react";
-import { MapPin, Image as ImageIcon, Trash2, GripVertical, CheckSquare, Square, X, Play } from "lucide-react";
+import { MapPin, Image as ImageIcon, Trash2, GripVertical, CheckSquare, Square, X } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { EditStepDialog } from "@/components/EditStepDialog";
+import { StepMediaGallery } from "@/components/StepMediaGallery";
 import { toast } from "sonner";
-import { getStoredPreviewThumbnail } from "@/lib/mediaMetadata";
 import { inferStepVisualType, type StepVisualType } from "@/lib/stepVisuals";
 import { getEventType } from "@/lib/eventTypes";
 import {
