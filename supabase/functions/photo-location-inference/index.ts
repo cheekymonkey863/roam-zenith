@@ -125,10 +125,10 @@ Deno.serve(async (req) => {
                         ? photo.analysisImage
                         : null,
                   }))
-                  .filter((photo: { analysisImage: string | null }) => Boolean(photo.analysisImage))
               : [],
           };
-        }).filter((group: LocationGroupInput) => group.photos.length > 0)
+        // Keep groups that have at least one photo with an image, OR have exif location
+        }).filter((group: LocationGroupInput) => group.photos.length > 0 && (group.photos.some(p => p.analysisImage) || group.exifLocation !== null))
       : [];
 
     if (groups.length === 0) {
