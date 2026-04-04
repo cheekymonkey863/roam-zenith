@@ -504,6 +504,7 @@ export async function processImportedMediaFiles(
             longitude: step?.longitude ?? photo.longitude ?? null,
             locationName: step?.locationName ?? null,
             country: step?.country ?? null,
+            itinerarySteps: existingTripSteps ?? [],
           },
         });
 
