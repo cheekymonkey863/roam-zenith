@@ -1,7 +1,7 @@
 import { useEffect, useRef, useImperativeHandle, forwardRef, useCallback, type CSSProperties } from "react";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
-import { inferStepVisualType, type StepVisualType } from "@/lib/stepVisuals";
+import type { StepVisualType } from "@/lib/stepVisuals";
 import type { Tables } from "@/integrations/supabase/types";
 
 type TripStep = Tables<"trip_steps">;
@@ -10,58 +10,6 @@ mapboxgl.accessToken = "pk.eyJ1IjoicnNvdXNhMzE1IiwiYSI6ImNtbmo2Z3lsNDA4ajMyc3M0Z
 
 const ROUTE_COLOR = "#E74C5E";
 const ROUTE_COLOR_ALT = ["#E74C5E", "#3B82F6", "#10B981", "#F59E0B", "#8B5CF6"];
-
-// Transport SVGs at 20px for animated markers
-const TRANSPORT_SVGS: Record<string, string> = {
-  flight: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="white" stroke="none"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2Z"/></svg>`,
-  train: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="white" stroke="none"><path d="M8 3.1V7a4 4 0 0 0 8 0V3.1M9 19c-2.8 0-5-2.2-5-5v-4a8 8 0 0 1 16 0v4c0 2.8-2.2 5-5 5Z"/><circle cx="9" cy="15" r="1"/><circle cx="15" cy="15" r="1"/></svg>`,
-  bus: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="white" stroke="none"><rect x="4" y="4" width="16" height="12" rx="2"/><circle cx="7" cy="18" r="2"/><circle cx="17" cy="18" r="2"/><path d="M4 10h16"/></svg>`,
-  ferry: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="white" stroke="none"><path d="M2 21c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1 .6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"/><path d="M19.38 20A11.6 11.6 0 0 0 21 14l-9-4-9 4c0 2.9.94 5.34 2.81 7.76"/><path d="M19 13V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v6"/><path d="M12 2v3"/></svg>`,
-  car: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="white" stroke="none"><path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4c0 .6.4 1 1 1h2"/><circle cx="7" cy="17" r="2"/><circle cx="17" cy="17" r="2"/></svg>`,
-  on_foot: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="white" stroke="none"><circle cx="12" cy="5" r="2"/><path d="m10 22 1-5-3-3 1-4 4 1 2 3h3"/><path d="M9.5 10 6 22"/></svg>`,
-  cycling: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="white" stroke="none"><circle cx="6" cy="17" r="3"/><circle cx="18" cy="17" r="3"/><path d="M6 17L9 9l4 2 3-5"/></svg>`,
-};
-
-const TRANSPORT_TYPES = new Set(["flight", "train", "bus", "ferry", "car", "transport", "on_foot", "cycling"]);
-
-// Determine the transport mode for a segment between two steps
-function getSegmentTransport(
-  fromStep: TripStep,
-  toStep: TripStep,
-  visualTypes: Record<string, StepVisualType>
-): StepVisualType | null {
-  // Check destination step first (e.g. arriving at airport = flight segment)
-  const toType = visualTypes[toStep.id] || inferStepVisualType(toStep);
-  if (TRANSPORT_TYPES.has(toType)) return toType;
-
-  // Check source step
-  const fromType = visualTypes[fromStep.id] || inferStepVisualType(fromStep);
-  if (TRANSPORT_TYPES.has(fromType)) return fromType;
-
-  return null;
-}
-
-// Interpolate a point along a great-circle-ish path
-function interpolatePosition(
-  from: [number, number],
-  to: [number, number],
-  t: number
-): [number, number] {
-  return [
-    from[0] + (to[0] - from[0]) * t,
-    from[1] + (to[1] - from[1]) * t,
-  ];
-}
-
-// Calculate bearing between two points in degrees
-function getBearing(from: [number, number], to: [number, number]): number {
-  const dLng = ((to[0] - from[0]) * Math.PI) / 180;
-  const lat1 = (from[1] * Math.PI) / 180;
-  const lat2 = (to[1] * Math.PI) / 180;
-  const y = Math.sin(dLng) * Math.cos(lat2);
-  const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLng);
-  return ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
-}
 
 export interface WorldMapHandle {
   flyToStep: (step: TripStep) => void;
@@ -79,12 +27,11 @@ interface WorldMapProps {
 }
 
 export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function WorldMap(
-  { steps, singleTrip = false, visualTypes = {}, activeStepId, className, style },
+  { steps, singleTrip = false, className, style },
   ref
 ) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
-  const scrollMarkerRef = useRef<{ marker: mapboxgl.Marker; el: HTMLDivElement } | null>(null);
   const stepsRef = useRef<TripStep[]>(steps);
   stepsRef.current = steps;
 
@@ -121,7 +68,6 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
       mapRef.current.remove();
       mapRef.current = null;
     }
-    scrollMarkerRef.current = null;
 
     const map = new mapboxgl.Map({
       container: containerRef.current,
@@ -186,24 +132,6 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
         }
       });
 
-      // Create a single scroll-driven marker (hidden until activeStepId is set)
-      const el = document.createElement("div");
-      el.style.width = "36px";
-      el.style.height = "36px";
-      el.style.display = "flex";
-      el.style.alignItems = "center";
-      el.style.justifyContent = "center";
-      el.style.filter = "drop-shadow(0 2px 6px rgba(0,0,0,0.6))";
-      el.style.transition = "transform 0.3s ease";
-      el.style.opacity = "0";
-
-      const firstStep = steps[0];
-      const marker = new mapboxgl.Marker({ element: el, anchor: "center", rotationAlignment: "map" })
-        .setLngLat([firstStep.longitude, firstStep.latitude])
-        .addTo(map);
-
-      scrollMarkerRef.current = { marker, el };
-
       if (!bounds.isEmpty()) {
         map.fitBounds(bounds, {
           padding: { top: 60, bottom: 60, left: 60, right: 60 },
@@ -214,53 +142,10 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
     });
 
     return () => {
-      scrollMarkerRef.current = null;
       map.remove();
       mapRef.current = null;
     };
   }, [steps, singleTrip]);
-
-  // Move marker when activeStepId changes (scroll-driven)
-  useEffect(() => {
-    const sm = scrollMarkerRef.current;
-    if (!sm || !activeStepId || steps.length < 2) return;
-
-    const stepIndex = steps.findIndex((s) => s.id === activeStepId);
-    if (stepIndex < 0) return;
-
-    const currentStep = steps[stepIndex];
-    const pos: [number, number] = [currentStep.longitude, currentStep.latitude];
-
-    // Determine transport type for the icon
-    // Look at the segment the step belongs to (current→next, or prev→current)
-    let transportType: StepVisualType | null = null;
-    if (stepIndex < steps.length - 1) {
-      transportType = getSegmentTransport(currentStep, steps[stepIndex + 1], visualTypes);
-    }
-    if (!transportType && stepIndex > 0) {
-      transportType = getSegmentTransport(steps[stepIndex - 1], currentStep, visualTypes);
-    }
-
-    // Determine bearing
-    let bearing = 0;
-    if (stepIndex < steps.length - 1) {
-      const next = steps[stepIndex + 1];
-      bearing = getBearing(pos, [next.longitude, next.latitude]);
-    } else if (stepIndex > 0) {
-      const prev = steps[stepIndex - 1];
-      bearing = getBearing([prev.longitude, prev.latitude], pos);
-    }
-
-    // Update icon SVG
-    const svgKey = transportType === "transport" ? "car" : (transportType || "flight");
-    const svg = TRANSPORT_SVGS[svgKey] || TRANSPORT_SVGS.flight;
-    sm.el.innerHTML = svg;
-    sm.el.style.transform = `rotate(${bearing - 90}deg)`;
-    sm.el.style.opacity = "1";
-
-    // Move marker
-    sm.marker.setLngLat(pos);
-  }, [activeStepId, steps, visualTypes]);
 
   return (
     <div
