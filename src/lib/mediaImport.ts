@@ -268,11 +268,16 @@ export async function processImportedMediaFiles(
   const allDates = exifResults.map((photo) => photo.takenAt).filter(Boolean) as Date[];
   const groups = groupPhotosByLocation(exifResults, LOCATION_GROUP_RADIUS_METERS, LOCATION_GROUP_MAX_GAP_HOURS);
 
+  const groupEntries = Array.from(groups.entries());
+  onProgress?.("Resolving locations", 0, groupEntries.length);
+  let geoResolved = 0;
   const baseSteps: ImportedMediaStep[] = await Promise.all(
-    Array.from(groups.entries()).map(async ([key, photos]) => {
+    groupEntries.map(async ([key, photos]) => {
       const sortedPhotos = sortMediaByCapturedTime(photos);
       const { latitude, longitude } = getRepresentativeCoordinates(sortedPhotos);
       const geo = await reverseGeocode(latitude, longitude);
+      geoResolved++;
+      onProgress?.("Resolving locations", geoResolved, groupEntries.length);
       const displayName = geo.locality && geo.locality !== "Unknown" && geo.name !== geo.locality && geo.name !== "Unknown"
         ? `${geo.name}, ${geo.locality}`
         : geo.name;
