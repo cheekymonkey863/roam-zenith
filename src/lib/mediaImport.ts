@@ -430,7 +430,7 @@ export async function processImportedMediaFiles(
   }
   onProgress?.("Visual recognition", 1, 1);
 
-  // Native Gemini video analysis — send actual video bytes for audio+visual understanding
+  // Native Gemini video analysis — upload raw video to Storage, then analyze via File API
   const allVideoMedia = [
     ...baseSteps.flatMap((step) =>
       step.photos
@@ -450,7 +450,7 @@ export async function processImportedMediaFiles(
     onProgress?.("Analyzing videos", 0, allVideoMedia.length);
     let videoDone = 0;
 
-    // Serialize video analysis: 1-at-a-time with retry+backoff to respect API rate limits
+    // Serialize: 1-at-a-time with retry+backoff to respect API rate limits
     let rateLimitHit = false;
     for (const { photo, step } of allVideoMedia) {
       if (rateLimitHit) {
@@ -460,15 +460,23 @@ export async function processImportedMediaFiles(
       }
 
       try {
-        const buffer = await photo.file.arrayBuffer();
-        const bytes = new Uint8Array(buffer);
+        // Upload raw video to Supabase Storage (temp analysis path)
+        const ext = photo.file.name.split(".").pop()?.toLowerCase() || "mp4";
+        const storagePath = `video-analysis/${crypto.randomUUID()}.${ext}`;
 
-        let binary = "";
-        const chunkSize = 8192;
-        for (let i = 0; i < bytes.length; i += chunkSize) {
-          binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+        const { error: uploadError } = await supabase.storage
+          .from("trip-photos")
+          .upload(storagePath, photo.file, {
+            contentType: photo.file.type || "video/mp4",
+            upsert: false,
+          });
+
+        if (uploadError) {
+          console.error(`Storage upload failed for ${photo.file.name}:`, uploadError);
+          videoDone++;
+          onProgress?.("Analyzing videos", videoDone, allVideoMedia.length);
+          continue;
         }
-        const videoBase64 = btoa(binary);
 
         let mimeType = photo.file.type || "video/mp4";
         if (mimeType === "video/quicktime" || mimeType === "video/mov") {
@@ -479,7 +487,7 @@ export async function processImportedMediaFiles(
         for (let attempt = 0; attempt < 3; attempt++) {
           const { data, error } = await supabase.functions.invoke("analyze-video", {
             body: {
-              videoBase64,
+              storagePath,
               mimeType,
               captionId: photo.captionId,
               fileName: photo.file.name,
@@ -511,7 +519,6 @@ export async function processImportedMediaFiles(
             continue;
           }
 
-          // Non-retryable error — skip this video
           console.error(`Video analysis failed for ${photo.file.name}:`, errMsg);
           lastError = null;
           break;
@@ -521,6 +528,9 @@ export async function processImportedMediaFiles(
           console.warn(`[video-analysis] Giving up after 3 retries, skipping remaining videos.`);
           rateLimitHit = true;
         }
+
+        // Clean up temp storage file after analysis
+        await supabase.storage.from("trip-photos").remove([storagePath]).catch(() => {});
       } catch (err) {
         console.error(`Video analysis failed for ${photo.file.name}:`, err);
       }
