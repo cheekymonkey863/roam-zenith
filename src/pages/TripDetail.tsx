@@ -85,9 +85,9 @@ const TripDetail = () => {
           <div className="flex items-start justify-between">
             <h1 className="font-display text-3xl font-semibold text-foreground md:text-4xl">{trip.title}</h1>
             <div className="flex items-center gap-2">
-              {trip.is_active && (
-                <span className="rounded-full bg-accent px-3 py-1 text-xs font-medium text-accent-foreground">Active</span>
-              )}
+              <span className={`rounded-full px-3 py-1 text-xs font-medium ${getTripStatusStyle(getTripStatus(trip.start_date, trip.end_date))}`}>
+                {getTripStatusLabel(getTripStatus(trip.start_date, trip.end_date))}
+              </span>
               <EditTripDialog trip={trip} onUpdated={fetchData} />
             </div>
           </div>
@@ -95,7 +95,7 @@ const TripDetail = () => {
           <div className="mt-4 flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
             <span className="flex items-center gap-1.5">
               <Calendar className="h-4 w-4" />
-              {formatDate(trip.start_date)}
+              {formatTripDateRange(trip.start_date, trip.end_date)}
             </span>
             {countries.length > 0 && (
               <span className="flex items-center gap-1.5">
