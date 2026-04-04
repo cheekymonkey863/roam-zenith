@@ -602,9 +602,11 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
                       <div className="mt-1 flex gap-1.5 overflow-x-auto">
                         {step.photos.slice(0, 6).map((photo, index) => {
                           const isVideo = photo.file.type.startsWith("video/");
-                          return photo.thumbnail ? (
+                          const previewSrc = photo.thumbnail || photo.analysisImage;
+
+                          return previewSrc ? (
                             <div key={index} className="relative h-14 w-14 shrink-0">
-                              <img src={photo.thumbnail} alt={photo.caption || photo.file.name} className="h-14 w-14 rounded-lg object-cover" />
+                              <img src={previewSrc} alt={photo.caption || photo.file.name} className="h-14 w-14 rounded-lg object-cover" />
                               {isVideo && (
                                 <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-black/30">
                                   <Play className="h-4 w-4 text-white fill-white" />

@@ -29,6 +29,10 @@ function getFileExtension(fileName: string) {
   return match ? match[1] : null;
 }
 
+function isImageDataUrl(value: unknown): value is string {
+  return typeof value === "string" && value.startsWith("data:image/");
+}
+
 export function dedupeTags(values: Array<string | null | undefined>) {
   const tags = values
     .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
@@ -88,6 +92,7 @@ export function buildStoredMediaMetadata(
       duration_seconds: photo.duration ?? null,
       metadata_sources: photo.metadataSources ?? [],
       preview_source: photo.previewSource ?? null,
+      preview_thumbnail_data_url: mediaType === "video" ? photo.thumbnail ?? null : null,
       derived_location_name: context.locationName ?? null,
       derived_country: context.country ?? null,
     },
@@ -102,4 +107,18 @@ export function buildStoredMediaMetadata(
     },
     raw_exif: photo.exifRaw ?? null,
   } as Json;
+}
+
+export function getStoredPreviewThumbnail(exifData: unknown): string | null {
+  if (!exifData || typeof exifData !== "object" || Array.isArray(exifData)) {
+    return null;
+  }
+
+  const lockedMetadata = (exifData as Record<string, unknown>).locked_metadata;
+  if (!lockedMetadata || typeof lockedMetadata !== "object" || Array.isArray(lockedMetadata)) {
+    return null;
+  }
+
+  const previewThumbnail = (lockedMetadata as Record<string, unknown>).preview_thumbnail_data_url;
+  return isImageDataUrl(previewThumbnail) ? previewThumbnail : null;
 }

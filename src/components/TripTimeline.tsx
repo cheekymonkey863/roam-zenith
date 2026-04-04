@@ -3,6 +3,7 @@ import { MapPin, Image as ImageIcon, Trash2, GripVertical, CheckSquare, Square, 
 import { supabase } from "@/integrations/supabase/client";
 import { EditStepDialog } from "@/components/EditStepDialog";
 import { toast } from "sonner";
+import { getStoredPreviewThumbnail } from "@/lib/mediaMetadata";
 import { inferStepVisualType, type StepVisualType } from "@/lib/stepVisuals";
 import { getEventType } from "@/lib/eventTypes";
 import {
@@ -394,11 +395,13 @@ export function TripTimeline({
                     {photos.slice(0, 6).map((photo) => {
                       const url = getPhotoUrl(photo);
                       const isVideo = isVideoFile(photo.file_name);
+                      const poster = getStoredPreviewThumbnail(photo.exif_data);
 
                       return isVideo ? (
                         <div key={photo.id} className="relative h-20 w-20 shrink-0 rounded-lg overflow-hidden bg-muted">
                           <video
                             src={url}
+                            poster={poster ?? undefined}
                             className="h-full w-full object-cover"
                             muted
                             playsInline
