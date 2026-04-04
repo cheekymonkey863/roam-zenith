@@ -123,3 +123,17 @@ export function getStoredPreviewThumbnail(exifData: unknown): string | null {
   const previewThumbnail = (lockedMetadata as Record<string, unknown>).preview_thumbnail_data_url;
   return isImageDataUrl(previewThumbnail) ? previewThumbnail : null;
 }
+
+export function getStoredEssence(exifData: unknown): string | null {
+  if (!exifData || typeof exifData !== "object" || Array.isArray(exifData)) {
+    return null;
+  }
+
+  const aiEnrichment = (exifData as Record<string, unknown>).ai_enrichment;
+  if (!aiEnrichment || typeof aiEnrichment !== "object" || Array.isArray(aiEnrichment)) {
+    return null;
+  }
+
+  const essence = (aiEnrichment as Record<string, unknown>).essence;
+  return typeof essence === "string" && essence.trim().length > 0 ? essence.trim() : null;
+}
