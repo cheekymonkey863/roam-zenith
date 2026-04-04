@@ -52,12 +52,23 @@ function getRetryDelayMs(retryAfterHeader: string | null, fallbackMs: number) {
   return fallbackMs;
 }
 
+interface ItineraryStop {
+  location_name: string | null;
+  country: string | null;
+  latitude: number;
+  longitude: number;
+  recorded_at: string;
+  event_type: string;
+  description: string | null;
+}
+
 function buildPrompt(metadata: {
   takenAt: string | null;
   latitude: number | null;
   longitude: number | null;
   locationName: string | null;
   country: string | null;
+  itinerarySteps?: ItineraryStop[];
 }): string {
   const metadataParts: string[] = [];
   if (metadata.takenAt) {
@@ -85,10 +96,22 @@ function buildPrompt(metadata: {
     ? `METADATA: ${metadataParts.join(". ")}.`
     : "No metadata available.";
 
+  let itineraryBlock = "";
+  if (metadata.itinerarySteps && metadata.itinerarySteps.length > 0) {
+    const stopLines = metadata.itinerarySteps.map((s, i) => {
+      const loc = s.location_name || "Unknown";
+      const country = s.country && s.country !== "Unknown" ? `, ${s.country}` : "";
+      const date = new Date(s.recorded_at).toLocaleDateString("en-GB", { dateStyle: "medium" });
+      const desc = s.description ? ` — ${s.description}` : "";
+      return `  ${i + 1}. ${loc}${country} (${date}, ${s.event_type})${desc}`;
+    });
+    itineraryBlock = `\n\nKNOWN ITINERARY STOPS (pre-planned or already confirmed stops on this trip):\n${stopLines.join("\n")}\n\nIMPORTANT: If the video clearly matches one of these known stops, reference it in your caption and description. Use the stop's location name as ground truth when the visual content is consistent with it.`;
+  }
+
   return `You are a world-class travel writer and expert metadata tagger.
 I am providing a video from a user's trip, along with hard EXIF metadata extracted from the file.
 
-${metadataBlock}
+${metadataBlock}${itineraryBlock}
 
 TASKS:
 1. Watch the entire video carefully — every second matters.
@@ -175,6 +198,7 @@ Deno.serve(async (req) => {
       longitude = null,
       locationName = null,
       country = null,
+      itinerarySteps = [],
     } = body;
 
     if (!storagePath || typeof storagePath !== "string") {
@@ -194,7 +218,7 @@ Deno.serve(async (req) => {
 
     console.log(`Analyzing "${fileName}" via Lovable AI. Video URL: ${videoUrl}`);
 
-    const prompt = buildPrompt({ takenAt, latitude, longitude, locationName, country });
+    const prompt = buildPrompt({ takenAt, latitude, longitude, locationName, country, itinerarySteps });
     const data = await callLovableAiWithRetries(lovableApiKey, {
       model: MODEL,
       messages: [

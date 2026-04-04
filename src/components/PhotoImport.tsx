@@ -47,7 +47,7 @@ interface PhotoImportProps {
   tripId: string;
   onImportComplete: () => void;
   onCancel?: () => void;
-  existingSteps?: Array<{ id: string; latitude: number; longitude: number; location_name: string | null }>;
+  existingSteps?: Array<{ id: string; latitude: number; longitude: number; location_name: string | null; country: string | null; recorded_at: string; event_type: string; description: string | null }>;
 }
 
 const LOCATION_GROUP_RADIUS_METERS = 500;
@@ -252,9 +252,18 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
     toast.info(`Processing ${mediaFiles.length} file(s) with metadata + visual recognition...`);
 
     try {
+      const tripStepsForScaffold = existingSteps?.map(s => ({
+        location_name: s.location_name,
+        country: s.country,
+        latitude: s.latitude,
+        longitude: s.longitude,
+        recorded_at: s.recorded_at,
+        event_type: s.event_type,
+        description: s.description,
+      }));
       const result = await processImportedMediaFiles(mediaFiles, (phase, current, total) => {
         setProcessingStatus({ phase, current, total });
-      });
+      }, tripStepsForScaffold);
       const nextSuggestions: SuggestedStep[] = result.steps.map((step) => ({ ...step }));
       setNoGpsPhotos(result.noGpsPhotos);
       setSuggestions(nextSuggestions);
