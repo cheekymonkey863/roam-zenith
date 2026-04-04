@@ -970,7 +970,7 @@ async function reverseGeocodeWithJsApi(lat: number, lng: number): Promise<{ name
     if (placesService) {
       const poiName = await new Promise<string | null>((resolve) => {
         placesService.nearbySearch(
-          { location, rankBy: g.maps.places.RankBy.DISTANCE, type: "point_of_interest" },
+          { location, radius: 250, type: "point_of_interest" },
           (results: any[], status: string) => {
             if (status !== "OK" || !results?.length) {
               resolve(null);
@@ -985,9 +985,20 @@ async function reverseGeocodeWithJsApi(lat: number, lng: number): Promise<{ name
               "natural_feature", "point_of_interest", "establishment",
             ]);
 
-            const poi = results.find((r: any) =>
+            // Filter to POIs that have a geometry close to our coordinates
+            const nearby = results.filter((r: any) => {
+              if (!r.geometry?.location) return false;
+              const rLat = typeof r.geometry.location.lat === "function" ? r.geometry.location.lat() : r.geometry.location.lat;
+              const rLng = typeof r.geometry.location.lng === "function" ? r.geometry.location.lng() : r.geometry.location.lng;
+              const dLat = (rLat - lat) * 111320;
+              const dLng = (rLng - lng) * 111320 * Math.cos(lat * Math.PI / 180);
+              const dist = Math.sqrt(dLat * dLat + dLng * dLng);
+              return dist < 500;
+            });
+
+            const poi = nearby.find((r: any) =>
               r.types?.some((t: string) => POI_TYPES.has(t))
-            ) || results[0];
+            ) || nearby[0];
 
             resolve(poi?.name || null);
           },
