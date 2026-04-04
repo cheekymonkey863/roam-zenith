@@ -61,6 +61,8 @@ export interface ProcessedMediaImport {
   unresolvedCount: number;
 }
 
+export type ImportProgressCallback = (phase: string, current: number, total: number) => void;
+
 const LOCATION_GROUP_RADIUS_METERS = 500;
 const LOCATION_GROUP_MAX_GAP_HOURS = 6;
 const UNGROUPED_MEDIA_MATCH_WINDOW_MS = LOCATION_GROUP_MAX_GAP_HOURS * 60 * 60 * 1000;
