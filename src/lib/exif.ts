@@ -1202,7 +1202,7 @@ export async function reverseGeocode(lat: number, lng: number): Promise<ReverseG
       `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1&extratags=1&namedetails=1`,
     );
     if (!data) {
-      return { name: "Unknown", country: "Unknown", locality: "Unknown", placeTypes: [] };
+      return { name: "Unknown", country: "Unknown", locality: "Unknown", placeTypes: [], nearbyPlaces: [] };
     }
 
     const addr = data.address || {};
@@ -1219,16 +1219,16 @@ export async function reverseGeocode(lat: number, lng: number): Promise<ReverseG
 
     const exactName = typeof data.name === "string" && data.name.trim().length > 0 ? data.name.trim() : null;
     if (exactName) {
-      return { name: exactName, country, locality: nomLocality, placeTypes };
+      return { name: exactName, country, locality: nomLocality, placeTypes, nearbyPlaces: [] };
     }
 
     if (nomLocality !== "Unknown") {
-      return { name: nomLocality, country, locality: nomLocality, placeTypes };
+      return { name: nomLocality, country, locality: nomLocality, placeTypes, nearbyPlaces: [] };
     }
 
-    return { name: "Unknown", country, locality: nomLocality, placeTypes };
+    return { name: "Unknown", country, locality: nomLocality, placeTypes, nearbyPlaces: [] };
   } catch {
-    return { name: "Unknown", country: "Unknown", locality: "Unknown", placeTypes: [] };
+    return { name: "Unknown", country: "Unknown", locality: "Unknown", placeTypes: [], nearbyPlaces: [] };
   }
 }
 
