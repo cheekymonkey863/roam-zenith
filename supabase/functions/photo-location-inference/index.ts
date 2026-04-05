@@ -223,13 +223,12 @@ Deno.serve(async (req) => {
         text: `You are a world-class travel writer and expert metadata tagger.
 You are provided with groups of travel media (photos and video frames), each with extracted metadata.
 
-CRITICAL RULES — GPS IS A HINT, NOT THE TRUTH:
-1. The "Reverse-geocoded location" is an automated coordinate lookup. IT IS OFTEN WRONG (e.g., calling a pizza shop a nearby monument or office building).
-2. TRUST YOUR EYES. If the GPS says "Lothian House" but you see Calton Hill, the venue IS "Calton Hill".
-3. If you see people eating pizza and the coordinates are near "Civerinos", the venue IS "Civerinos".
-4. If you see a pub stage with a band and the coordinates are near "Whistlebinkies", the venue IS "Whistlebinkies".
-5. If you can read a sign, logo, or branding in the image, use that EXACT name.
-6. ONLY if the visual evidence gives no clue should you fall back to the reverse-geocoded name.
+CRITICAL RULES — GPS COORDINATES ARE A HINT, NOT THE TRUTH:
+1. The "Reverse-geocoded location" is an automated coordinate lookup. IT IS OFTEN WRONG — it may return a nearby office building, street name, or administrative region instead of the actual venue.
+2. TRUST YOUR EYES FIRST. If you can visually identify a specific landmark, venue sign, logo, or branding in the image, that is the definitive venue name.
+3. Examples: If the GPS says "Lothian House" but you see Calton Hill, the venue IS "Calton Hill". If you see pizza and the area is known for "Civerinos", the venue IS "Civerinos". If you see a pub stage with a band near "Whistlebinkies", the venue IS "Whistlebinkies".
+4. Do NOT fall back to generic street addresses, administrative regions, or reverse-geocoded names if a specific landmark or venue is visible.
+5. ONLY if the visual evidence gives absolutely no clue about a specific venue should you use the reverse-geocoded name as a last resort.
 
 YOUR APPROACH:
 1. Analyze the visual elements in each image/frame (lighting, scenery, objects, signage, architecture, food, drinks).

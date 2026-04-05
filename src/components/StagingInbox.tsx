@@ -570,37 +570,7 @@ export function StagingInbox({
                     ))}
                   </div>
 
-                  {/* AI captions */}
-                  {(() => {
-                    const withCaptions = group.files.filter(
-                      (f) => f.ai_result?.caption && !/^(Photo|Video|Image) (at|from) /i.test(f.ai_result.caption),
-                    );
-                    const seenCaptions = new Set<string>();
-                    const unique = withCaptions.filter((f) => {
-                      const key = f.ai_result!.caption!.trim().toLowerCase();
-                      if (seenCaptions.has(key)) return false;
-                      seenCaptions.add(key);
-                      return true;
-                    });
-                    if (unique.length === 0) return null;
-                    return (
-                      <div className="flex flex-col gap-2 mt-2">
-                        {unique.map((f) => (
-                          <div key={f.id} className="border-l-2 border-primary/20 pl-3">
-                            <p className="text-sm font-medium text-foreground">
-                              {f.mime_type.startsWith("video/") ? "🎥 " : "📸 "}
-                              {f.ai_result!.caption}
-                            </p>
-                            {f.ai_result?.essence && (
-                              <p className="text-xs leading-relaxed text-muted-foreground italic mt-1">
-                                &ldquo;{f.ai_result.essence}&rdquo;
-                              </p>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    );
-                  })()}
+                  {/* AI captions hidden in staging — data preserved in ai_result for import */}
                 </div>
               </div>
             </div>
