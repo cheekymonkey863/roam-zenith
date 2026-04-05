@@ -8,3 +8,6 @@ verify_jwt = false
 
 [functions.analyze-video]
 verify_jwt = false
+
+[functions.process-video-queue]
+verify_jwt = false

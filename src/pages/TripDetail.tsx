@@ -1,6 +1,6 @@
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { useEffect, useState, useRef, useCallback } from "react";
-import { ArrowLeft, Calendar, MapPin, Route, Navigation, Image as ImageIcon, FileText, Trash2 } from "lucide-react";
+import { ArrowLeft, Calendar, MapPin, Route, Navigation, Image as ImageIcon, FileText, Trash2, Loader2, Video } from "lucide-react";
 import { getTripStatus, getTripStatusLabel, getTripStatusStyle, formatTripDateRange } from "@/lib/tripStatus";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -39,13 +39,13 @@ const TripDetail = () => {
   const [showPhotoImport, setShowPhotoImport] = useState(false);
   const [showItineraryImport, setShowItineraryImport] = useState(false);
   const [activeStepId, setActiveStepId] = useState<string | null>(null);
+  const [pendingVideoJobs, setPendingVideoJobs] = useState(0);
   const visualTypes = useStepVisualTypes(steps);
   const { cityCount, isResolvingCities } = useResolvedCities(steps);
   const mapRef = useRef<WorldMapHandle>(null);
 
   const fetchData = async () => {
     if (!user || !id) return;
-    // Fetch trip (RLS allows both owner and shared users)
     const tripRes = await supabase.from("trips").select("*").eq("id", id).single();
     const stepsRes = await supabase.from("trip_steps").select("*").eq("trip_id", id).order("sort_order", { ascending: true }).order("recorded_at", { ascending: true });
     setTrip(tripRes.data);
@@ -54,8 +54,50 @@ const TripDetail = () => {
     setLoading(false);
   };
 
+  // Fetch pending video analysis jobs count
+  const fetchPendingJobs = async () => {
+    if (!user || !id) return;
+    const { count } = await supabase
+      .from("video_analysis_jobs")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", user.id)
+      .in("status", ["pending", "processing"]);
+    setPendingVideoJobs(count ?? 0);
+  };
+
   useEffect(() => {
     fetchData();
+    fetchPendingJobs();
+  }, [user, id]);
+
+  // Subscribe to video analysis job updates via Realtime
+  useEffect(() => {
+    if (!user || !id) return;
+
+    const channel = supabase
+      .channel(`video-jobs-${id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "video_analysis_jobs",
+        },
+        (payload) => {
+          const newStatus = (payload.new as { status: string }).status;
+          if (newStatus === "complete" || newStatus === "failed") {
+            fetchPendingJobs();
+            if (newStatus === "complete") {
+              fetchData(); // Refresh timeline with new AI metadata
+            }
+          }
+        },
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [user, id]);
 
   const handleStepInView = useCallback((stepId: string) => {
@@ -133,7 +175,16 @@ const TripDetail = () => {
         </div>
       </div>
 
-      
+      {pendingVideoJobs > 0 && (
+        <div className="flex items-center gap-3 rounded-xl border border-primary/20 bg-primary/5 px-4 py-3 text-sm">
+          <Loader2 className="h-4 w-4 animate-spin text-primary" />
+          <Video className="h-4 w-4 text-primary" />
+          <span className="text-foreground">
+            <strong>{pendingVideoJobs}</strong> video{pendingVideoJobs === 1 ? "" : "s"} being analyzed in the background.
+            You can safely close this page — we'll update your trip when done.
+          </span>
+        </div>
+      )}
 
       <div className="flex flex-wrap gap-3">
         <AddEventForm tripId={trip.id} onEventAdded={fetchData} />
