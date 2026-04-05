@@ -7,10 +7,11 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
-import { type PhotoExifData } from "@/lib/exif";
-import { processImportedMediaFiles } from "@/lib/mediaImport";
-import { buildStoredMediaMetadata } from "@/lib/mediaMetadata";
-import { ImportPreview } from "@/components/ImportPreview";
+ import { type PhotoExifData } from "@/lib/exif";
+ import { processImportedMediaFiles } from "@/lib/mediaImport";
+ import { buildStoredMediaMetadata } from "@/lib/mediaMetadata";
+ import { queueVideoAnalysisJob } from "@/lib/videoAnalysisQueue";
+ import { ImportPreview } from "@/components/ImportPreview";
  
  type ImportMode = "none" | "photo" | "itinerary";
  
@@ -384,25 +385,42 @@ import { ImportPreview } from "@/components/ImportPreview";
                console.error(`[Import] Upload failed for ${uploadFile.name} (${(uploadFile.size / 1024 / 1024).toFixed(1)}MB):`, uploadError);
                uploadErrors++;
              } else {
-               const { error: photoInsertError } = await supabase.from("step_photos").insert({
-                 step_id: stepData.id,
-                 user_id: user.id,
-                 storage_path: path,
-                 file_name: uploadFile.name,
-                 latitude: photo.latitude,
-                 longitude: photo.longitude,
-                 taken_at: photo.takenAt?.toISOString(),
-                  exif_data: buildStoredMediaMetadata(photo, {
-                    locationName: step.locationName,
-                    country: step.country,
-                  }),
-               });
-               if (photoInsertError) {
-                 console.error(`[Import] Photo record insert failed for ${uploadFile.name}:`, photoInsertError);
-                 uploadErrors++;
-               } else {
-                 mediaUploaded++;
-               }
+                const { error: photoInsertError } = await supabase.from("step_photos").insert({
+                  step_id: stepData.id,
+                  user_id: user.id,
+                  storage_path: path,
+                  file_name: uploadFile.name,
+                  latitude: photo.latitude,
+                  longitude: photo.longitude,
+                  taken_at: photo.takenAt?.toISOString(),
+                   exif_data: buildStoredMediaMetadata(photo, {
+                     locationName: step.locationName,
+                     country: step.country,
+                   }),
+                });
+                if (photoInsertError) {
+                  console.error(`[Import] Photo record insert failed for ${uploadFile.name}:`, photoInsertError);
+                  uploadErrors++;
+                } else {
+                  mediaUploaded++;
+
+                  // Queue background AI analysis for videos
+                  if (uploadFile.type.startsWith("video/")) {
+                    await queueVideoAnalysisJob({
+                      captionId: photo.captionId,
+                      userId: user.id,
+                      tripId: trip.id,
+                      storagePath: path,
+                      fileName: uploadFile.name,
+                      mimeType: uploadFile.type,
+                      takenAt: photo.takenAt?.toISOString() ?? null,
+                      latitude: step.latitude,
+                      longitude: step.longitude,
+                      locationName: step.locationName,
+                      country: step.country,
+                    });
+                  }
+                }
              }
 
              completed++;

@@ -268,31 +268,61 @@ export type Database = {
       video_analysis_jobs: {
         Row: {
           caption_id: string
+          country: string | null
           created_at: string
           error: string | null
+          file_name: string | null
           id: string
+          itinerary_context: Json | null
+          latitude: number | null
+          location_name: string | null
+          longitude: number | null
+          mime_type: string | null
           result: Json | null
           status: string
+          storage_path: string | null
+          taken_at: string | null
+          trip_id: string | null
           updated_at: string
           user_id: string
         }
         Insert: {
           caption_id: string
+          country?: string | null
           created_at?: string
           error?: string | null
+          file_name?: string | null
           id?: string
+          itinerary_context?: Json | null
+          latitude?: number | null
+          location_name?: string | null
+          longitude?: number | null
+          mime_type?: string | null
           result?: Json | null
           status?: string
+          storage_path?: string | null
+          taken_at?: string | null
+          trip_id?: string | null
           updated_at?: string
           user_id: string
         }
         Update: {
           caption_id?: string
+          country?: string | null
           created_at?: string
           error?: string | null
+          file_name?: string | null
           id?: string
+          itinerary_context?: Json | null
+          latitude?: number | null
+          location_name?: string | null
+          longitude?: number | null
+          mime_type?: string | null
           result?: Json | null
           status?: string
+          storage_path?: string | null
+          taken_at?: string | null
+          trip_id?: string | null
           updated_at?: string
           user_id?: string
         }
