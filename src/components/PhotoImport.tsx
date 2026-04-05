@@ -745,8 +745,7 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
                         <>
                           <div className="flex flex-wrap items-center gap-2">
                             <MapPin className="h-4 w-4 text-primary" />
-                            <span className="font-medium text-foreground">{step.locationName}</span>
-                            <span className="text-sm text-muted-foreground">{step.country}</span>
+                            <span className="text-lg font-medium text-foreground">{step.locationName}</span>
                             <span className="rounded-full bg-secondary px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-secondary-foreground">
                               {step.confidence} confidence
                             </span>
