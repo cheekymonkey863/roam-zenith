@@ -745,8 +745,7 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
                         <>
                           <div className="flex flex-wrap items-center gap-2">
                             <MapPin className="h-4 w-4 text-primary" />
-                            <span className="font-medium text-foreground">{step.locationName}</span>
-                            <span className="text-sm text-muted-foreground">{step.country}</span>
+                            <span className="text-lg font-medium text-foreground">{step.locationName}</span>
                             <span className="rounded-full bg-secondary px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-secondary-foreground">
                               {step.confidence} confidence
                             </span>
@@ -779,14 +778,16 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
                       />
 
                       {step.photos.length > 0 && (
-                        <div className="grid gap-1">
-                          {step.photos.map((photo, index) => (
-                            <p key={photo.captionId} className="text-[11px] leading-relaxed text-muted-foreground">
-                              <span className="font-medium text-foreground">
-                                {photo.file.type.startsWith("video/") ? `Video ${index + 1}:` : `Image ${index + 1}:`}
-                              </span>{" "}
-                              {photo.caption}
-                            </p>
+                        <div className="grid gap-1.5">
+                          {step.photos
+                            .filter((photo) => photo.caption && !/^(Photo|Video) (at|from) /i.test(photo.caption))
+                            .map((photo) => (
+                            <div key={photo.captionId} className="flex flex-col gap-0.5">
+                              <p className="text-xs leading-relaxed text-foreground">{photo.caption}</p>
+                              {photo.essence && (
+                                <p className="text-[11px] italic leading-relaxed text-muted-foreground">&ldquo;{photo.essence}&rdquo;</p>
+                              )}
+                            </div>
                           ))}
                         </div>
                       )}
