@@ -223,29 +223,30 @@ Deno.serve(async (req) => {
         text: `You are a world-class travel writer and expert metadata tagger.
 You are provided with groups of travel media (photos and video frames), each with extracted metadata.
 
+CRITICAL RULES — GPS IS A HINT, NOT THE TRUTH:
+1. The "Reverse-geocoded location" is an automated coordinate lookup. IT IS OFTEN WRONG (e.g., calling a pizza shop a nearby monument or office building).
+2. TRUST YOUR EYES. If the GPS says "Lothian House" but you see Calton Hill, the venue IS "Calton Hill".
+3. If you see people eating pizza and the coordinates are near "Civerinos", the venue IS "Civerinos".
+4. If you see a pub stage with a band and the coordinates are near "Whistlebinkies", the venue IS "Whistlebinkies".
+5. If you can read a sign, logo, or branding in the image, use that EXACT name.
+6. ONLY if the visual evidence gives no clue should you fall back to the reverse-geocoded name.
+
 YOUR APPROACH:
-1. Analyze the visual elements in each image/frame (lighting, scenery, objects, movement, signage, architecture).
-2. Synthesize the provided metadata (coordinates, timestamps, reverse-geocoded location) with visual evidence to identify the EXACT venue or landmark.
+1. Analyze the visual elements in each image/frame (lighting, scenery, objects, signage, architecture, food, drinks).
+2. Cross-reference with coordinates and nearby venue data to identify the EXACT venue or landmark.
 3. Describe ONLY what is literally, visually present. NEVER speculate or invent narratives.
 
 RULES FOR EACH GROUP:
-- "locationName": Be as specific as possible. Use the venue/landmark/POI name visible in signage or identifiable from architecture + coordinates. Example: "Ibrox Stadium" not "Glasgow", "Pizza Paradise" not "restaurant".
-- "summary": What is consistently, literally visible across the group. Max 18 words. Example: "Football match at Ibrox Stadium" or "Band performing live on stage at a music venue".
-- "eventDescription": One factual sentence synthesizing the location metadata and visual evidence. No narratives.
+- "locationName": Use the specific venue/landmark/POI name. Example: "Ibrox Stadium" not "Glasgow", "Civerinos" not "restaurant", "Calton Hill" not "City of Edinburgh".
+- "summary": What is consistently, literally visible across the group. Max 18 words.
+- "eventDescription": One factual sentence synthesizing the location and visual evidence. No narratives.
 - "photoCaptions": One entry per media item using the exact "captionId".
 
 CAPTION RULES:
 - "caption": Describe ONLY what is literally visible in that specific frame. Max 14 words.
-- "sceneDescription": One sentence of what is literally visible. No before/after speculation.
+- "sceneDescription": One rich sensory sentence — capture lighting, weather, atmosphere, sounds implied by the scene.
 - "richTags": 3-8 lowercase tags about visible content (place, activity, scenery, objects, weather, architecture).
-- If multiple videos/frames show the same scene (e.g. a band performing), use CONSISTENT descriptions — do NOT invent different activities for each.
-- For video frames without an image: caption based on filename, timestamp context, and the other media in the group.
-
-QUALITY EXAMPLES:
-Good caption: "Band performing on stage with blue lighting and crowd watching"
-Bad caption: "Navigating through the city of Glasgow at night"
-Good eventDescription: "Live music performance at King Tut's Wah Wah Hut"
-Bad eventDescription: "An evening of cultural exploration in Scotland's largest city"
+- If multiple media show the same scene, use CONSISTENT descriptions.
 
 NEVER mention GPS metadata or coordinates in outputs. NEVER identify people by name.`,
       },
