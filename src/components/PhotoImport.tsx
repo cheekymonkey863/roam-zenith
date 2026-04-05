@@ -524,6 +524,32 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
             taken_at: photo.takenAt?.toISOString(),
             exif_data: exifData,
           });
+
+          // Queue background AI analysis for videos
+          if (uploadFile.type.startsWith("video/")) {
+            await queueVideoAnalysisJob({
+              captionId: photo.captionId,
+              userId: user.id,
+              tripId,
+              storagePath: path,
+              fileName: uploadFile.name,
+              mimeType: uploadFile.type,
+              takenAt: photo.takenAt?.toISOString() ?? null,
+              latitude: step.latitude,
+              longitude: step.longitude,
+              locationName: step.locationName,
+              country: step.country,
+              itinerarySteps: existingSteps?.map(s => ({
+                location_name: s.location_name,
+                country: s.country,
+                latitude: s.latitude,
+                longitude: s.longitude,
+                recorded_at: s.recorded_at,
+                event_type: s.event_type,
+                description: s.description,
+              })),
+            });
+          }
         }
 
         completed++;
