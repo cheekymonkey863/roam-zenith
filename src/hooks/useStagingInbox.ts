@@ -1,0 +1,277 @@
+import { useCallback, useEffect, useState } from "react";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
+import { extractExifFromFile, type PhotoExifData } from "@/lib/exif";
+import { resumableUpload } from "@/lib/resumableUpload";
+import { toast } from "sonner";
+
+export interface StagedMediaFile {
+  id: string;
+  trip_id: string;
+  storage_path: string;
+  mime_type: string;
+  file_name: string;
+  exif_metadata: {
+    latitude?: number | null;
+    longitude?: number | null;
+    takenAt?: string | null;
+    cameraMake?: string | null;
+    cameraModel?: string | null;
+    duration?: number | null;
+  };
+  ai_processing_status: "pending" | "processing" | "complete" | "failed";
+  ai_result: {
+    caption?: string;
+    essence?: string;
+    suggestedVenueName?: string;
+    suggestedCityName?: string;
+    tags?: string[];
+    sceneDescription?: string;
+  } | null;
+  group_key: string | null;
+  created_at: string;
+  publicUrl: string;
+}
+
+export interface UploadProgress {
+  fileName: string;
+  percent: number;
+  status: "uploading" | "done" | "error";
+}
+
+export function useStagingInbox(tripId: string) {
+  const { user } = useAuth();
+  const [stagedFiles, setStagedFiles] = useState<StagedMediaFile[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [uploads, setUploads] = useState<Map<string, UploadProgress>>(new Map());
+
+  const getPublicUrl = useCallback((storagePath: string) => {
+    const { data } = supabase.storage.from("trip-photos").getPublicUrl(storagePath);
+    return data.publicUrl;
+  }, []);
+
+  // Fetch existing staged files for this trip
+  const fetchStaged = useCallback(async () => {
+    if (!user || !tripId) return;
+    const { data, error } = await supabase
+      .from("pending_media_imports")
+      .select("*")
+      .eq("trip_id", tripId)
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: true });
+
+    if (error) {
+      console.error("Failed to fetch staged files:", error);
+      return;
+    }
+
+    setStagedFiles(
+      (data || []).map((row: any) => ({
+        ...row,
+        publicUrl: getPublicUrl(row.storage_path),
+      })),
+    );
+    setLoading(false);
+  }, [user, tripId, getPublicUrl]);
+
+  useEffect(() => {
+    fetchStaged();
+  }, [fetchStaged]);
+
+  // Realtime subscription for AI status updates
+  useEffect(() => {
+    if (!user || !tripId) return;
+
+    const channel = supabase
+      .channel(`staging-${tripId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "pending_media_imports",
+          filter: `trip_id=eq.${tripId}`,
+        },
+        (payload) => {
+          if (payload.eventType === "INSERT") {
+            const row = payload.new as any;
+            setStagedFiles((prev) => {
+              if (prev.some((f) => f.id === row.id)) return prev;
+              return [...prev, { ...row, publicUrl: getPublicUrl(row.storage_path) }];
+            });
+          } else if (payload.eventType === "UPDATE") {
+            const row = payload.new as any;
+            setStagedFiles((prev) =>
+              prev.map((f) => (f.id === row.id ? { ...row, publicUrl: getPublicUrl(row.storage_path) } : f)),
+            );
+          } else if (payload.eventType === "DELETE") {
+            const row = payload.old as any;
+            setStagedFiles((prev) => prev.filter((f) => f.id !== row.id));
+          }
+        },
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user, tripId, getPublicUrl]);
+
+  // Upload files: extract EXIF → TUS upload → insert DB row
+  const stageFiles = useCallback(
+    async (files: File[]) => {
+      if (!user) return;
+
+      const mediaFiles = files.filter((f) => f.type.startsWith("image/") || f.type.startsWith("video/"));
+      if (mediaFiles.length === 0) {
+        toast.error("No image or video files found");
+        return;
+      }
+
+      toast.info(`Uploading ${mediaFiles.length} file(s) to staging...`);
+
+      const newUploads = new Map<string, UploadProgress>();
+      mediaFiles.forEach((f) => {
+        newUploads.set(f.name, { fileName: f.name, percent: 0, status: "uploading" });
+      });
+      setUploads(new Map(newUploads));
+
+      const results = await Promise.allSettled(
+        mediaFiles.map(async (file) => {
+          // 1. Extract EXIF (fast, client-side)
+          let exif: PhotoExifData;
+          try {
+            exif = await extractExifFromFile(file);
+          } catch {
+            exif = {
+              file,
+              captionId: crypto.randomUUID(),
+              latitude: null,
+              longitude: null,
+              takenAt: null,
+            };
+          }
+
+          // 2. Upload to staging path via TUS
+          const ext = file.name.split(".").pop() || (file.type.startsWith("video/") ? "mp4" : "jpg");
+          const objectName = `${user.id}/${tripId}/staging/${crypto.randomUUID()}.${ext}`;
+
+          await resumableUpload({
+            bucketName: "trip-photos",
+            objectName,
+            file: exif.uploadFile ?? file,
+            contentType: file.type || undefined,
+            onProgress: (percent) => {
+              setUploads((prev) => {
+                const next = new Map(prev);
+                next.set(file.name, { fileName: file.name, percent, status: "uploading" });
+                return next;
+              });
+            },
+          });
+
+          setUploads((prev) => {
+            const next = new Map(prev);
+            next.set(file.name, { fileName: file.name, percent: 100, status: "done" });
+            return next;
+          });
+
+          // 3. Insert DB row
+          const { error: insertError } = await supabase.from("pending_media_imports").insert({
+            trip_id: tripId,
+            user_id: user.id,
+            storage_path: objectName,
+            mime_type: file.type || "application/octet-stream",
+            file_name: file.name,
+            exif_metadata: {
+              latitude: exif.latitude,
+              longitude: exif.longitude,
+              takenAt: exif.takenAt?.toISOString() ?? null,
+              cameraMake: exif.cameraMake ?? null,
+              cameraModel: exif.cameraModel ?? null,
+              duration: exif.duration ?? null,
+            },
+          });
+
+          if (insertError) {
+            console.error("Failed to insert staged file:", insertError);
+            throw insertError;
+          }
+
+          return objectName;
+        }),
+      );
+
+      const succeeded = results.filter((r) => r.status === "fulfilled").length;
+      const failed = results.filter((r) => r.status === "rejected").length;
+
+      if (failed > 0) {
+        toast.error(`${failed} file(s) failed to upload`);
+      }
+      if (succeeded > 0) {
+        toast.success(`${succeeded} file(s) uploaded to staging`);
+      }
+
+      // Clear upload progress after a short delay
+      setTimeout(() => setUploads(new Map()), 2000);
+    },
+    [user, tripId],
+  );
+
+  // Delete staged files
+  const deleteStagedFiles = useCallback(
+    async (ids: string[]) => {
+      const toDelete = stagedFiles.filter((f) => ids.includes(f.id));
+
+      // Delete from storage
+      const storagePaths = toDelete.map((f) => f.storage_path);
+      if (storagePaths.length > 0) {
+        await supabase.storage.from("trip-photos").remove(storagePaths);
+      }
+
+      // Delete DB rows
+      const { error } = await supabase
+        .from("pending_media_imports")
+        .delete()
+        .in("id", ids);
+
+      if (error) {
+        console.error("Failed to delete staged files:", error);
+        toast.error("Failed to delete files");
+        return;
+      }
+
+      toast.success(`Removed ${ids.length} file(s)`);
+    },
+    [stagedFiles],
+  );
+
+  // Update group_key for a file
+  const updateGroupKey = useCallback(
+    async (id: string, groupKey: string | null) => {
+      await supabase
+        .from("pending_media_imports")
+        .update({ group_key: groupKey })
+        .eq("id", id);
+    },
+    [],
+  );
+
+  const isUploading = Array.from(uploads.values()).some((u) => u.status === "uploading");
+
+  const overallProgress = uploads.size > 0
+    ? Math.round(Array.from(uploads.values()).reduce((sum, u) => sum + u.percent, 0) / uploads.size)
+    : 0;
+
+  return {
+    stagedFiles,
+    loading,
+    uploads,
+    isUploading,
+    overallProgress,
+    stageFiles,
+    deleteStagedFiles,
+    updateGroupKey,
+    refetch: fetchStaged,
+  };
+}
