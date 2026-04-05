@@ -1,11 +1,13 @@
 import { useState, useCallback } from "react";
 import { Upload, MapPin, Calendar, Check, Loader2, Pencil, X, Merge } from "lucide-react";
-import {
-  type PhotoExifData,
-} from "@/lib/exif";
+import { type PhotoExifData } from "@/lib/exif";
 import { processImportedMediaFiles } from "@/lib/mediaImport";
 import { buildStoredMediaMetadata } from "@/lib/mediaMetadata";
-import { buildImportedEventDescription, buildImportedLocationSummary, buildImportedStepDetails } from "@/lib/placeClassification";
+import {
+  buildImportedEventDescription,
+  buildImportedLocationSummary,
+  buildImportedStepDetails,
+} from "@/lib/placeClassification";
 import { PendingMediaGallery } from "@/components/PendingMediaGallery";
 import { queueVideoAnalysisJob } from "@/lib/videoAnalysisQueue";
 import { supabase } from "@/integrations/supabase/client";
@@ -48,7 +50,16 @@ interface PhotoImportProps {
   tripId: string;
   onImportComplete: () => void;
   onCancel?: () => void;
-  existingSteps?: Array<{ id: string; latitude: number; longitude: number; location_name: string | null; country: string | null; recorded_at: string; event_type: string; description: string | null }>;
+  existingSteps?: Array<{
+    id: string;
+    latitude: number;
+    longitude: number;
+    location_name: string | null;
+    country: string | null;
+    recorded_at: string;
+    event_type: string;
+    description: string | null;
+  }>;
 }
 
 const LOCATION_GROUP_RADIUS_METERS = 500;
@@ -64,7 +75,7 @@ const CONFIDENCE_RANK: Record<SuggestedStep["confidence"], number> = {
 
 function sortMediaByCapturedTime<T extends PhotoExifData>(media: T[]) {
   return [...media].sort(
-    (a, b) => (a.takenAt?.getTime() ?? a.file.lastModified ?? 0) - (b.takenAt?.getTime() ?? b.file.lastModified ?? 0)
+    (a, b) => (a.takenAt?.getTime() ?? a.file.lastModified ?? 0) - (b.takenAt?.getTime() ?? b.file.lastModified ?? 0),
   );
 }
 
@@ -93,12 +104,12 @@ function buildMediaCaption(photo: PhotoExifData, locationName: string) {
 function applyMediaCaptions(
   photos: PhotoExifData[],
   photoCaptions: MediaCaptionResult[] | undefined,
-  locationName: string
+  locationName: string,
 ): PhotoExifData[] {
   const captionMap = new Map(
     (photoCaptions ?? [])
       .filter((item) => item.captionId.trim().length > 0 && item.caption.trim().length > 0)
-      .map((item) => [item.captionId, item.caption.trim()])
+      .map((item) => [item.captionId, item.caption.trim()]),
   );
 
   return sortMediaByCapturedTime(photos).map((photo) => ({
@@ -109,14 +120,20 @@ function applyMediaCaptions(
 
 function pickHigherConfidence(
   left: SuggestedStep["confidence"],
-  right: SuggestedStep["confidence"]
+  right: SuggestedStep["confidence"],
 ): SuggestedStep["confidence"] {
   return CONFIDENCE_RANK[left] >= CONFIDENCE_RANK[right] ? left : right;
 }
 
 function getRepresentativeCoordinates(photos: PhotoExifData[]) {
-  const latitudes = photos.map((p) => p.latitude).filter((v): v is number => v !== null).sort((a, b) => a - b);
-  const longitudes = photos.map((p) => p.longitude).filter((v): v is number => v !== null).sort((a, b) => a - b);
+  const latitudes = photos
+    .map((p) => p.latitude)
+    .filter((v): v is number => v !== null)
+    .sort((a, b) => a - b);
+  const longitudes = photos
+    .map((p) => p.longitude)
+    .filter((v): v is number => v !== null)
+    .sort((a, b) => a - b);
   const mid = Math.floor(latitudes.length / 2);
   return { latitude: latitudes[mid], longitude: longitudes[mid] };
 }
@@ -127,11 +144,7 @@ function getEarliestDateFromPhotos(photos: PhotoExifData[]) {
 }
 
 function isSameCalendarDay(a: Date, b: Date) {
-  return (
-    a.getFullYear() === b.getFullYear() &&
-    a.getMonth() === b.getMonth() &&
-    a.getDate() === b.getDate()
-  );
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 }
 
 function getClosestTimeDistanceMs(step: SuggestedStep, targetDate: Date) {
@@ -173,14 +186,14 @@ function prepareMediaForInference(photos: PhotoExifData[]) {
       captionId: photo.captionId,
       fileName: photo.file.name,
       takenAt: photo.takenAt?.toISOString() ?? null,
-      analysisImage: includeImage ? photo.analysisImage ?? null : null,
+      analysisImage: includeImage ? (photo.analysisImage ?? null) : null,
     };
   });
 }
 
 async function inferLocationsWithVision(
   steps: SuggestedStep[],
-  noGpsGroups: Array<{ key: string; photos: PhotoExifData[] }> = []
+  noGpsGroups: Array<{ key: string; photos: PhotoExifData[] }> = [],
 ): Promise<Map<string, HybridLocationResult>> {
   const preparedNoGpsGroups = noGpsGroups
     .map((group) => ({
@@ -193,7 +206,12 @@ async function inferLocationsWithVision(
   const gpsGroups = steps
     .map((step) => ({
       key: step.key,
-      exifLocation: { latitude: step.latitude, longitude: step.longitude, name: step.locationName, country: step.country },
+      exifLocation: {
+        latitude: step.latitude,
+        longitude: step.longitude,
+        name: step.locationName,
+        country: step.country,
+      },
       photos: prepareMediaForInference(step.photos),
     }))
     .filter((group) => group.photos.length > 0);
@@ -202,7 +220,7 @@ async function inferLocationsWithVision(
   if (allGroups.length === 0) return new Map();
 
   const batches = Array.from({ length: Math.ceil(allGroups.length / 12) }, (_, index) =>
-    allGroups.slice(index * 12, index * 12 + 12)
+    allGroups.slice(index * 12, index * 12 + 12),
   );
 
   const batchResults = await Promise.all(
@@ -214,24 +232,24 @@ async function inferLocationsWithVision(
       }
 
       return Array.isArray(data?.results) ? data.results : [];
-    })
+    }),
   );
 
   const results = batchResults.flat();
   return new Map(
     results
       .filter((result: any): result is HybridLocationResult => typeof result?.key === "string")
-      .map((result: HybridLocationResult) => [result.key, result])
+      .map((result: HybridLocationResult) => [result.key, result]),
   );
 }
 
 export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps = [] }: PhotoImportProps) {
   const { user } = useAuth();
   const [dragOver, setDragOver] = useState(false);
-   const [processing, setProcessing] = useState(false);
-   const [processingStatus, setProcessingStatus] = useState({ phase: "", current: 0, total: 0 });
-   const [importing, setImporting] = useState(false);
-   const [importProgress, setImportProgress] = useState({ current: 0, total: 0 });
+  const [processing, setProcessing] = useState(false);
+  const [processingStatus, setProcessingStatus] = useState({ phase: "", current: 0, total: 0 });
+  const [importing, setImporting] = useState(false);
+  const [importProgress, setImportProgress] = useState({ current: 0, total: 0 });
   const [suggestions, setSuggestions] = useState<SuggestedStep[]>([]);
   const [noGpsPhotos, setNoGpsPhotos] = useState<PhotoExifData[]>([]);
   const [editingKey, setEditingKey] = useState<string | null>(null);
@@ -253,7 +271,7 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
     toast.info(`Processing ${mediaFiles.length} file(s) with metadata + visual recognition...`);
 
     try {
-      const tripStepsForScaffold = existingSteps?.map(s => ({
+      const tripStepsForScaffold = existingSteps?.map((s) => ({
         location_name: s.location_name,
         country: s.country,
         latitude: s.latitude,
@@ -262,9 +280,13 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
         event_type: s.event_type,
         description: s.description,
       }));
-      const result = await processImportedMediaFiles(mediaFiles, (phase, current, total) => {
-        setProcessingStatus({ phase, current, total });
-      }, tripStepsForScaffold);
+      const result = await processImportedMediaFiles(
+        mediaFiles,
+        (phase, current, total) => {
+          setProcessingStatus({ phase, current, total });
+        },
+        tripStepsForScaffold,
+      );
       const nextSuggestions: SuggestedStep[] = result.steps.map((step) => ({ ...step }));
       setNoGpsPhotos(result.noGpsPhotos);
       setSuggestions(nextSuggestions);
@@ -274,7 +296,9 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
         issueParts.push(`${result.unresolvedCount} file${result.unresolvedCount > 1 ? "s" : ""} couldn't be located.`);
       }
 
-      toast.success(`Found ${nextSuggestions.length} location(s)` + (issueParts.length > 0 ? `. ${issueParts.join(" ")}` : ""));
+      toast.success(
+        `Found ${nextSuggestions.length} location(s)` + (issueParts.length > 0 ? `. ${issueParts.join(" ")}` : ""),
+      );
     } catch (err) {
       console.error("Photo processing error:", err);
       toast.error("Failed to process media. Please try again.");
@@ -283,17 +307,24 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
     }
   }, []);
 
-  const handleDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    setDragOver(false);
-    processFiles(Array.from(e.dataTransfer.files));
-  }, [processFiles]);
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      setDragOver(false);
+      processFiles(Array.from(e.dataTransfer.files));
+    },
+    [processFiles],
+  );
 
-  const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    processFiles(Array.from(e.target.files || []));
-  }, [processFiles]);
+  const handleFileSelect = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      processFiles(Array.from(e.target.files || []));
+    },
+    [processFiles],
+  );
 
-  const toggleStep = (key: string) => setSuggestions((prev) => prev.map((s) => (s.key === key ? { ...s, selected: !s.selected } : s)));
+  const toggleStep = (key: string) =>
+    setSuggestions((prev) => prev.map((s) => (s.key === key ? { ...s, selected: !s.selected } : s)));
 
   const updateSuggestion = (key: string, field: keyof SuggestedStep, value: string) => {
     setSuggestions((prev) =>
@@ -334,7 +365,8 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
       const mergedCountry = target.country !== "Unknown" ? target.country : source.country;
       const allPhotos = applyMediaCaptions([...target.photos, ...source.photos], undefined, mergedLocationName);
       const allDates = allPhotos.map((p) => p.takenAt).filter(Boolean) as Date[];
-      const earliestDate = allDates.length > 0 ? new Date(Math.min(...allDates.map((d) => d.getTime()))) : target.earliestDate;
+      const earliestDate =
+        allDates.length > 0 ? new Date(Math.min(...allDates.map((d) => d.getTime()))) : target.earliestDate;
 
       const mergedDetails = buildImportedStepDetails({
         locationName: mergedLocationName,
@@ -399,11 +431,13 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
         const remainingPhotos = step.photos.filter((photo) => !ids.has(photo.captionId));
         if (remainingPhotos.length === 0) return [];
 
-        return [{
-          ...step,
-          photos: sortMediaByCapturedTime(remainingPhotos),
-          earliestDate: getEarliestDateFromPhotos(remainingPhotos),
-        }];
+        return [
+          {
+            ...step,
+            photos: sortMediaByCapturedTime(remainingPhotos),
+            earliestDate: getEarliestDateFromPhotos(remainingPhotos),
+          },
+        ];
       }),
     );
 
@@ -444,14 +478,14 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
   const findMatchingExistingStep = (lat: number, lng: number) => {
     for (const existing of existingSteps) {
       const dlat = (existing.latitude - lat) * 111320;
-      const dlng = (existing.longitude - lng) * 111320 * Math.cos(lat * Math.PI / 180);
+      const dlng = (existing.longitude - lng) * 111320 * Math.cos((lat * Math.PI) / 180);
       const dist = Math.sqrt(dlat * dlat + dlng * dlng);
       if (dist < EXISTING_STEP_MATCH_RADIUS_METERS) return existing;
     }
     return null;
   };
 
-   const importSelected = async () => {
+  const importSelected = async () => {
     if (!user) return;
     setImporting(true);
     const selected = suggestions.filter((s) => s.selected);
@@ -470,20 +504,24 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
         stepId = matchingStep.id;
         matchedSteps++;
       } else {
-        const { data: stepData, error: stepError } = await supabase.from("trip_steps").insert({
-          trip_id: tripId,
-          user_id: user.id,
-          location_name: step.locationName,
-          country: step.country,
-          latitude: step.latitude,
-          longitude: step.longitude,
-          recorded_at: step.earliestDate?.toISOString() || new Date().toISOString(),
-          source: "photo_import",
-          event_type: step.eventType,
-          is_confirmed: true,
-          notes: null,
-          description: step.description || step.summary || null,
-        }).select().single();
+        const { data: stepData, error: stepError } = await supabase
+          .from("trip_steps")
+          .insert({
+            trip_id: tripId,
+            user_id: user.id,
+            location_name: step.locationName,
+            country: step.country,
+            latitude: step.latitude,
+            longitude: step.longitude,
+            recorded_at: step.earliestDate?.toISOString() || new Date().toISOString(),
+            source: "photo_import",
+            event_type: step.eventType,
+            is_confirmed: true,
+            notes: null,
+            description: step.description || step.summary || null,
+          })
+          .select()
+          .single();
 
         if (stepError || !stepData) {
           console.error("Step insert error:", stepError);
@@ -540,7 +578,7 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
               locationName: step.locationName,
               country: step.country,
               nearbyPlaces: (step as any).nearbyPlaces ?? [],
-              itinerarySteps: existingSteps?.map(s => ({
+              itinerarySteps: existingSteps?.map((s) => ({
                 location_name: s.location_name,
                 country: s.country,
                 latitude: s.latitude,
@@ -558,7 +596,10 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
       }
     }
 
-    const videoCount = suggestions.filter(s => s.selected).flatMap(s => s.photos).filter(p => p.file.type.startsWith("video/")).length;
+    const videoCount = suggestions
+      .filter((s) => s.selected)
+      .flatMap((s) => s.photos)
+      .filter((p) => p.file.type.startsWith("video/")).length;
     const parts = [];
     if (newSteps > 0) parts.push(`${newSteps} new location(s)`);
     if (matchedSteps > 0) parts.push(`${matchedSteps} matched to existing steps`);
@@ -575,7 +616,10 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
       {suggestions.length === 0 && !processing && (
         <div className="flex flex-col gap-3">
           <label
-            onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+            onDragOver={(e) => {
+              e.preventDefault();
+              setDragOver(true);
+            }}
             onDragLeave={() => setDragOver(false)}
             onDrop={handleDrop}
             className={`flex cursor-pointer flex-col items-center gap-4 rounded-2xl border-2 border-dashed p-12 transition-colors ${
@@ -585,13 +629,20 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
             <Upload className="h-10 w-10 text-muted-foreground" />
             <div className="text-center">
               <p className="font-medium text-foreground">Drop photos & videos here</p>
-              <p className="text-sm text-muted-foreground">We&apos;ll group media from the same day/time window within 500m and suggest travel stops</p>
+              <p className="text-sm text-muted-foreground">
+                We&apos;ll group media from the same day/time window within 500m and suggest travel stops
+              </p>
             </div>
             <input type="file" multiple accept="image/*,video/*" onChange={handleFileSelect} className="hidden" />
-            <span className="rounded-xl bg-primary px-4 py-2 text-sm font-medium text-primary-foreground">Browse Files</span>
+            <span className="rounded-xl bg-primary px-4 py-2 text-sm font-medium text-primary-foreground">
+              Browse Files
+            </span>
           </label>
           {onCancel && (
-            <button onClick={onCancel} className="self-end flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
+            <button
+              onClick={onCancel}
+              className="self-end flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+            >
               <X className="h-4 w-4" />
               Cancel
             </button>
@@ -632,7 +683,11 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
               </p>
               <div className="flex items-center gap-2">
                 {onCancel && (
-                  <button type="button" onClick={onCancel} className="flex items-center gap-1.5 rounded-xl bg-secondary px-4 py-2 text-sm font-medium text-secondary-foreground hover:bg-secondary/80 transition-colors">
+                  <button
+                    type="button"
+                    onClick={onCancel}
+                    className="flex items-center gap-1.5 rounded-xl bg-secondary px-4 py-2 text-sm font-medium text-secondary-foreground hover:bg-secondary/80 transition-colors"
+                  >
                     <X className="h-4 w-4" />
                     Cancel
                   </button>
@@ -692,10 +747,10 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
                     isDragTarget
                       ? "border-primary bg-primary/15 ring-2 ring-primary/30"
                       : isDragSource
-                      ? "opacity-40 border-border"
-                      : step.selected
-                      ? "border-primary bg-primary/5"
-                      : "border-border bg-card opacity-60"
+                        ? "opacity-40 border-border"
+                        : step.selected
+                          ? "border-primary bg-primary/5"
+                          : "border-border bg-card opacity-60"
                   }`}
                 >
                   <div className="flex items-start gap-4">
@@ -737,7 +792,10 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
                               className="rounded-lg border border-border bg-background px-3 py-1.5 text-sm text-foreground focus:border-primary focus:outline-none"
                             />
                           </div>
-                          <button onClick={() => setEditingKey(null)} className="self-start rounded-lg bg-secondary px-3 py-1 text-xs font-medium text-secondary-foreground hover:bg-secondary/80">
+                          <button
+                            onClick={() => setEditingKey(null)}
+                            className="self-start rounded-lg bg-secondary px-3 py-1 text-xs font-medium text-secondary-foreground hover:bg-secondary/80"
+                          >
                             Done Editing
                           </button>
                         </div>
@@ -749,7 +807,13 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
                             <span className="rounded-full bg-secondary px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-secondary-foreground">
                               {step.confidence} confidence
                             </span>
-                            <button onClick={(e) => { e.stopPropagation(); setEditingKey(step.key); }} className="rounded-lg p-1 text-muted-foreground hover:text-foreground transition-colors">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setEditingKey(step.key);
+                              }}
+                              className="rounded-lg p-1 text-muted-foreground hover:text-foreground transition-colors"
+                            >
                               <Pencil className="h-3.5 w-3.5" />
                             </button>
                           </div>
@@ -757,11 +821,17 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
                           {step.earliestDate && (
                             <div className="flex items-center gap-2 text-xs text-muted-foreground">
                               <Calendar className="h-3 w-3" />
-                              {step.earliestDate.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                              {step.earliestDate.toLocaleDateString("en-US", {
+                                month: "short",
+                                day: "numeric",
+                                year: "numeric",
+                              })}
                             </div>
                           )}
 
-                          {step.description && <p className="text-xs leading-relaxed text-foreground">{step.description}</p>}
+                          {step.description && (
+                            <p className="text-xs leading-relaxed text-foreground">{step.description}</p>
+                          )}
                           <p className="text-xs leading-relaxed text-muted-foreground">{step.summary}</p>
                         </>
                       )}
@@ -778,17 +848,26 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
                       />
 
                       {step.photos.length > 0 && (
-                        <div className="grid gap-1.5">
+                        <div className="flex flex-col gap-3 mt-4">
                           {step.photos
-                            .filter((photo) => photo.caption && !/^(Photo|Video) (at|from) /i.test(photo.caption))
+                            .filter(
+                              (photo) =>
+                                photo.caption &&
+                                !photo.caption.startsWith("Video ") &&
+                                !photo.caption.startsWith("Image "),
+                            )
                             .map((photo) => (
-                            <div key={photo.captionId} className="flex flex-col gap-0.5">
-                              <p className="text-xs leading-relaxed text-foreground">{photo.caption}</p>
-                              {photo.essence && (
-                                <p className="text-[11px] italic leading-relaxed text-muted-foreground">&ldquo;{photo.essence}&rdquo;</p>
-                              )}
-                            </div>
-                          ))}
+                              <div key={photo.captionId} className="border-l-2 border-primary/20 pl-3">
+                                <p className="text-sm font-medium text-foreground">
+                                  {photo.file.type.startsWith("video/") ? "🎥 " : "📸 "} {photo.caption}
+                                </p>
+                                {photo.essence && (
+                                  <p className="text-xs leading-relaxed text-muted-foreground italic mt-1">
+                                    "{photo.essence}"
+                                  </p>
+                                )}
+                              </div>
+                            ))}
                         </div>
                       )}
                     </div>
