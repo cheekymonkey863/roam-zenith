@@ -453,7 +453,25 @@ export async function processImportedMediaFiles(
 
   const steps = baseSteps.map((step) => {
     const inferred = inferredLocations.get(step.key);
-    const locationName = isKnownLocationName(step.locationName) ? step.locationName : inferred?.locationName || step.locationName;
+
+    // Extract AI venue/city from video insights if available
+    const aiVenue = step.photos
+      .map(p => videoInsights.get(p.captionId)?.suggestedVenueName)
+      .find(name => name && name.trim().length > 0);
+    const aiCity = step.photos
+      .map(p => videoInsights.get(p.captionId)?.suggestedCityName)
+      .find(name => name && name.trim().length > 0);
+
+    // Strict "Venue, City" format if AI provided both; otherwise fall back
+    let locationName: string;
+    if (aiVenue && aiCity) {
+      locationName = `${aiVenue}, ${aiCity}`;
+    } else if (aiVenue) {
+      locationName = aiVenue;
+    } else {
+      locationName = isKnownLocationName(step.locationName) ? step.locationName : inferred?.locationName || step.locationName;
+    }
+
     const country = step.country && step.country !== "Unknown" ? step.country : inferred?.country || step.country;
 
     const stepDetails = buildImportedStepDetails({
