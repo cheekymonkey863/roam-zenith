@@ -22,6 +22,8 @@ export interface MediaInsightResult {
   sceneDescription?: string;
   essence?: string;
   richTags?: string[];
+  suggestedVenueName?: string;
+  suggestedCityName?: string;
 }
 
 interface HybridLocationResult {
