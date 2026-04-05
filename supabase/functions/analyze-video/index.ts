@@ -259,8 +259,8 @@ function parseGeminiResult(parsed: any, captionId: string): VideoAnalysisResult 
     moodTags: Array.isArray(parsed.moodTags)
       ? parsed.moodTags.filter((t: unknown): t is string => typeof t === "string").map((t: string) => t.trim().toLowerCase())
       : [],
-    suggestedVenueName: typeof parsed.venueName === "string" ? parsed.venueName.trim() : null,
-    suggestedCityName: typeof parsed.cityName === "string" ? parsed.cityName.trim() : null,
+    suggestedVenueName: typeof parsed.suggestedVenueName === "string" ? parsed.suggestedVenueName.trim() : (typeof parsed.venueName === "string" ? parsed.venueName.trim() : null),
+    suggestedCityName: typeof parsed.suggestedCityName === "string" ? parsed.suggestedCityName.trim() : (typeof parsed.cityName === "string" ? parsed.cityName.trim() : null),
   };
 }
 
