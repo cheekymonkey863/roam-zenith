@@ -36,7 +36,7 @@ function jsonResponse(body: unknown, status = 200) {
 
 const GEMINI_MODEL = "gemini-2.5-flash";
 const RATE_LIMIT_RETRY_DELAYS_MS = [2000, 4000, 8000];
-const FILE_POLL_INTERVAL_MS = 2000;
+const FILE_POLL_INTERVAL_MS = 5000;
 const FILE_POLL_MAX_ATTEMPTS = 60;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));

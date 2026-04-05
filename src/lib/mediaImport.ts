@@ -532,6 +532,9 @@ export async function processImportedMediaFiles(
         }
         uploadsDone++;
         onProgress?.("Uploading videos", uploadsDone, allVideoMedia.length);
+
+        // Pace requests to stay under Google's 15 RPM free-tier limit
+        await sleep(2500);
       });
     }
 
