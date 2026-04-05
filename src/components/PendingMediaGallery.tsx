@@ -183,6 +183,8 @@ function PendingMediaThumbnail({
   const previewImage = photo.thumbnail || photo.analysisImage || null;
   // For images without a preview, create an object URL from the file
   const fileUrl = useObjectUrl(!isVideo && !previewImage ? (photo.uploadFile ?? photo.file) : null);
+  // For videos without a preview image, create an object URL to use with <video> poster generation
+  const videoUrl = useObjectUrl(isVideo && !previewImage ? (photo.uploadFile ?? photo.file) : null);
   const imageSrc = !isVideo ? previewImage || fileUrl : previewImage;
 
   return (
@@ -197,6 +199,14 @@ function PendingMediaThumbnail({
       {isVideo ? (
         imageSrc ? (
           <img src={imageSrc} alt={photo.caption || photo.file.name} className="h-full w-full object-cover" />
+        ) : videoUrl ? (
+          <video
+            src={`${videoUrl}#t=0.001`}
+            preload="metadata"
+            muted
+            playsInline
+            className="h-full w-full object-cover"
+          />
         ) : (
           <div className="flex h-full w-full flex-col items-center justify-center gap-1 bg-muted">
             <Film className="h-5 w-5 text-muted-foreground" />
