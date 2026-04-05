@@ -557,9 +557,11 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
       }
     }
 
+    const videoCount = suggestions.filter(s => s.selected).flatMap(s => s.photos).filter(p => p.file.type.startsWith("video/")).length;
     const parts = [];
     if (newSteps > 0) parts.push(`${newSteps} new location(s)`);
     if (matchedSteps > 0) parts.push(`${matchedSteps} matched to existing steps`);
+    if (videoCount > 0) parts.push(`${videoCount} video(s) queued for AI analysis`);
     toast.success(`Imported: ${parts.join(", ")}!`);
     setImporting(false);
     setImportProgress({ current: 0, total: 0 });
