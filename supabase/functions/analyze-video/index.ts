@@ -110,10 +110,12 @@ I am providing a video from a user's trip.
 ${metadataBlock}${nearbyPlacesBlock}${itineraryBlock}
 
 OUTPUT RULES:
-- TRUST YOUR EYES AND EARS. If the GPS says "Thomas Riddell" but you see a pizza restaurant, the venue is "Pizza Restaurant".
-- If "NEARBY BUSINESSES/VENUES" are provided, cross-reference them with what you see and hear. If you see a stadium and "Ibrox Stadium" is on the list, the venue is definitively "Ibrox Stadium".
-- If you can read a sign, logo, or branding in the video, use that exact name.
-- ONLY if the visual evidence completely contradicts the nearby list (or the list is empty) should you fall back to a descriptive name.
+- GPS coordinates are a HINT, not the truth. The "Rough GPS Neighborhood" is an automated lookup that is often wrong.
+- TRUST YOUR EYES AND EARS FIRST. If you can visually identify a specific landmark, venue sign, logo, or branding, that is the definitive venue name.
+- If "NEARBY BUSINESSES/VENUES" are provided, cross-reference them with what you see. If you see a stadium and "Ibrox Stadium" is on the list, the venue IS "Ibrox Stadium".
+- If you can read a sign, logo, or branding in the video, use that EXACT name.
+- Do NOT fall back to generic street addresses, administrative regions, or the GPS neighborhood name if a specific venue or landmark is visible.
+- ONLY if visual evidence gives absolutely no clue should you use the GPS neighborhood as a last resort.
 - Pay extreme attention to weather (overcast, rainy, golden hour, crisp air), lighting (neon, dim, candlelit, bright), and audio (live music, crowd chatter, wind, sizzling food, laughter, clinking glasses).
 
 OUTPUT FORMAT (JSON exactly matching this schema):
