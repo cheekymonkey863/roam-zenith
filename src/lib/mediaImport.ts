@@ -50,6 +50,7 @@ export interface ImportedMediaStep {
   eventType: string;
   confidence: StepConfidence;
   placeTypes?: string[];
+  nearbyPlaces?: string[];
   summary: string;
   description: string;
 }
