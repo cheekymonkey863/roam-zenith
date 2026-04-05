@@ -175,7 +175,16 @@ const TripDetail = () => {
         </div>
       </div>
 
-      
+      {pendingVideoJobs > 0 && (
+        <div className="flex items-center gap-3 rounded-xl border border-primary/20 bg-primary/5 px-4 py-3 text-sm">
+          <Loader2 className="h-4 w-4 animate-spin text-primary" />
+          <Video className="h-4 w-4 text-primary" />
+          <span className="text-foreground">
+            <strong>{pendingVideoJobs}</strong> video{pendingVideoJobs === 1 ? "" : "s"} being analyzed in the background.
+            You can safely close this page — we'll update your trip when done.
+          </span>
+        </div>
+      )}
 
       <div className="flex flex-wrap gap-3">
         <AddEventForm tripId={trip.id} onEventAdded={fetchData} />
