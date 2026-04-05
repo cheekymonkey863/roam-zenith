@@ -1118,7 +1118,7 @@ function findBestPOIFromGeocodeResults(
     .sort((a, b) => b.specificityScore - a.specificityScore || a.dist - b.dist);
 
   if (!candidates.length) return null;
-  return { name: candidates[0].label, country, locality, placeTypes: candidates[0].placeTypes };
+  return { name: candidates[0].label, country, locality, placeTypes: candidates[0].placeTypes, nearbyPlaces: [] };
 }
 
 async function reverseGeocodeWithRestApi(lat: number, lng: number): Promise<ReverseGeocodeResult | null> {
