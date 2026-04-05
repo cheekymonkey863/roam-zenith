@@ -1004,6 +1004,7 @@ export interface ReverseGeocodeResult {
   country: string;
   locality: string;
   placeTypes: string[];
+  nearbyPlaces: string[];
 }
 
 const GEOCODE_FETCH_TIMEOUT_MS = 8000;

@@ -66,8 +66,8 @@ export interface ProcessedMediaImport {
 
 export type ImportProgressCallback = (phase: string, current: number, total: number) => void;
 
-const LOCATION_GROUP_RADIUS_METERS = 500;
-const LOCATION_GROUP_MAX_GAP_HOURS = 6;
+const LOCATION_GROUP_RADIUS_METERS = 60;
+const LOCATION_GROUP_MAX_GAP_HOURS = 1.5;
 const UNGROUPED_MEDIA_MATCH_WINDOW_MS = LOCATION_GROUP_MAX_GAP_HOURS * 60 * 60 * 1000;
 const NO_GPS_CONTEXT_MATCH_WINDOW_MS = 90 * 60 * 1000;
 const REVERSE_GEOCODE_CONCURRENCY = 2;
