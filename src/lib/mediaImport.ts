@@ -400,6 +400,7 @@ export async function processImportedMediaFiles(
         eventType: stepDetails.eventType,
         confidence: "low" as const,
         placeTypes: geo.placeTypes,
+        nearbyPlaces: geo.nearbyPlaces,
         summary: buildLocationSummary(displayName, geo.country, stepDetails.eventType),
         description: buildEventDescription(displayName, geo.country, stepDetails.eventType),
       };
