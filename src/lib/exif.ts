@@ -1130,16 +1130,14 @@ async function reverseGeocodeWithRestApi(lat: number, lng: number): Promise<Reve
   if (!geoData?.results?.length) return null;
 
   const { locality, country } = extractLocalityAndCountry(geoData.results);
-  const poiMatch = findBestPOIFromGeocodeResults(geoData.results, lat, lng, locality, country);
-  if (poiMatch) {
-    console.log(`[reverse-geo] REST Geocode POI: "${poiMatch.name}" (${country}) at ${lat},${lng}`);
-    return poiMatch;
-  }
 
-  // Step 2: Google Places Nearby Search REST API for POI names
+  // Step 2: Always fetch nearby POIs for context (passed to AI later)
   const placesData = await fetchJsonWithTimeout<any>(
     `https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=${lat},${lng}&radius=${NEARBY_SEARCH_RADIUS_METERS}&type=point_of_interest&key=${GOOGLE_MAPS_API_KEY}`,
   );
+
+  const nearbyPlaces: string[] = [];
+  let bestNearbyPOI: { name: string; placeTypes: string[]; dist: number } | null = null;
 
   if (placesData?.results?.length) {
     const nearby = placesData.results
@@ -1158,22 +1156,37 @@ async function reverseGeocodeWithRestApi(lat: number, lng: number): Promise<Reve
       )
       .sort((a: any, b: any) => scoreGooglePlaceTypes(b.placeTypes) - scoreGooglePlaceTypes(a.placeTypes) || a.dist - b.dist);
 
-    if (nearby.length > 0) {
-      console.log(`[reverse-geo] REST Places: "${nearby[0].name}" (${country}) at ${lat},${lng}`);
-      return { name: nearby[0].name, country, locality, placeTypes: nearby[0].placeTypes };
+    // Collect all nearby place names for AI context
+    for (const place of nearby) {
+      nearbyPlaces.push(place.name);
     }
+
+    if (nearby.length > 0) {
+      bestNearbyPOI = nearby[0];
+    }
+  }
+
+  const poiMatch = findBestPOIFromGeocodeResults(geoData.results, lat, lng, locality, country);
+  if (poiMatch) {
+    console.log(`[reverse-geo] REST Geocode POI: "${poiMatch.name}" (${country}) at ${lat},${lng}`);
+    return { ...poiMatch, nearbyPlaces };
+  }
+
+  if (bestNearbyPOI) {
+    console.log(`[reverse-geo] REST Places: "${bestNearbyPOI.name}" (${country}) at ${lat},${lng}`);
+    return { name: bestNearbyPOI.name, country, locality, placeTypes: bestNearbyPOI.placeTypes, nearbyPlaces };
   }
 
   // Step 3: Fall back to locality
   if (locality !== "Unknown") {
     console.log(`[reverse-geo] REST locality: "${locality}" (${country}) at ${lat},${lng}`);
-    return { name: locality, country, locality, placeTypes: ["locality"] };
+    return { name: locality, country, locality, placeTypes: ["locality"], nearbyPlaces };
   }
 
   // Step 4: Use first formatted address
   if (geoData.results[0]?.formatted_address) {
     const name = geoData.results[0].formatted_address.split(",")[0].trim();
-    return { name, country, locality, placeTypes: [] };
+    return { name, country, locality, placeTypes: [], nearbyPlaces };
   }
 
   return null;
