@@ -829,10 +829,6 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
                             </div>
                           )}
 
-                          {step.description && (
-                            <p className="text-xs leading-relaxed text-foreground">{step.description}</p>
-                          )}
-                          <p className="text-xs leading-relaxed text-muted-foreground">{step.summary}</p>
                         </>
                       )}
 
