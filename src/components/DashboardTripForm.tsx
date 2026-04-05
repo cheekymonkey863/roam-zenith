@@ -7,10 +7,11 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
-import { type PhotoExifData } from "@/lib/exif";
-import { processImportedMediaFiles } from "@/lib/mediaImport";
-import { buildStoredMediaMetadata } from "@/lib/mediaMetadata";
-import { ImportPreview } from "@/components/ImportPreview";
+ import { type PhotoExifData } from "@/lib/exif";
+ import { processImportedMediaFiles } from "@/lib/mediaImport";
+ import { buildStoredMediaMetadata } from "@/lib/mediaMetadata";
+ import { queueVideoAnalysisJob } from "@/lib/videoAnalysisQueue";
+ import { ImportPreview } from "@/components/ImportPreview";
  
  type ImportMode = "none" | "photo" | "itinerary";
  
