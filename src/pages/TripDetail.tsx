@@ -6,6 +6,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useStepVisualTypes } from "@/hooks/useStepVisualTypes";
 import { useResolvedCities } from "@/hooks/useResolvedCities";
+import { supabase as supabaseClient } from "@/integrations/supabase/client";
 import { TripTimeline } from "@/components/TripTimeline";
 
 import { PhotoImport } from "@/components/PhotoImport";
@@ -40,6 +41,7 @@ const TripDetail = () => {
   const [showItineraryImport, setShowItineraryImport] = useState(false);
   const [activeStepId, setActiveStepId] = useState<string | null>(null);
   const [pendingVideoJobs, setPendingVideoJobs] = useState(0);
+  const [hasStagedFiles, setHasStagedFiles] = useState(false);
   const visualTypes = useStepVisualTypes(steps);
   const { cityCount, isResolvingCities } = useResolvedCities(steps);
   const mapRef = useRef<WorldMapHandle>(null);
@@ -68,6 +70,20 @@ const TripDetail = () => {
   useEffect(() => {
     fetchData();
     fetchPendingJobs();
+    // Check for staged files to auto-show import panel
+    if (user && id) {
+      supabaseClient
+        .from("pending_media_imports")
+        .select("id", { count: "exact", head: true })
+        .eq("trip_id", id)
+        .eq("user_id", user.id)
+        .then(({ count }) => {
+          if (count && count > 0) {
+            setHasStagedFiles(true);
+            setShowPhotoImport(true);
+          }
+        });
+    }
   }, [user, id]);
 
   // Subscribe to video analysis job updates via Realtime

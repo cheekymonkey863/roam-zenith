@@ -52,30 +52,45 @@ export type Database = {
           },
         ]
       }
-      pending_imports: {
+      pending_media_imports: {
         Row: {
+          ai_processing_status: string
+          ai_result: Json | null
           created_at: string
+          exif_metadata: Json
+          file_name: string
+          group_key: string | null
           id: string
-          import_state: Json
-          status: string
+          mime_type: string
+          storage_path: string
           trip_id: string
           updated_at: string
           user_id: string
         }
         Insert: {
+          ai_processing_status?: string
+          ai_result?: Json | null
           created_at?: string
+          exif_metadata?: Json
+          file_name: string
+          group_key?: string | null
           id?: string
-          import_state?: Json
-          status?: string
+          mime_type?: string
+          storage_path: string
           trip_id: string
           updated_at?: string
           user_id: string
         }
         Update: {
+          ai_processing_status?: string
+          ai_result?: Json | null
           created_at?: string
+          exif_metadata?: Json
+          file_name?: string
+          group_key?: string | null
           id?: string
-          import_state?: Json
-          status?: string
+          mime_type?: string
+          storage_path?: string
           trip_id?: string
           updated_at?: string
           user_id?: string
