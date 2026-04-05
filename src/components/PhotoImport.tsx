@@ -630,7 +630,7 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
             <div className="text-center">
               <p className="font-medium text-foreground">Drop photos & videos here</p>
               <p className="text-sm text-muted-foreground">
-                We&apos;ll group media from the same day/time window within 500m and suggest travel stops
+                We&apos;ll group media from the same stop within 60m and suggest travel stops
               </p>
             </div>
             <input type="file" multiple accept="image/*,video/*" onChange={handleFileSelect} className="hidden" />
