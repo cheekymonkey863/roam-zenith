@@ -7,6 +7,7 @@ import { processImportedMediaFiles } from "@/lib/mediaImport";
 import { buildStoredMediaMetadata } from "@/lib/mediaMetadata";
 import { buildImportedEventDescription, buildImportedLocationSummary, buildImportedStepDetails } from "@/lib/placeClassification";
 import { PendingMediaGallery } from "@/components/PendingMediaGallery";
+import { queueVideoAnalysisJob } from "@/lib/videoAnalysisQueue";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
