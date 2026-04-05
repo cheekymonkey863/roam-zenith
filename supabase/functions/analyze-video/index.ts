@@ -109,27 +109,22 @@ I am providing a video from a user's trip.
 
 ${metadataBlock}${nearbyPlacesBlock}${itineraryBlock}
 
-CRITICAL RULES FOR EXACT VENUE IDENTIFICATION:
-1. The "Rough GPS Neighborhood" is an automated coordinate lookup. IT IS OFTEN WRONG (e.g., calling a pizza shop a nearby monument or office).
-2. TRUST YOUR EYES AND EARS. If the GPS says "Thomas Riddell" but you see a pizza restaurant, the venue is the pizza restaurant.
-3. You have been provided a list of "NEARBY BUSINESSES/VENUES". Cross-reference what you visually see and hear with this list.
-4. If you see people eating pizza, and "Civerinos" is on the nearby list, the venue is definitively "Civerinos".
-5. If you hear a live folk band, and "Whistlebinkies" is on the list, the venue is definitively "Whistlebinkies".
-6. If you can read a sign, logo, or branding in the video, use that exact name.
-7. ONLY if the visual evidence completely contradicts the nearby list (or the list is empty) should you fall back to a descriptive name.
-
-CRITICAL RULES FOR SENSORY DETAILS:
-Pay extreme attention to the weather (overcast, rainy, golden hour, crisp air), the lighting (neon, dim, candlelit, bright), and the audio (live music, crowd chatter, wind, sizzling food, laughter, clinking glasses).
+OUTPUT RULES:
+- TRUST YOUR EYES AND EARS. If the GPS says "Thomas Riddell" but you see a pizza restaurant, the venue is "Pizza Restaurant".
+- If "NEARBY BUSINESSES/VENUES" are provided, cross-reference them with what you see and hear. If you see a stadium and "Ibrox Stadium" is on the list, the venue is definitively "Ibrox Stadium".
+- If you can read a sign, logo, or branding in the video, use that exact name.
+- ONLY if the visual evidence completely contradicts the nearby list (or the list is empty) should you fall back to a descriptive name.
+- Pay extreme attention to weather (overcast, rainy, golden hour, crisp air), lighting (neon, dim, candlelit, bright), and audio (live music, crowd chatter, wind, sizzling food, laughter, clinking glasses).
 
 OUTPUT FORMAT (JSON exactly matching this schema):
 {
-  "venueName": "The exact place name, prioritizing matches from the NEARBY BUSINESSES list (e.g., 'Civerinos', 'Whistlebinkies', 'Ibrox Stadium'). DO NOT include the city here.",
-  "cityName": "The city name ONLY (e.g., 'Edinburgh', 'Glasgow').",
-  "caption": "A 1-sentence description of the exact action happening in the video (e.g., 'Eating massive slices of pizza at 1am', 'Listening to a folk band in a packed basement pub').",
+  "suggestedVenueName": "The exact place/venue name ONLY (e.g., 'Ibrox Stadium', 'Civerinos', 'Whistlebinkies'). DO NOT include the city here.",
+  "suggestedCityName": "The city name ONLY (e.g., 'Glasgow', 'Edinburgh').",
+  "caption": "A 1-sentence description of the exact action happening in the video (e.g., 'Eating massive slices of pizza at 1am').",
   "sceneDescription": "Literal description of the visual AND audio evidence in one rich sentence.",
-  "essence": "A highly evocative, sensory 2-sentence journal entry. Capture the weather, lighting, sounds, smells, and mood of being there in this exact moment. Write in present tense. Make it beautiful and moody.",
-  "activityType": "1-3 words (e.g., 'Comfort Food', 'Live Music', 'Stadium Visit', 'City Sightseeing').",
-  "richTags": ["5-8", "lowercase", "literal", "tags", "about", "what", "is", "visible"],
+  "essence": "A highly evocative, sensory 2-sentence journal entry capturing the weather, lighting, sounds, and mood of being there in this exact moment. Write in present tense. Make it beautiful.",
+  "activityType": "1-3 words (e.g., 'Comfort Food', 'Live Music', 'Stadium Visit').",
+  "richTags": ["5-8", "lowercase", "literal", "tags"],
   "moodTags": ["3", "emotional", "atmospheric", "tags"]
 }
 
