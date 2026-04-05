@@ -15,6 +15,8 @@ interface VideoAnalysisResult {
   richTags: string[];
   activityType: string;
   moodTags: string[];
+  suggestedVenueName: string | null;
+  suggestedCityName: string | null;
 }
 
 interface ItineraryStop {
@@ -38,8 +40,8 @@ const GEMINI_MODEL = "gemini-2.5-flash";
 const RATE_LIMIT_RETRY_DELAYS_MS = [2000, 4000, 8000];
 const FILE_POLL_INTERVAL_MS = 5000;
 const FILE_POLL_MAX_ATTEMPTS = 60;
-const BATCH_SIZE = 5; // Process up to 5 jobs per invocation
-const INTER_JOB_DELAY_MS = 4000; // 4s between jobs to respect rate limits
+const BATCH_SIZE = 5;
+const INTER_JOB_DELAY_MS = 4000;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -58,6 +60,7 @@ function buildPrompt(metadata: {
   longitude: number | null;
   locationName: string | null;
   country: string | null;
+  nearbyPlaces?: string[];
   itinerarySteps?: ItineraryStop[];
 }): string {
   const metadataParts: string[] = [];
@@ -68,7 +71,7 @@ function buildPrompt(metadata: {
       timeStyle: "short",
       timeZone: "UTC",
     });
-    metadataParts.push(`Recorded on ${formatted} UTC`);
+    metadataParts.push(`Time: ${formatted} UTC`);
   }
   if (metadata.latitude != null && metadata.longitude != null) {
     metadataParts.push(
@@ -79,12 +82,17 @@ function buildPrompt(metadata: {
     const loc = metadata.country && metadata.country !== "Unknown"
       ? `${metadata.locationName}, ${metadata.country}`
       : metadata.locationName;
-    metadataParts.push(`Approximate Location: ${loc}`);
+    metadataParts.push(`Rough GPS Neighborhood: ${loc}`);
   }
 
   const metadataBlock = metadataParts.length > 0
-    ? `METADATA: ${metadataParts.join(". ")}.`
+    ? `METADATA:\n- ${metadataParts.join("\n- ")}`
     : "No metadata available.";
+
+  let nearbyPlacesBlock = "";
+  if (metadata.nearbyPlaces && metadata.nearbyPlaces.length > 0) {
+    nearbyPlacesBlock = `\n\nNEARBY BUSINESSES/VENUES AT THESE COORDINATES:\n- ${metadata.nearbyPlaces.join("\n- ")}`;
+  }
 
   let itineraryBlock = "";
   if (metadata.itinerarySteps && metadata.itinerarySteps.length > 0) {
@@ -95,32 +103,39 @@ function buildPrompt(metadata: {
       const desc = s.description ? ` — ${s.description}` : "";
       return `  ${i + 1}. ${loc}${country} (${date}, ${s.event_type})${desc}`;
     });
-    itineraryBlock = `\n\nKNOWN ITINERARY STOPS:\n${stopLines.join("\n")}\n\nIMPORTANT: If the video clearly matches one of these known stops, reference it in your caption and description.`;
+    itineraryBlock = `\n\nKNOWN TRIP ITINERARY:\n${stopLines.join("\n")}`;
   }
 
-  return `You are a world-class travel writer and expert metadata tagger.
-I am providing a video from a user's trip, along with hard EXIF metadata extracted from the file.
+  return `You are a world-class travel writer and expert video analyzer.
+I am providing a video from a user's trip.
 
-${metadataBlock}${itineraryBlock}
+${metadataBlock}${nearbyPlacesBlock}${itineraryBlock}
 
-TASKS:
-1. Watch the entire video carefully — every second matters.
-2. Listen to the full audio track — identify background noise, music, speech, nature sounds, crowd sounds, wind.
-3. Analyze visual elements: lighting, scenery, objects, movement, signage, architecture, landmarks, food, people, weather.
-4. Cross-reference what you see and hear with the provided metadata to determine the exact travel moment.
-5. Use the GPS coordinates and location name as ground truth for WHERE. Use your visual/audio analysis for WHAT is happening.
+CRITICAL RULES FOR EXACT VENUE IDENTIFICATION:
+1. The "Rough GPS Neighborhood" is an automated coordinate lookup. IT IS OFTEN WRONG (e.g., calling a pizza shop a nearby monument or office).
+2. TRUST YOUR EYES AND EARS. If the GPS says "Thomas Riddell" but you see a pizza restaurant, the venue is the pizza restaurant.
+3. You have been provided a list of "NEARBY BUSINESSES/VENUES". Cross-reference what you visually see and hear with this list.
+4. If you see people eating pizza, and "Civerinos" is on the nearby list, the venue is definitively "Civerinos".
+5. If you hear a live folk band, and "Whistlebinkies" is on the list, the venue is definitively "Whistlebinkies".
+6. If you can read a sign, logo, or branding in the video, use that exact name.
+7. ONLY if the visual evidence completely contradicts the nearby list (or the list is empty) should you fall back to a descriptive name.
 
-OUTPUT RULES:
-- Describe ONLY what is literally visible and audible. Never speculate or invent narratives.
-- The metadata location is authoritative — do not contradict it unless what you see clearly indicates otherwise.
-- "caption": A concise label (max 14 words) describing the literal content.
-- "sceneDescription": One rich sentence capturing the visual AND audio elements literally present.
-- "essence": Two to three vivid sentences capturing the atmosphere of this moment — what it felt like to be there. Reference specific visual details, sounds, and the setting from the metadata. Write in present tense.
-- "activityType": One to three words (e.g. "City Sightseeing", "Live Concert", "Street Food Dining", "Beach Walk", "Stadium Event").
-- "richTags": 3-8 lowercase tags about what is visible/audible (e.g. "gothic architecture", "christmas market", "crowd noise", "pizza").
-- "moodTags": 3 emotional/atmospheric tags derived from audio+visual (e.g. "energetic", "serene", "festive", "moody").
+CRITICAL RULES FOR SENSORY DETAILS:
+Pay extreme attention to the weather (overcast, rainy, golden hour, crisp air), the lighting (neon, dim, candlelit, bright), and the audio (live music, crowd chatter, wind, sizzling food, laughter, clinking glasses).
 
-Respond with valid JSON matching the schema exactly.`;
+OUTPUT FORMAT (JSON exactly matching this schema):
+{
+  "venueName": "The exact place name, prioritizing matches from the NEARBY BUSINESSES list (e.g., 'Civerinos', 'Whistlebinkies', 'Ibrox Stadium'). DO NOT include the city here.",
+  "cityName": "The city name ONLY (e.g., 'Edinburgh', 'Glasgow').",
+  "caption": "A 1-sentence description of the exact action happening in the video (e.g., 'Eating massive slices of pizza at 1am', 'Listening to a folk band in a packed basement pub').",
+  "sceneDescription": "Literal description of the visual AND audio evidence in one rich sentence.",
+  "essence": "A highly evocative, sensory 2-sentence journal entry. Capture the weather, lighting, sounds, smells, and mood of being there in this exact moment. Write in present tense. Make it beautiful and moody.",
+  "activityType": "1-3 words (e.g., 'Comfort Food', 'Live Music', 'Stadium Visit', 'City Sightseeing').",
+  "richTags": ["5-8", "lowercase", "literal", "tags", "about", "what", "is", "visible"],
+  "moodTags": ["3", "emotional", "atmospheric", "tags"]
+}
+
+Respond with valid JSON only. No markdown, no explanation.`;
 }
 
 // ── Gemini File API helpers ─────────────────────────────────────────
@@ -232,6 +247,27 @@ async function callGemini(apiKey: string, mediaPart: any, prompt: string) {
   throw new Error("Rate limited after all retries.");
 }
 
+// ── Parse result helper ─────────────────────────────────────────────
+
+// deno-lint-ignore no-explicit-any
+function parseGeminiResult(parsed: any, captionId: string): VideoAnalysisResult {
+  return {
+    captionId,
+    caption: typeof parsed.caption === "string" ? parsed.caption.trim() : "Video clip",
+    sceneDescription: typeof parsed.sceneDescription === "string" ? parsed.sceneDescription.trim() : "",
+    essence: typeof parsed.essence === "string" ? parsed.essence.trim() : "",
+    richTags: Array.isArray(parsed.richTags)
+      ? parsed.richTags.filter((t: unknown): t is string => typeof t === "string").map((t: string) => t.trim().toLowerCase())
+      : [],
+    activityType: typeof parsed.activityType === "string" ? parsed.activityType.trim() : "activity",
+    moodTags: Array.isArray(parsed.moodTags)
+      ? parsed.moodTags.filter((t: unknown): t is string => typeof t === "string").map((t: string) => t.trim().toLowerCase())
+      : [],
+    suggestedVenueName: typeof parsed.venueName === "string" ? parsed.venueName.trim() : null,
+    suggestedCityName: typeof parsed.cityName === "string" ? parsed.cityName.trim() : null,
+  };
+}
+
 // ── Process a single job ────────────────────────────────────────────
 
 // deno-lint-ignore no-explicit-any
@@ -274,13 +310,22 @@ async function processJob(job: any, geminiApiKey: string, supabaseUrl: string) {
       throw new Error(`Unsupported file type: ${mimeType}`);
     }
 
-    const itinerarySteps = Array.isArray(job.itinerary_context) ? job.itinerary_context : [];
+    // Extract nearbyPlaces and itinerarySteps from itinerary_context
+    const context = job.itinerary_context || {};
+    const nearbyPlaces: string[] = Array.isArray(context.nearbyPlaces) ? context.nearbyPlaces : [];
+    const itinerarySteps: ItineraryStop[] = Array.isArray(context.itinerarySteps)
+      ? context.itinerarySteps
+      : Array.isArray(context)
+        ? context  // backwards compat: old jobs stored itinerarySteps directly as array
+        : [];
+
     const prompt = buildPrompt({
       takenAt: job.taken_at,
       latitude: job.latitude,
       longitude: job.longitude,
       locationName: job.location_name,
       country: job.country,
+      nearbyPlaces,
       itinerarySteps,
     });
 
@@ -289,19 +334,7 @@ async function processJob(job: any, geminiApiKey: string, supabaseUrl: string) {
     if (!textContent) throw new Error("No content in Gemini response");
 
     const parsed = JSON.parse(textContent);
-    const result: VideoAnalysisResult = {
-      captionId: job.caption_id,
-      caption: typeof parsed.caption === "string" ? parsed.caption.trim() : "Video clip",
-      sceneDescription: typeof parsed.sceneDescription === "string" ? parsed.sceneDescription.trim() : "",
-      essence: typeof parsed.essence === "string" ? parsed.essence.trim() : "",
-      richTags: Array.isArray(parsed.richTags)
-        ? parsed.richTags.filter((t: unknown): t is string => typeof t === "string").map((t: string) => t.trim().toLowerCase())
-        : [],
-      activityType: typeof parsed.activityType === "string" ? parsed.activityType.trim() : "activity",
-      moodTags: Array.isArray(parsed.moodTags)
-        ? parsed.moodTags.filter((t: unknown): t is string => typeof t === "string").map((t: string) => t.trim().toLowerCase())
-        : [],
-    };
+    const result = parseGeminiResult(parsed, job.caption_id);
 
     console.log(`[Queue] Analysis complete for "${fileName}": ${result.caption}`);
 
@@ -330,6 +363,8 @@ async function processJob(job: any, geminiApiKey: string, supabaseUrl: string) {
           richTags: result.richTags,
           activityType: result.activityType,
           moodTags: result.moodTags,
+          suggestedVenueName: result.suggestedVenueName,
+          suggestedCityName: result.suggestedCityName,
           aiAnalyzedAt: new Date().toISOString(),
         };
 
@@ -337,6 +372,28 @@ async function processJob(job: any, geminiApiKey: string, supabaseUrl: string) {
           .from("step_photos")
           .update({ exif_data: enrichedExif })
           .eq("id", photo.id);
+
+        // If the AI suggested a better venue name, update the step's location_name
+        if (result.suggestedVenueName) {
+          const { data: stepPhotos } = await supabase
+            .from("step_photos")
+            .select("step_id")
+            .eq("id", photo.id)
+            .single();
+
+          if (stepPhotos?.step_id) {
+            const venueName = result.suggestedCityName
+              ? `${result.suggestedVenueName}, ${result.suggestedCityName}`
+              : result.suggestedVenueName;
+
+            await supabase
+              .from("trip_steps")
+              .update({ location_name: venueName })
+              .eq("id", stepPhotos.step_id);
+
+            console.log(`[Queue] Updated step ${stepPhotos.step_id} location to "${venueName}"`);
+          }
+        }
 
         console.log(`[Queue] Enriched step_photos record ${photo.id} with AI metadata.`);
       }
