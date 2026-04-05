@@ -197,33 +197,33 @@ function PendingMediaThumbnail({
       )}
     >
       {isVideo ? (
-        imageSrc ? (
-          <img src={imageSrc} alt={photo.caption || photo.file.name} className="h-full w-full object-cover" />
-        ) : videoUrl ? (
-          <video
-            src={`${videoUrl}#t=0.001`}
-            preload="metadata"
-            muted
-            playsInline
-            className="h-full w-full object-cover"
-          />
-        ) : (
-          <div className="flex h-full w-full flex-col items-center justify-center gap-1 bg-muted">
-            <Film className="h-5 w-5 text-muted-foreground" />
-            <span className="max-w-[70px] truncate text-[9px] text-muted-foreground">{photo.file.name}</span>
+        <>
+          {imageSrc ? (
+            <img src={imageSrc} alt={photo.caption || photo.file.name} className="h-full w-full object-cover" />
+          ) : videoUrl ? (
+            <video
+              src={`${videoUrl}#t=0.001`}
+              preload="metadata"
+              muted
+              playsInline
+              className="h-full w-full object-cover"
+            />
+          ) : null}
+          {/* Stylized overlay — covers black-box codec failures gracefully */}
+          <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/70 via-black/30 to-transparent" />
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-white/20 shadow-[0_0_12px_rgba(255,255,255,0.25)] backdrop-blur-md ring-1 ring-white/30">
+              <Play className="ml-0.5 h-4 w-4 text-white drop-shadow-md" fill="white" />
+            </div>
           </div>
-        )
+          <div className="pointer-events-none absolute bottom-1 right-1 flex items-center gap-0.5 rounded bg-black/60 px-1.5 py-0.5 backdrop-blur-sm">
+            <Film className="h-2.5 w-2.5 text-white/80" />
+            <span className="text-[8px] font-medium uppercase tracking-wider text-white/80">Video</span>
+          </div>
+        </>
       ) : imageSrc ? (
         <img src={imageSrc} alt={photo.caption || photo.file.name} className="h-full w-full object-cover" />
       ) : null}
-
-      {isVideo && (
-        <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-          <div className="flex h-7 w-7 items-center justify-center rounded-full bg-black/55 backdrop-blur-sm">
-            <Play className="ml-0.5 h-3.5 w-3.5 text-white" fill="white" />
-          </div>
-        </div>
-      )}
 
       {isSelectMode ? (
         <div
