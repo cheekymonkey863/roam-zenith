@@ -479,8 +479,9 @@ export async function processImportedMediaFiles(
     if (!user) {
       console.error("No authenticated user for video upload");
     } else {
-      const VIDEO_UPLOAD_CONCURRENCY = 3;
+      const VIDEO_UPLOAD_CONCURRENCY = 2;
       let uploadsDone = 0;
+      const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
       await mapWithConcurrency(allVideoMedia, VIDEO_UPLOAD_CONCURRENCY, async ({ photo, step }) => {
         try {
@@ -531,6 +532,9 @@ export async function processImportedMediaFiles(
         }
         uploadsDone++;
         onProgress?.("Uploading videos", uploadsDone, allVideoMedia.length);
+
+        // Pace requests to stay under Google's 15 RPM free-tier limit
+        await sleep(2500);
       });
     }
 
