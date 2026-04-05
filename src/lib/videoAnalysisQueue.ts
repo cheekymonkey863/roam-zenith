@@ -17,6 +17,7 @@ export async function queueVideoAnalysisJob(params: {
   longitude: number | null;
   locationName: string | null;
   country: string | null;
+  nearbyPlaces?: string[];
   itinerarySteps?: Array<{
     location_name: string | null;
     country: string | null;
@@ -46,7 +47,10 @@ export async function queueVideoAnalysisJob(params: {
       longitude: params.longitude,
       location_name: params.locationName,
       country: params.country,
-      itinerary_context: params.itinerarySteps ?? [],
+      itinerary_context: {
+        itinerarySteps: params.itinerarySteps ?? [],
+        nearbyPlaces: params.nearbyPlaces ?? [],
+      },
       status: "pending",
     })
     .select("id")

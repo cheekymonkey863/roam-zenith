@@ -539,6 +539,7 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
               longitude: step.longitude,
               locationName: step.locationName,
               country: step.country,
+              nearbyPlaces: (step as any).nearbyPlaces ?? [],
               itinerarySteps: existingSteps?.map(s => ({
                 location_name: s.location_name,
                 country: s.country,
