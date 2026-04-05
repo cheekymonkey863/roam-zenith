@@ -847,29 +847,34 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
                         onRemove={removeMediaFromSuggestion}
                       />
 
-                      {step.photos.length > 0 && (
-                        <div className="flex flex-col gap-3 mt-4">
-                          {step.photos
-                            .filter(
-                              (photo) =>
-                                photo.caption &&
-                                !photo.caption.startsWith("Video ") &&
-                                !photo.caption.startsWith("Image "),
-                            )
-                            .map((photo) => (
+                      {step.photos.length > 0 && (() => {
+                        const seenCaptions = new Set<string>();
+                        const filtered = step.photos.filter((photo) => {
+                          if (!photo.caption) return false;
+                          if (/^(Photo|Video|Image) (at|from) /i.test(photo.caption)) return false;
+                          const key = photo.caption.trim().toLowerCase();
+                          if (seenCaptions.has(key)) return false;
+                          seenCaptions.add(key);
+                          return true;
+                        });
+                        if (filtered.length === 0) return null;
+                        return (
+                          <div className="flex flex-col gap-3 mt-4">
+                            {filtered.map((photo) => (
                               <div key={photo.captionId} className="border-l-2 border-primary/20 pl-3">
                                 <p className="text-sm font-medium text-foreground">
                                   {photo.file.type.startsWith("video/") ? "🎥 " : "📸 "} {photo.caption}
                                 </p>
                                 {photo.essence && (
                                   <p className="text-xs leading-relaxed text-muted-foreground italic mt-1">
-                                    "{photo.essence}"
+                                    &ldquo;{photo.essence}&rdquo;
                                   </p>
                                 )}
                               </div>
                             ))}
-                        </div>
-                      )}
+                          </div>
+                        );
+                      })()}
                     </div>
                   </div>
                 </div>
