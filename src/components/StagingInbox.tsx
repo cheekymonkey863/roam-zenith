@@ -151,16 +151,7 @@ export function StagingInbox({
     setSelectedIds(new Set());
   };
 
-  // Hard lock: prevent tab close during import
-  useEffect(() => {
-    if (!importing) return;
-    const handler = (e: BeforeUnloadEvent) => {
-      e.preventDefault();
-      e.returnValue = "Upload in progress. If you leave, your files will not be saved.";
-    };
-    window.addEventListener("beforeunload", handler);
-    return () => window.removeEventListener("beforeunload", handler);
-  }, [importing]);
+  // No beforeunload lock — TUS uploads resume automatically on return
 
   // Report progress up to parent
   useEffect(() => {
