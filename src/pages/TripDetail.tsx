@@ -356,7 +356,11 @@ const TripDetail = () => {
       {showPhotoImport && (
         <PhotoImport
           tripId={trip.id}
-          onImportComplete={fetchData}
+          onImportComplete={() => {
+            fetchData();
+            // Auto-hide the inbox after successful import (Phase 3 hand-off)
+            setShowPhotoImport(false);
+          }}
           onCancel={() => setShowPhotoImport(false)}
           onProgressChange={setImportProgress}
           existingSteps={steps.map(s => ({ id: s.id, latitude: s.latitude, longitude: s.longitude, location_name: s.location_name, country: s.country, recorded_at: s.recorded_at, event_type: s.event_type, description: s.description }))}
