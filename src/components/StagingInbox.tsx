@@ -323,7 +323,7 @@ export function StagingInbox({
       }
 
       // 🎉 Completion toast & hand-off
-      toast.success("All media secured! AI is finishing your trip details in the background.", {
+      toast.success("All media secured! Trip details are being populated in the background.", {
         duration: 5000,
       });
       onImportComplete();
