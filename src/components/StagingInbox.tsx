@@ -218,6 +218,17 @@ export function StagingInbox({
     setSelectedIds(new Set());
   };
 
+  // Prevent accidental navigation during import
+  useEffect(() => {
+    if (!importing) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "Upload in progress. Leaving this page will cancel your import.";
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [importing]);
+
   const importSelected = async () => {
     if (!user) return;
     setImporting(true);

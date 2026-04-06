@@ -362,7 +362,19 @@ export function TripTimeline({
                 <div className="flex items-center justify-between gap-4">
                   <div>
                     <h4 className="font-display text-lg font-semibold text-foreground">
-                      {step.location_name || "Unknown Location"}
+                      {step.location_name && !step.location_name.toLowerCase().includes("unknown")
+                        ? step.location_name
+                        : step.latitude && step.longitude
+                          ? (
+                            <span className="flex items-center gap-2">
+                              <span className="text-muted-foreground">{step.latitude.toFixed(4)}°, {step.longitude.toFixed(4)}°</span>
+                              <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary animate-pulse">
+                                ✨ AI is detailing this stop…
+                              </span>
+                            </span>
+                          )
+                          : "Unknown Location"
+                      }
                     </h4>
                     {step.country && <p className="text-sm text-muted-foreground">{step.country}</p>}
                   </div>
