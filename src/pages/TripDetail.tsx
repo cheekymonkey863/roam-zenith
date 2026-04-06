@@ -315,35 +315,7 @@ const TripDetail = () => {
         </button>
       </div>
 
-      {/* Prominent import progress bar — between buttons and inbox */}
-      {importProgress.importing && (
-        <div className="flex flex-col gap-2 rounded-xl border border-primary/20 bg-primary/5 p-4">
-          <div className="flex items-center justify-between text-sm font-medium">
-            <span className="flex items-center gap-2 text-foreground">
-              <Loader2 className="h-4 w-4 animate-spin text-primary" />
-              {importProgress.phase === "sorting"
-                ? "Sorting media into trip stops…"
-                : importProgress.total > 0
-                  ? `Uploading media… (${importProgress.current} of ${importProgress.total})`
-                  : "Preparing import…"}
-            </span>
-            {importProgress.total > 0 && (
-              <span className="text-primary font-semibold">
-                {Math.round((importProgress.current / importProgress.total) * 100)}%
-              </span>
-            )}
-          </div>
-          <div className="h-3 w-full overflow-hidden rounded-full bg-secondary">
-            <div
-              className="h-full rounded-full bg-primary transition-all duration-300"
-              style={{ width: importProgress.total > 0 ? `${(importProgress.current / importProgress.total) * 100}%` : "5%" }}
-            />
-          </div>
-          <p className="text-xs text-muted-foreground">
-            Do not close this page
-          </p>
-        </div>
-      )}
+      {/* Progress is now shown inside the StagingInbox component */}
 
       {showPhotoImport && (
         <PhotoImport

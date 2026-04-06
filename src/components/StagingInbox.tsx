@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import { Check, Loader2, MapPin, Trash2, Upload, X, Film, Image as ImageIcon } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -38,7 +38,10 @@ interface StagingInboxProps {
   }>;
 }
 
-const LOCATION_GROUP_RADIUS_METERS = 60;
+// GPS-first grouping: 500m radius regardless of time
+const LOCATION_GROUP_RADIUS_METERS = 500;
+// Fallback for no-GPS files: 4-hour time gap
+const TIME_GAP_MS = 4 * 60 * 60 * 1000;
 
 function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const R = 6371000;
@@ -52,11 +55,12 @@ function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: numbe
 
 function groupLocalFiles(files: LocalStagedFile[]): StagingGroup[] {
   const groups: StagingGroup[] = [];
-  const ungrouped: LocalStagedFile[] = [];
+  const noGpsFiles: LocalStagedFile[] = [];
 
+  // First pass: group files WITH GPS by 500m radius
   for (const file of files) {
     if (file.latitude == null || file.longitude == null) {
-      ungrouped.push(file);
+      noGpsFiles.push(file);
       continue;
     }
 
@@ -83,13 +87,36 @@ function groupLocalFiles(files: LocalStagedFile[]): StagingGroup[] {
     }
   }
 
-  if (ungrouped.length > 0) {
+  // Second pass: group no-GPS files by 4-hour time gap
+  if (noGpsFiles.length > 0) {
+    const sorted = [...noGpsFiles].sort(
+      (a, b) => (a.takenAt?.getTime() ?? Infinity) - (b.takenAt?.getTime() ?? Infinity),
+    );
+
+    let currentGroup: LocalStagedFile[] = [sorted[0]];
+    for (let i = 1; i < sorted.length; i++) {
+      const prevTime = sorted[i - 1].takenAt?.getTime();
+      const currTime = sorted[i].takenAt?.getTime();
+      if (prevTime && currTime && currTime - prevTime <= TIME_GAP_MS) {
+        currentGroup.push(sorted[i]);
+      } else {
+        groups.push({
+          key: `nogps-${groups.length}`,
+          locationName: "",
+          latitude: null,
+          longitude: null,
+          files: currentGroup,
+          earliestDate: null,
+        });
+        currentGroup = [sorted[i]];
+      }
+    }
     groups.push({
-      key: "ungrouped",
+      key: `nogps-${groups.length}`,
       locationName: "",
       latitude: null,
       longitude: null,
-      files: ungrouped,
+      files: currentGroup,
       earliestDate: null,
     });
   }
@@ -220,7 +247,7 @@ export function StagingInbox({
     setSelectedIds(new Set());
   };
 
-  // Prevent accidental navigation during import
+  // Hard lock: prevent tab close during import
   useEffect(() => {
     if (!importing) return;
     const handler = (e: BeforeUnloadEvent) => {
@@ -299,7 +326,6 @@ export function StagingInbox({
 
       // ── STEP B: Sort into trip stops ──
       setImportProgress({ current: completed, total, phase: "sorting" });
-      // Build step rows from groups (skip groups with no GPS or no successful uploads)
       const groupToUploads = new Map<string, UploadResult[]>();
       for (const ur of uploadResults) {
         const arr = groupToUploads.get(ur.groupKey) || [];
@@ -328,12 +354,10 @@ export function StagingInbox({
         if (!uploads || uploads.length === 0) continue;
         if (group.latitude == null || group.longitude == null) continue;
 
-        // Check if we match an existing step
+        // Check if we match an existing step (using same 500m radius)
         let existingStepId: string | null = null;
         for (const existing of existingSteps) {
-          const dlat = (existing.latitude - group.latitude) * 111320;
-          const dlng = (existing.longitude - group.longitude) * 111320 * Math.cos((group.latitude * Math.PI) / 180);
-          if (Math.sqrt(dlat * dlat + dlng * dlng) < 60) {
+          if (haversineDistance(existing.latitude, existing.longitude, group.latitude, group.longitude) < 500) {
             existingStepId = existing.id;
             break;
           }
@@ -471,9 +495,51 @@ export function StagingInbox({
 
   const selectedGroupCount = groups.filter((g) => groupSelection.get(g.key)).length;
   const exifPending = localFiles.some((f) => !f.exifDone);
+  const exifDoneCount = localFiles.filter((f) => f.exifDone).length;
+  const exifPercent = localFiles.length > 0 ? Math.round((exifDoneCount / localFiles.length) * 100) : 0;
+  const uploadPercent = importProgress.total > 0 ? Math.round((importProgress.current / importProgress.total) * 100) : 0;
+
+  // Determine unified progress bar state
+  const showProgressBar = exifPending || importing;
+  let progressLabel = "";
+  let progressPercent = 0;
+  let showWarning = false;
+
+  if (importing) {
+    progressLabel = importProgress.phase === "sorting"
+      ? "Sorting media into trip stops…"
+      : `Uploading & importing… (${importProgress.current} of ${importProgress.total})`;
+    progressPercent = uploadPercent;
+    showWarning = true;
+  } else if (exifPending) {
+    progressLabel = "Reading file data…";
+    progressPercent = exifPercent;
+  }
 
   return (
     <div className="flex flex-col gap-4">
+      {/* ── Unified Progress Bar ── */}
+      {showProgressBar && (
+        <div className="flex flex-col gap-2 rounded-xl border border-border bg-card p-4">
+          <div className="flex items-center justify-between text-sm font-medium">
+            <span className="flex items-center gap-2 text-foreground">
+              <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
+              {progressLabel}
+            </span>
+            <span className="text-blue-600 font-semibold">{progressPercent}%</span>
+          </div>
+          <div className="h-4 w-full overflow-hidden rounded-full bg-gray-100">
+            <div
+              className="h-full rounded-full bg-blue-600 transition-all duration-300"
+              style={{ width: `${Math.max(progressPercent, 2)}%` }}
+            />
+          </div>
+          {showWarning && (
+            <p className="text-xs text-muted-foreground">Do not close this page</p>
+          )}
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <h3 className="font-display text-lg font-semibold text-foreground">
@@ -512,30 +578,11 @@ export function StagingInbox({
           >
             {importing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
             {importing
-              ? `Importing… ${importProgress.total > 0 ? `(${Math.round((importProgress.current / importProgress.total) * 100)}%)` : ""}`
+              ? `Importing… (${uploadPercent}%)`
               : "Import Selected"}
           </button>
         </div>
       </div>
-
-      {/* EXIF reading progress */}
-      {exifPending && (
-        <div className="flex flex-col gap-1.5 rounded-xl border border-muted bg-muted/30 px-4 py-3">
-          <div className="flex items-center justify-between text-xs text-muted-foreground">
-            <span className="flex items-center gap-2">
-              <Loader2 className="h-3 w-3 animate-spin" />
-              Importing and sorting media…
-            </span>
-            <span>{localFiles.filter(f => f.exifDone).length} / {localFiles.length}</span>
-          </div>
-          <div className="h-2 w-full overflow-hidden rounded-full bg-secondary">
-            <div
-              className="h-full rounded-full bg-primary/60 transition-all duration-300"
-              style={{ width: `${(localFiles.filter(f => f.exifDone).length / localFiles.length) * 100}%` }}
-            />
-          </div>
-        </div>
-      )}
 
       {/* Groups */}
       <div className="flex flex-col gap-3">
