@@ -400,19 +400,10 @@ export function TripTimeline({
                   )}
                 </div>
 
-                {step.description && <p className="text-sm leading-relaxed text-foreground">{step.description}</p>}
+                {step.description && (
+                  <p className="text-sm leading-relaxed text-foreground/80">{step.description}</p>
+                )}
                 {step.notes && <p className="text-sm leading-relaxed text-muted-foreground">{step.notes}</p>}
-
-                {/* Essence description from media analysis */}
-                {(() => {
-                  const essences = photos
-                    .map((p) => getStoredEssence(p.exif_data))
-                    .filter((e): e is string => e !== null);
-                  const essence = essences[0];
-                  return essence && !step.description ? (
-                    <p className="text-sm leading-relaxed text-foreground/80 italic">{essence}</p>
-                  ) : null;
-                })()}
 
                 {photos.length > 0 && (
                   <div className="mt-2">
