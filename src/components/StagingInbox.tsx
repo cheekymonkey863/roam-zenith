@@ -57,17 +57,34 @@ function groupLocalFiles(files: LocalStagedFile[]): StagingGroup[] {
   const groups: StagingGroup[] = [];
   const noGpsFiles: LocalStagedFile[] = [];
 
-  // First pass: group files WITH GPS by 500m radius
-  for (const file of files) {
+  // Sort all files by time first so groups are chronological
+  const sorted = [...files].sort(
+    (a, b) => (a.takenAt?.getTime() ?? Infinity) - (b.takenAt?.getTime() ?? Infinity),
+  );
+
+  for (const file of sorted) {
     if (file.latitude == null || file.longitude == null) {
       noGpsFiles.push(file);
       continue;
     }
 
+    // Try to match an existing group: must be within 60m AND within 2h time gap
     let matched = false;
     for (const group of groups) {
       if (group.latitude != null && group.longitude != null) {
-        if (haversineDistance(file.latitude, file.longitude, group.latitude, group.longitude) <= LOCATION_GROUP_RADIUS_METERS) {
+        const dist = haversineDistance(file.latitude, file.longitude, group.latitude, group.longitude);
+        if (dist <= LOCATION_GROUP_RADIUS_METERS) {
+          // Within 60m — check time gap against closest file in group
+          const fileTime = file.takenAt?.getTime();
+          if (fileTime) {
+            const groupTimes = group.files
+              .map((f) => f.takenAt?.getTime())
+              .filter((t): t is number => t != null);
+            const closestGap = groupTimes.length > 0
+              ? Math.min(...groupTimes.map((t) => Math.abs(fileTime - t)))
+              : 0;
+            if (closestGap > TIME_GAP_MS) continue; // too far apart in time, try next group
+          }
           group.files.push(file);
           matched = true;
           break;
