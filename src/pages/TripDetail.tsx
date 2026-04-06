@@ -247,65 +247,29 @@ const TripDetail = () => {
     </>
   );
 
-  // Mobile: stacked layout with sticky map on top
-  if (isMobile) {
-    return (
-      <div className="flex flex-col gap-8 py-8">
-        {headerContent}
+  return (
+    <div className="flex flex-col gap-8 py-8">
+      {headerContent}
 
-        {steps.length > 0 && (
-          <div className="sticky top-0 z-20">
+      {steps.length > 0 ? (
+        <div className="flex flex-col">
+          {/* Sticky Top Map */}
+          <div className="sticky top-0 z-40 w-full h-[35vh] lg:h-[40vh] shadow-md">
             <WorldMap
               ref={mapRef}
               steps={steps}
               singleTrip
               visualTypes={visualTypes}
               activeStepId={activeStepId}
-              className="w-full overflow-hidden rounded-2xl shadow-card"
-              style={{ height: 250 }}
+              className="w-full h-full overflow-hidden rounded-b-2xl"
             />
           </div>
-        )}
 
-        <div className="flex flex-col gap-4">
-          <h2 className="font-display text-2xl font-semibold text-foreground">Journey Timeline</h2>
-          {steps.length === 0 ? (
-            <div className="flex flex-col items-center gap-3 rounded-2xl bg-card p-12 shadow-card text-center">
-              <Navigation className="h-8 w-8 text-muted-foreground/50" />
-              <p className="text-muted-foreground">No steps yet. Start tracking or import photos to auto-detect locations.</p>
-            </div>
-          ) : (
-            <TripTimeline steps={steps} onUpdated={fetchData} visualTypes={visualTypes} onStepInView={handleStepInView} />
-          )}
-        </div>
-      </div>
-    );
-  }
-
-  // Desktop: side-by-side layout with sticky map
-  return (
-    <div className="flex flex-col gap-8 py-8">
-      {headerContent}
-
-      {steps.length > 0 ? (
-        <div className="grid grid-cols-1 lg:grid-cols-[1fr_400px] gap-8">
-          {/* Timeline - scrollable left column */}
-          <div className="min-w-0 flex flex-col gap-4 pb-12 overflow-hidden">
-            <h2 className="font-display text-2xl font-semibold text-foreground">Journey Timeline</h2>
-            <TripTimeline steps={steps} onUpdated={fetchData} visualTypes={visualTypes} onStepInView={handleStepInView} />
-          </div>
-
-          {/* Map - sticky right column */}
-          <div className="hidden lg:block min-w-0">
-            <div className="sticky top-4" style={{ height: "calc(100vh - 2rem)" }}>
-              <WorldMap
-                ref={mapRef}
-                steps={steps}
-                singleTrip
-                visualTypes={visualTypes}
-                activeStepId={activeStepId}
-                className="w-full h-full overflow-hidden rounded-2xl shadow-card"
-              />
+          {/* Timeline below map */}
+          <div className="relative z-50 flex flex-col gap-4 px-4 py-8">
+            <h2 className="max-w-3xl mx-auto w-full font-display text-2xl font-semibold text-foreground">Journey Timeline</h2>
+            <div className="max-w-3xl mx-auto w-full">
+              <TripTimeline steps={steps} onUpdated={fetchData} visualTypes={visualTypes} onStepInView={handleStepInView} />
             </div>
           </div>
         </div>
