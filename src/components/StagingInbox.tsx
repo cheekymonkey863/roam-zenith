@@ -412,6 +412,24 @@ export function StagingInbox({
   const pendingAiCount = stagedFiles.filter((f) => f.ai_processing_status === "pending" || f.ai_processing_status === "processing").length;
   const selectedGroupCount = groups.filter((g) => groupSelection.get(g.key)).length;
 
+  // Helper: resolve display name for a group
+  const getGroupDisplayName = (group: StagingGroup) => {
+    if (group.locationName) return group.locationName;
+    // No venue yet — show date/time as placeholder
+    if (group.earliestDate) {
+      return group.earliestDate.toLocaleDateString("en-US", {
+        weekday: "short",
+        month: "short",
+        day: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+      });
+    }
+    return `${group.files.length} file${group.files.length !== 1 ? "s" : ""}`;
+  };
+
+  const isEnhancing = pendingAiCount > 0;
+
   return (
     <div className="flex flex-col gap-4">
       {/* Upload progress */}
@@ -421,7 +439,7 @@ export function StagingInbox({
             <Loader2 className="h-5 w-5 animate-spin text-primary" />
             <div className="flex-1">
               <div className="flex items-center justify-between text-sm">
-                <span className="font-medium text-foreground">Uploading to staging…</span>
+                <span className="font-medium text-foreground">Uploading…</span>
                 <span className="text-muted-foreground">{overallProgress}%</span>
               </div>
               <div className="mt-1.5 h-2 w-full overflow-hidden rounded-full bg-muted">
@@ -435,18 +453,22 @@ export function StagingInbox({
         </div>
       )}
 
+      {/* Enhancing bar */}
+      {isEnhancing && !isUploading && (
+        <div className="flex items-center gap-3 rounded-2xl bg-card p-3 shadow-card">
+          <Loader2 className="h-4 w-4 animate-spin text-primary" />
+          <span className="text-sm text-muted-foreground">Enhancing your timeline…</span>
+          <div className="ml-auto h-1.5 w-24 overflow-hidden rounded-full bg-muted">
+            <div className="h-full animate-pulse rounded-full bg-primary/60" style={{ width: "60%" }} />
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between">
-        <div>
-          <h3 className="font-display text-lg font-semibold text-foreground">
-            Staging Inbox ({stagedFiles.length} file{stagedFiles.length !== 1 ? "s" : ""})
-          </h3>
-          {pendingAiCount > 0 && (
-            <p className="text-xs text-muted-foreground">
-              {pendingAiCount} file{pendingAiCount !== 1 ? "s" : ""} awaiting AI analysis — you can close this tab safely
-            </p>
-          )}
-        </div>
+        <h3 className="font-display text-lg font-semibold text-foreground">
+          Trip Inbox ({stagedFiles.length})
+        </h3>
         <div className="flex items-center gap-2">
           {selectedIds.size > 0 && (
             <button
