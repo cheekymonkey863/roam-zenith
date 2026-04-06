@@ -22,15 +22,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    let initialised = false;
+
+    // 1. Set up listener FIRST — but don't clear loading until getSession has run
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
       setUser(session?.user ?? null);
-      setLoading(false);
+      // Only mark ready from the listener if getSession already ran
+      if (initialised) setLoading(false);
     });
 
+    // 2. Restore session from storage — this is the single source of truth on refresh
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       setUser(session?.user ?? null);
+      initialised = true;
       setLoading(false);
     });
 
