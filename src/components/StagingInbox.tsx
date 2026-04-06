@@ -233,7 +233,7 @@ export function StagingInbox({
 
   // Report progress up to parent
   useEffect(() => {
-    onProgressChange?.({ importing, current: importProgress.current, total: importProgress.total });
+    onProgressChange?.({ importing, current: importProgress.current, total: importProgress.total, phase: importProgress.phase });
   }, [importing, importProgress, onProgressChange]);
 
   const importSelected = async () => {
