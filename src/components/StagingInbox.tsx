@@ -559,7 +559,7 @@ export function StagingInbox({
                       >
                         <StagedFileThumbnail file={file} />
                         <div className="absolute top-1 right-1">
-                          <AiStatusIndicator file={file} />
+                          <UploadIndicator file={file} />
                         </div>
                         {selectedIds.has(file.id) && (
                           <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-destructive/20">
