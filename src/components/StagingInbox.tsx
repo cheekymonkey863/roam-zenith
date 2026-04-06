@@ -77,10 +77,11 @@ function parseNominatimAddress(data: any): string | null {
 /** Hook: sequentially reverse-geocode groups via Nominatim (1 req/s) */
 function useGroupLocationNames(groups: StagingGroup[]) {
   const [names, setNames] = useState<Map<string, string>>(new Map());
+  const [geocodingDone, setGeocodingDone] = useState(false);
+  const [geocodingProgress, setGeocodingProgress] = useState({ current: 0, total: 0 });
   const prevKeysRef = useRef<string>("");
 
   useEffect(() => {
-    // Build a stable key so we don't re-fetch on every render
     const coordKeys = groups
       .map((g) => `${g.key}:${g.latitude}:${g.longitude}`)
       .join("|");
@@ -90,12 +91,19 @@ function useGroupLocationNames(groups: StagingGroup[]) {
     const toResolve = groups.filter(
       (g) => g.latitude != null && g.longitude != null && !names.has(g.key),
     );
-    if (toResolve.length === 0) return;
 
+    if (toResolve.length === 0) {
+      setGeocodingDone(true);
+      return;
+    }
+
+    setGeocodingDone(false);
+    setGeocodingProgress({ current: 0, total: toResolve.length });
     let cancelled = false;
 
     (async () => {
       const batch = new Map<string, string>();
+      let done = 0;
       for (const group of toResolve) {
         if (cancelled) break;
         try {
@@ -111,22 +119,37 @@ function useGroupLocationNames(groups: StagingGroup[]) {
         } catch {
           /* skip */
         }
-        // Rate-limit: 1 request per second
-        if (!cancelled) await new Promise((r) => setTimeout(r, 1000));
+        done++;
+        if (!cancelled) {
+          setGeocodingProgress({ current: done, total: toResolve.length });
+          // Update names incrementally so curtain progress is accurate
+          if (batch.size > 0) {
+            const snapshot = new Map(batch);
+            setNames((prev) => {
+              const next = new Map(prev);
+              snapshot.forEach((v, k) => next.set(k, v));
+              return next;
+            });
+          }
+          await new Promise((r) => setTimeout(r, 1000));
+        }
       }
-      if (!cancelled && batch.size > 0) {
-        setNames((prev) => {
-          const next = new Map(prev);
-          batch.forEach((v, k) => next.set(k, v));
-          return next;
-        });
+      if (!cancelled) {
+        if (batch.size > 0) {
+          setNames((prev) => {
+            const next = new Map(prev);
+            batch.forEach((v, k) => next.set(k, v));
+            return next;
+          });
+        }
+        setGeocodingDone(true);
       }
     })();
 
     return () => { cancelled = true; };
   }, [groups]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  return names;
+  return { names, geocodingDone, geocodingProgress };
 }
 
 export function StagingInbox({
@@ -147,7 +170,7 @@ export function StagingInbox({
   const [completedGroups, setCompletedGroups] = useState<Set<string>>(new Set());
 
   const groups = useMemo(() => groupLocalFiles(localFiles), [localFiles]);
-  const resolvedNames = useGroupLocationNames(groups);
+  const { names: resolvedNames, geocodingDone, geocodingProgress } = useGroupLocationNames(groups);
 
   const [groupSelection, setGroupSelection] = useState<Map<string, boolean>>(() => {
     const map = new Map<string, boolean>();
@@ -295,7 +318,7 @@ export function StagingInbox({
           source: "photo_import",
           event_type: stepDetails.eventType,
           is_confirmed: true,
-          location_name: null,
+          location_name: resolvedNames.get(group.key) || null,
           country: null,
         });
 
@@ -389,12 +412,14 @@ export function StagingInbox({
   const exifDoneCount = localFiles.filter((f) => f.exifDone).length;
   const exifPercent = localFiles.length > 0 ? Math.round((exifDoneCount / localFiles.length) * 100) : 0;
   const uploadPercent = importProgress.total > 0 ? Math.round((importProgress.current / importProgress.total) * 100) : 0;
+  const geocodingPending = !exifPending && !geocodingDone && groups.length > 0;
+  const geocodingPercent = geocodingProgress.total > 0 ? Math.round((geocodingProgress.current / geocodingProgress.total) * 100) : 0;
 
   // Determine unified progress bar state
-  const showProgressBar = exifPending || importing;
+  const showProgressBar = exifPending || geocodingPending || importing;
   let progressLabel = "";
   let progressPercent = 0;
-  let progressColor = "bg-gray-400"; // grey for reading, blue for uploading
+  let progressColor = "bg-gray-400";
 
   if (importing) {
     progressLabel = importProgress.phase === "sorting"
@@ -406,6 +431,10 @@ export function StagingInbox({
     progressLabel = "Reading file data…";
     progressPercent = exifPercent;
     progressColor = "bg-gray-400";
+  } else if (geocodingPending) {
+    progressLabel = `Fetching location names… (${geocodingProgress.current} of ${geocodingProgress.total})`;
+    progressPercent = geocodingPercent;
+    progressColor = "bg-amber-500";
   }
 
   return (
@@ -467,7 +496,7 @@ export function StagingInbox({
           )}
           <button
             onClick={importSelected}
-            disabled={importing || selectedGroupCount === 0 || exifPending}
+            disabled={importing || selectedGroupCount === 0 || exifPending || geocodingPending}
             className="flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
           >
             {importing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
@@ -475,13 +504,15 @@ export function StagingInbox({
               ? `Importing… (${uploadPercent}%)`
               : exifPending
                 ? "Analyzing media…"
-                : "Import Selected"}
+                : geocodingPending
+                  ? "Fetching locations…"
+                  : "Import Selected"}
           </button>
         </div>
       </div>
 
-      {/* Groups */}
-      <div className="flex flex-col gap-3">
+      {/* Groups — hidden behind curtain until geocoding completes */}
+      {(geocodingDone || groups.length === 0) && <div className="flex flex-col gap-3">
         {groups.map((group) => {
           const isSelected = groupSelection.get(group.key) ?? true;
           const isCompleted = completedGroups.has(group.key);
@@ -571,7 +602,7 @@ export function StagingInbox({
             </div>
           );
         })}
-      </div>
+      </div>}
 
       {localFiles.length === 0 && (
         <div className="flex flex-col items-center gap-4 rounded-2xl border-2 border-dashed border-border p-12 text-center">
