@@ -41,6 +41,7 @@ interface PhotoImportProps {
 export function PhotoImport({ tripId, onImportComplete, onCancel, onProgressChange, existingSteps = [] }: PhotoImportProps) {
   const [dragOver, setDragOver] = useState(false);
   const [files, setFiles] = useState<LocalStagedFile[]>([]);
+  const [exifProgress, setExifProgress] = useState({ done: 0, total: 0 });
   const fileInputRef = useRef<HTMLInputElement>(null);
   // Cache of existing file fingerprints for duplicate detection
   const existingFingerprints = useRef<Set<string> | null>(null);
