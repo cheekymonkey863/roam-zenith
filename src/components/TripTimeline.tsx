@@ -369,7 +369,7 @@ export function TripTimeline({
                             <span className="flex items-center gap-2">
                               <span className="text-muted-foreground">{step.latitude.toFixed(4)}°, {step.longitude.toFixed(4)}°</span>
                               <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary animate-pulse">
-                                ✨ Populating trip details…
+                                Populating trip details…
                               </span>
                             </span>
                           )
