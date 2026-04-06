@@ -1,17 +1,42 @@
-import { useEffect, useRef, useState, useCallback, Fragment } from "react";
+import { useEffect, useRef, useState } from "react";
 import { MapPin, Image as ImageIcon, Trash2, GripVertical, CheckSquare, Square, X } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { EditStepDialog } from "@/components/EditStepDialog";
 import { StepMediaGallery } from "@/components/StepMediaGallery";
 import { toast } from "sonner";
 import { inferStepVisualType, type StepVisualType } from "@/lib/stepVisuals";
-import { getEventType } from "@/lib/eventTypes";
 
 import {
-  Plane, TrainFront, Bus, Ship, Car, Footprints, Bike, Sailboat, Anchor,
-  Hotel, Building, Home, Castle, Trees, Mountain, Tent, Palmtree, Snowflake,
-  Map as MapIcon, Camera, UtensilsCrossed, Users, Music, Theater, Sparkles, Heart, Trophy,
-  Flag, CircleDot, ArrowRightLeft,
+  Plane,
+  TrainFront,
+  Bus,
+  Ship,
+  Car,
+  Footprints,
+  Bike,
+  Sailboat,
+  Anchor,
+  Hotel,
+  Building,
+  Home,
+  Castle,
+  Trees,
+  Mountain,
+  Tent,
+  Palmtree,
+  Snowflake,
+  Map as MapIcon,
+  Camera,
+  UtensilsCrossed,
+  Users,
+  Music,
+  Theater,
+  Sparkles,
+  Heart,
+  Trophy,
+  Flag,
+  CircleDot,
+  ArrowRightLeft,
 } from "lucide-react";
 import type { Tables } from "@/integrations/supabase/types";
 
@@ -83,16 +108,13 @@ export function TripTimeline({
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const stepRefs = useRef<Map<string, HTMLDivElement>>(new Map());
 
-  // Multi-select state
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkDeleting, setBulkDeleting] = useState(false);
 
-  // Drag state
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [overIndex, setOverIndex] = useState<number | null>(null);
 
-  // Scroll-based detection
   useEffect(() => {
     if (!onStepInView || steps.length === 0) return;
 
@@ -157,11 +179,6 @@ export function TripTimeline({
       });
   }, [steps]);
 
-  const getPhotoUrl = (photo: StepPhoto) => {
-    const { data } = supabase.storage.from("trip-photos").getPublicUrl(photo.storage_path);
-    return data.publicUrl;
-  };
-
   const handleDelete = async (stepId: string) => {
     if (!confirm("Delete this activity? This cannot be undone.")) return;
     setDeletingId(stepId);
@@ -175,7 +192,6 @@ export function TripTimeline({
     setDeletingId(null);
   };
 
-  // Multi-select helpers
   const toggleSelect = (id: string) => {
     setSelectedIds((prev) => {
       const next = new Set(prev);
@@ -192,7 +208,8 @@ export function TripTimeline({
 
   const handleBulkDelete = async () => {
     if (selectedIds.size === 0) return;
-    if (!confirm(`Delete ${selectedIds.size} activit${selectedIds.size === 1 ? "y" : "ies"}? This cannot be undone.`)) return;
+    if (!confirm(`Delete ${selectedIds.size} activit${selectedIds.size === 1 ? "y" : "ies"}? This cannot be undone.`))
+      return;
     setBulkDeleting(true);
     const ids = Array.from(selectedIds);
     const { error } = await supabase.from("trip_steps").delete().in("id", ids);
@@ -206,11 +223,9 @@ export function TripTimeline({
     setBulkDeleting(false);
   };
 
-  // Drag and drop handlers
   const handleDragStart = (e: React.DragEvent, index: number) => {
     setDragIndex(index);
     e.dataTransfer.effectAllowed = "move";
-    // Make drag image semi-transparent
     if (e.currentTarget instanceof HTMLElement) {
       e.dataTransfer.setDragImage(e.currentTarget, 0, 0);
     }
@@ -229,12 +244,10 @@ export function TripTimeline({
       return;
     }
 
-    // Reorder the steps array
     const reordered = [...steps];
     const [moved] = reordered.splice(dragIndex, 1);
     reordered.splice(overIndex, 0, moved);
 
-    // Update sort_order in DB
     const updates = reordered.map((step, i) => ({
       id: step.id,
       sort_order: i + 1,
@@ -243,9 +256,8 @@ export function TripTimeline({
     setDragIndex(null);
     setOverIndex(null);
 
-    // Batch update
     const promises = updates.map((u) =>
-      supabase.from("trip_steps").update({ sort_order: u.sort_order }).eq("id", u.id)
+      supabase.from("trip_steps").update({ sort_order: u.sort_order }).eq("id", u.id),
     );
     const results = await Promise.all(promises);
     const hasError = results.some((r) => r.error);
@@ -260,7 +272,6 @@ export function TripTimeline({
 
   return (
     <div className="relative">
-      {/* Select mode toolbar */}
       {steps.length > 1 && (
         <div className="mb-4 flex items-center gap-2">
           {!selectMode ? (
@@ -268,7 +279,7 @@ export function TripTimeline({
               onClick={() => setSelectMode(true)}
               className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium text-muted-foreground hover:bg-secondary transition-colors"
             >
-              <CheckSquare className="h-3.5 w-3.5" /> Select
+              <CheckSquare className="h-3.5 w-3.5" /> Select Stops
             </button>
           ) : (
             <>
@@ -311,19 +322,25 @@ export function TripTimeline({
           const StepIcon = config.icon;
           const isSelected = selectedIds.has(step.id);
           const isDragOver = overIndex === index && dragIndex !== null && dragIndex !== index;
-          const isPopulating = step.location_name == null || step.description == null;
+
+          // Strict Populating Check: If the AI hasn't written the description yet, show the badge.
+          const isPopulating = !step.description || step.description.trim() === "";
+
           const hasCoordinates = step.latitude !== 0 && step.longitude !== 0;
-          const displayLocation = step.location_name && !step.location_name.toLowerCase().includes("unknown")
-            ? step.location_name
-            : hasCoordinates
-              ? `${step.latitude.toFixed(4)}°, ${step.longitude.toFixed(4)}°`
-              : "Unknown Location";
+          const displayLocation =
+            step.location_name && !step.location_name.toLowerCase().includes("unknown")
+              ? step.location_name
+              : hasCoordinates
+                ? `${step.latitude.toFixed(4)}°, ${step.longitude.toFixed(4)}°`
+                : "Unknown Location";
 
           return (
             <div
               key={step.id}
               data-step-id={step.id}
-              ref={(el) => { if (el) stepRefs.current.set(step.id, el); }}
+              ref={(el) => {
+                if (el) stepRefs.current.set(step.id, el);
+              }}
               draggable={!selectMode}
               onDragStart={(e) => handleDragStart(e, index)}
               onDragOver={(e) => handleDragOver(e, index)}
@@ -333,12 +350,8 @@ export function TripTimeline({
                 dragIndex === index ? "opacity-40" : ""
               } ${isDragOver ? "translate-y-1" : ""}`}
             >
-              {/* Drop indicator line */}
-              {isDragOver && (
-                <div className="absolute -top-1 left-0 right-0 h-0.5 rounded-full bg-primary z-20" />
-              )}
+              {isDragOver && <div className="absolute -top-1 left-0 right-0 h-0.5 rounded-full bg-primary z-20" />}
 
-              {/* Drag handle + select checkbox area */}
               <div className="relative z-10 flex flex-col items-center gap-1">
                 {selectMode ? (
                   <button
@@ -354,35 +367,37 @@ export function TripTimeline({
                     )}
                   </button>
                 ) : (
-                  <div className={`group relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full shadow-card ring-4 ring-background ${config.bg} cursor-grab active:cursor-grabbing`}>
+                  <div
+                    className={`group relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full shadow-card ring-4 ring-background ${config.bg} cursor-grab active:cursor-grabbing`}
+                  >
                     <StepIcon className={`h-4 w-4 ${config.text} group-hover:hidden`} />
                     <GripVertical className={`h-4 w-4 ${config.text} hidden group-hover:block`} />
                   </div>
                 )}
               </div>
 
-              <div className={`relative z-10 flex flex-1 min-w-0 flex-col gap-2 rounded-2xl bg-card p-5 shadow-card transition-all break-words ${
-                isSelected ? "ring-2 ring-primary" : ""
-              } ${selectMode ? "cursor-pointer" : ""}`}
+              <div
+                className={`relative z-10 flex flex-1 min-w-0 flex-col gap-2 rounded-2xl bg-card p-5 shadow-card transition-all break-words ${
+                  isSelected ? "ring-2 ring-primary" : ""
+                } ${selectMode ? "cursor-pointer" : ""}`}
                 onClick={selectMode ? () => toggleSelect(step.id) : undefined}
               >
-                <div className="flex items-center justify-between gap-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                   <div>
-                    <h4 className="font-display text-lg font-semibold text-foreground">
-                      {displayLocation}
-                    </h4>
+                    <h4 className="font-display text-lg font-semibold text-foreground">{displayLocation}</h4>
                     {step.country && <p className="text-sm text-muted-foreground">{step.country}</p>}
                   </div>
+
                   {!selectMode && (
                     <div className="flex flex-wrap items-center justify-end gap-2">
-                      <span className="shrink-0 rounded-full bg-secondary px-3 py-1 text-xs font-medium text-secondary-foreground">
-                        {formatStepDate(step.recorded_at)}
-                      </span>
                       {isPopulating && (
                         <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary">
                           ✨ Populating trip details...
                         </span>
                       )}
+                      <span className="shrink-0 rounded-full bg-secondary px-3 py-1 text-xs font-medium text-secondary-foreground">
+                        {formatStepDate(step.recorded_at)}
+                      </span>
                       <EditStepDialog step={step} onUpdated={onUpdated} />
                       <button
                         onClick={() => handleDelete(step.id)}
@@ -395,25 +410,25 @@ export function TripTimeline({
                   )}
                   {selectMode && (
                     <div className="flex flex-wrap items-center justify-end gap-2">
-                      <span className="shrink-0 rounded-full bg-secondary px-3 py-1 text-xs font-medium text-secondary-foreground">
-                        {formatStepDate(step.recorded_at)}
-                      </span>
                       {isPopulating && (
                         <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary">
                           ✨ Populating trip details...
                         </span>
                       )}
+                      <span className="shrink-0 rounded-full bg-secondary px-3 py-1 text-xs font-medium text-secondary-foreground">
+                        {formatStepDate(step.recorded_at)}
+                      </span>
                     </div>
                   )}
                 </div>
 
-                {step.description && (
-                  <p className="text-sm leading-relaxed text-foreground/80">{step.description}</p>
+                {step.description && !isPopulating && (
+                  <p className="text-sm leading-relaxed text-foreground/80 mt-1">{step.description}</p>
                 )}
-                {step.notes && <p className="text-sm leading-relaxed text-muted-foreground">{step.notes}</p>}
+                {step.notes && <p className="text-sm leading-relaxed text-muted-foreground mt-1">{step.notes}</p>}
 
                 {photos.length > 0 && (
-                  <div className="mt-2">
+                  <div className="mt-3">
                     <StepMediaGallery
                       photos={photos}
                       stepId={step.id}
@@ -423,13 +438,15 @@ export function TripTimeline({
                   </div>
                 )}
 
-                <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground/60">
+                <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground/60">
                   <span>Stop {index + 1}</span>
                   <span>·</span>
-                  {step.latitude !== 0 && step.longitude !== 0 && (
-                    <span>{step.latitude.toFixed(2)}°, {step.longitude.toFixed(2)}°</span>
+                  {hasCoordinates && (
+                    <span>
+                      {step.latitude.toFixed(2)}°, {step.longitude.toFixed(2)}°
+                    </span>
                   )}
-                  <span>·</span>
+                  {hasCoordinates && <span>·</span>}
                   <span className="rounded bg-secondary px-1.5 py-0.5 text-[10px]">{step.event_type}</span>
                   {photos.length > 0 && (
                     <>
