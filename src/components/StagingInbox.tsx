@@ -510,6 +510,8 @@ export function StagingInbox({
                   : "Import Selected"}
           </button>
         </div>
+        </div>
+        <p className="text-xs text-muted-foreground">Locations are preliminary. The importing process will populate accurate AI details.</p>
       </div>
 
       {/* Groups — hidden behind curtain until geocoding completes */}

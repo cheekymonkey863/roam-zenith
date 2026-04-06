@@ -391,8 +391,8 @@ const TripDetail = () => {
           tripId={trip.id}
           onImportComplete={async () => {
             await fetchData();
-            // 3-second delay so user sees the completed waterfall before unmount
             setTimeout(() => setShowPhotoImport(false), 3000);
+            setHasStagedFiles(false);
           }}
           onCancel={() => setShowPhotoImport(false)}
           onProgressChange={setImportProgress}

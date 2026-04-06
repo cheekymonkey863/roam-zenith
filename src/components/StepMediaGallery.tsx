@@ -290,10 +290,6 @@ export function StepMediaGallery({ photos, stepId, allSteps, onUpdated }: StepMe
                   setLightboxIndex(idx);
                 }
               }}
-              onContextMenu={(e) => {
-                e.preventDefault();
-                toggleSelect(photo.id);
-              }}
             >
               {isVideo ? (
                 poster ? (
@@ -312,7 +308,7 @@ export function StepMediaGallery({ photos, stepId, allSteps, onUpdated }: StepMe
               )}
 
               {/* Video play indicator */}
-              {isVideo && !isSelectMode && (
+              {isVideo && !isChecked && (
                 <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
                   <div className="flex h-7 w-7 items-center justify-center rounded-full bg-black/50 backdrop-blur-sm">
                     <Play className="h-3.5 w-3.5 text-white ml-0.5" fill="white" />
@@ -320,29 +316,20 @@ export function StepMediaGallery({ photos, stepId, allSteps, onUpdated }: StepMe
                 </div>
               )}
 
-              {/* Select checkbox overlay */}
-              {isSelectMode && (
-                <div className={`absolute top-1 left-1 flex h-5 w-5 items-center justify-center rounded-sm border-2 transition-colors ${
-                  isChecked ? "bg-primary border-primary" : "border-white/70 bg-black/30"
-                }`}>
-                  {isChecked && <Check className="h-3 w-3 text-primary-foreground" />}
-                </div>
-              )}
-
-              {/* Hover hint for long press / right click */}
-              {!isSelectMode && (
-                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors" />
-              )}
+              {/* Checkbox — visible on hover or when checked */}
+              <div
+                className={`absolute top-1 left-1 flex h-5 w-5 items-center justify-center rounded-sm border-2 transition-all ${
+                  isChecked
+                    ? "bg-primary border-primary opacity-100"
+                    : "border-white/70 bg-black/30 opacity-0 group-hover:opacity-100"
+                }`}
+                onClick={(e) => { e.stopPropagation(); toggleSelect(photo.id); }}
+              >
+                {isChecked && <Check className="h-3 w-3 text-primary-foreground" />}
+              </div>
             </div>
           );
         })}
-        {photos.length > 0 && !isSelectMode && (
-          <div className="flex h-20 items-end pb-1 pl-1">
-            <span className="text-[10px] text-muted-foreground/50 whitespace-nowrap">
-              Right-click to select
-            </span>
-          </div>
-        )}
       </div>
 
       {/* Lightbox */}
