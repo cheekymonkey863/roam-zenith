@@ -31,6 +31,10 @@ export interface StagedMediaFile {
   group_key: string | null;
   created_at: string;
   publicUrl: string;
+  /** Local object URL for instant preview before upload completes */
+  localPreviewUrl?: string;
+  /** True while the file is still uploading to storage */
+  isLocalOnly?: boolean;
 }
 
 export interface UploadProgress {
