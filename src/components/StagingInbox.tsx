@@ -25,7 +25,7 @@ interface StagingInboxProps {
   onImportComplete: () => void;
   onCancel?: () => void;
   onAddMore: () => void;
-  onProgressChange?: (progress: { importing: boolean; current: number; total: number }) => void;
+  onProgressChange?: (progress: { importing: boolean; current: number; total: number; phase: "upload" | "sorting" }) => void;
   existingSteps?: Array<{
     id: string;
     latitude: number;
@@ -175,7 +175,7 @@ export function StagingInbox({
 }: StagingInboxProps) {
   const { user } = useAuth();
   const [importing, setImporting] = useState(false);
-  const [importProgress, setImportProgress] = useState({ current: 0, total: 0 });
+  const [importProgress, setImportProgress] = useState({ current: 0, total: 0, phase: "upload" as "upload" | "sorting" });
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   const groups = useMemo(() => groupLocalFiles(localFiles), [localFiles]);
@@ -233,7 +233,7 @@ export function StagingInbox({
 
   // Report progress up to parent
   useEffect(() => {
-    onProgressChange?.({ importing, current: importProgress.current, total: importProgress.total });
+    onProgressChange?.({ importing, current: importProgress.current, total: importProgress.total, phase: importProgress.phase });
   }, [importing, importProgress, onProgressChange]);
 
   const importSelected = async () => {
@@ -244,7 +244,7 @@ export function StagingInbox({
     const allFiles = selectedGroups.flatMap((g) => g.files);
     const total = allFiles.length;
     let completed = 0;
-    setImportProgress({ current: 0, total });
+    setImportProgress({ current: 0, total, phase: "upload" });
 
     try {
       // ── STEP A: Upload all files to storage in parallel (concurrency 5) ──
@@ -284,7 +284,7 @@ export function StagingInbox({
             console.error("Upload failed for", file.fileName, err);
           }
           completed++;
-          setImportProgress({ current: completed, total });
+          setImportProgress({ current: completed, total, phase: "upload" });
         }
       }
 
@@ -297,7 +297,8 @@ export function StagingInbox({
         return;
       }
 
-      // ── STEP B: Bulk INSERT all trip_steps, then all step_photos ──
+      // ── STEP B: Sort into trip stops ──
+      setImportProgress({ current: completed, total, phase: "sorting" });
       // Build step rows from groups (skip groups with no GPS or no successful uploads)
       const groupToUploads = new Map<string, UploadResult[]>();
       for (const ur of uploadResults) {
@@ -464,7 +465,7 @@ export function StagingInbox({
       toast.error("Import failed");
     } finally {
       setImporting(false);
-      setImportProgress({ current: 0, total: 0 });
+      setImportProgress({ current: 0, total: 0, phase: "upload" });
     }
   };
 
@@ -516,6 +517,25 @@ export function StagingInbox({
           </button>
         </div>
       </div>
+
+      {/* EXIF reading progress */}
+      {exifPending && (
+        <div className="flex flex-col gap-1.5 rounded-xl border border-muted bg-muted/30 px-4 py-3">
+          <div className="flex items-center justify-between text-xs text-muted-foreground">
+            <span className="flex items-center gap-2">
+              <Loader2 className="h-3 w-3 animate-spin" />
+              Importing and sorting media…
+            </span>
+            <span>{localFiles.filter(f => f.exifDone).length} / {localFiles.length}</span>
+          </div>
+          <div className="h-2 w-full overflow-hidden rounded-full bg-secondary">
+            <div
+              className="h-full rounded-full bg-primary/60 transition-all duration-300"
+              style={{ width: `${(localFiles.filter(f => f.exifDone).length / localFiles.length) * 100}%` }}
+            />
+          </div>
+        </div>
+      )}
 
       {/* Groups */}
       <div className="flex flex-col gap-3">

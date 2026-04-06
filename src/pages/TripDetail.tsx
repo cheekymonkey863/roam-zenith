@@ -42,7 +42,7 @@ const TripDetail = () => {
   const [showItineraryImport, setShowItineraryImport] = useState(false);
   const [activeStepId, setActiveStepId] = useState<string | null>(null);
   const [pendingVideoJobs, setPendingVideoJobs] = useState(0);
-  const [importProgress, setImportProgress] = useState({ importing: false, current: 0, total: 0 });
+  const [importProgress, setImportProgress] = useState({ importing: false, current: 0, total: 0, phase: "upload" as "upload" | "sorting" });
   const [hasStagedFiles, setHasStagedFiles] = useState(false);
   const visualTypes = useStepVisualTypes(steps);
   const { cityCount, isResolvingCities } = useResolvedCities(steps);
@@ -321,9 +321,11 @@ const TripDetail = () => {
           <div className="flex items-center justify-between text-sm font-medium">
             <span className="flex items-center gap-2 text-foreground">
               <Loader2 className="h-4 w-4 animate-spin text-primary" />
-              {importProgress.total > 0
-                ? `Uploading & creating timeline… (${importProgress.current} of ${importProgress.total})`
-                : "Preparing import…"}
+              {importProgress.phase === "sorting"
+                ? "Sorting media into trip stops…"
+                : importProgress.total > 0
+                  ? `Uploading media… (${importProgress.current} of ${importProgress.total})`
+                  : "Preparing import…"}
             </span>
             {importProgress.total > 0 && (
               <span className="text-primary font-semibold">
