@@ -288,15 +288,15 @@ const TripDetail = () => {
       {headerContent}
 
       {steps.length > 0 ? (
-        <div className="flex gap-8 relative">
-          {/* Timeline - scrollable left side */}
-          <div className="flex-1 min-w-0 flex flex-col gap-4 pb-12">
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_400px] gap-8">
+          {/* Timeline - scrollable left column */}
+          <div className="min-w-0 flex flex-col gap-4 pb-12 overflow-hidden">
             <h2 className="font-display text-2xl font-semibold text-foreground">Journey Timeline</h2>
             <TripTimeline steps={steps} onUpdated={fetchData} visualTypes={visualTypes} onStepInView={handleStepInView} />
           </div>
 
-          {/* Map - sticky right side */}
-          <div className="w-[45%] shrink-0">
+          {/* Map - sticky right column */}
+          <div className="hidden lg:block min-w-0">
             <div className="sticky top-4" style={{ height: "calc(100vh - 2rem)" }}>
               <WorldMap
                 ref={mapRef}
