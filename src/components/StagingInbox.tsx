@@ -77,10 +77,11 @@ function parseNominatimAddress(data: any): string | null {
 /** Hook: sequentially reverse-geocode groups via Nominatim (1 req/s) */
 function useGroupLocationNames(groups: StagingGroup[]) {
   const [names, setNames] = useState<Map<string, string>>(new Map());
+  const [geocodingDone, setGeocodingDone] = useState(false);
+  const [geocodingProgress, setGeocodingProgress] = useState({ current: 0, total: 0 });
   const prevKeysRef = useRef<string>("");
 
   useEffect(() => {
-    // Build a stable key so we don't re-fetch on every render
     const coordKeys = groups
       .map((g) => `${g.key}:${g.latitude}:${g.longitude}`)
       .join("|");
@@ -90,12 +91,19 @@ function useGroupLocationNames(groups: StagingGroup[]) {
     const toResolve = groups.filter(
       (g) => g.latitude != null && g.longitude != null && !names.has(g.key),
     );
-    if (toResolve.length === 0) return;
 
+    if (toResolve.length === 0) {
+      setGeocodingDone(true);
+      return;
+    }
+
+    setGeocodingDone(false);
+    setGeocodingProgress({ current: 0, total: toResolve.length });
     let cancelled = false;
 
     (async () => {
       const batch = new Map<string, string>();
+      let done = 0;
       for (const group of toResolve) {
         if (cancelled) break;
         try {
@@ -111,22 +119,37 @@ function useGroupLocationNames(groups: StagingGroup[]) {
         } catch {
           /* skip */
         }
-        // Rate-limit: 1 request per second
-        if (!cancelled) await new Promise((r) => setTimeout(r, 1000));
+        done++;
+        if (!cancelled) {
+          setGeocodingProgress({ current: done, total: toResolve.length });
+          // Update names incrementally so curtain progress is accurate
+          if (batch.size > 0) {
+            const snapshot = new Map(batch);
+            setNames((prev) => {
+              const next = new Map(prev);
+              snapshot.forEach((v, k) => next.set(k, v));
+              return next;
+            });
+          }
+          await new Promise((r) => setTimeout(r, 1000));
+        }
       }
-      if (!cancelled && batch.size > 0) {
-        setNames((prev) => {
-          const next = new Map(prev);
-          batch.forEach((v, k) => next.set(k, v));
-          return next;
-        });
+      if (!cancelled) {
+        if (batch.size > 0) {
+          setNames((prev) => {
+            const next = new Map(prev);
+            batch.forEach((v, k) => next.set(k, v));
+            return next;
+          });
+        }
+        setGeocodingDone(true);
       }
     })();
 
     return () => { cancelled = true; };
   }, [groups]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  return names;
+  return { names, geocodingDone, geocodingProgress };
 }
 
 export function StagingInbox({
