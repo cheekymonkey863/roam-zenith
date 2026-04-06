@@ -22,6 +22,7 @@ interface PhotoImportProps {
   tripId: string;
   onImportComplete: () => void;
   onCancel?: () => void;
+  onProgressChange?: (progress: { importing: boolean; current: number; total: number }) => void;
   existingSteps?: Array<{
     id: string;
     latitude: number;
@@ -34,7 +35,7 @@ interface PhotoImportProps {
   }>;
 }
 
-export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps = [] }: PhotoImportProps) {
+export function PhotoImport({ tripId, onImportComplete, onCancel, onProgressChange, existingSteps = [] }: PhotoImportProps) {
   const [dragOver, setDragOver] = useState(false);
   const [files, setFiles] = useState<LocalStagedFile[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -223,6 +224,7 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
           onImportComplete={onImportComplete}
           onCancel={onCancel}
           onAddMore={() => fileInputRef.current?.click()}
+          onProgressChange={onProgressChange}
           existingSteps={existingSteps}
         />
       )}

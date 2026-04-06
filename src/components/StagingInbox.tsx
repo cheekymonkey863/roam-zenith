@@ -25,6 +25,7 @@ interface StagingInboxProps {
   onImportComplete: () => void;
   onCancel?: () => void;
   onAddMore: () => void;
+  onProgressChange?: (progress: { importing: boolean; current: number; total: number }) => void;
   existingSteps?: Array<{
     id: string;
     latitude: number;
@@ -169,6 +170,7 @@ export function StagingInbox({
   onImportComplete,
   onCancel,
   onAddMore,
+  onProgressChange,
   existingSteps = [],
 }: StagingInboxProps) {
   const { user } = useAuth();
@@ -228,6 +230,11 @@ export function StagingInbox({
     window.addEventListener("beforeunload", handler);
     return () => window.removeEventListener("beforeunload", handler);
   }, [importing]);
+
+  // Report progress up to parent
+  useEffect(() => {
+    onProgressChange?.({ importing, current: importProgress.current, total: importProgress.total });
+  }, [importing, importProgress, onProgressChange]);
 
   const importSelected = async () => {
     if (!user) return;
@@ -466,30 +473,6 @@ export function StagingInbox({
 
   return (
     <div className="flex flex-col gap-4">
-      {/* Prominent full-width progress bar — above everything */}
-      {importing && importProgress.total > 0 && (
-        <div className="flex flex-col gap-2 rounded-xl border border-primary/20 bg-primary/5 p-4">
-          <div className="flex items-center justify-between text-sm font-medium">
-            <span className="flex items-center gap-2 text-foreground">
-              <Loader2 className="h-4 w-4 animate-spin text-primary" />
-              Uploading & creating timeline…
-            </span>
-            <span className="text-primary font-semibold">
-              {Math.round((importProgress.current / importProgress.total) * 100)}%
-            </span>
-          </div>
-          <div className="h-3 w-full overflow-hidden rounded-full bg-secondary">
-            <div
-              className="h-full rounded-full bg-primary transition-all duration-300"
-              style={{ width: `${(importProgress.current / importProgress.total) * 100}%` }}
-            />
-          </div>
-          <p className="text-xs text-muted-foreground">
-            {importProgress.current} of {importProgress.total} files · Do not close this page
-          </p>
-        </div>
-      )}
-
       {/* Header */}
       <div className="flex items-center justify-between">
         <h3 className="font-display text-lg font-semibold text-foreground">
