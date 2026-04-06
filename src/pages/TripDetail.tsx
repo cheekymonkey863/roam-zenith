@@ -1,6 +1,6 @@
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { useEffect, useState, useRef, useCallback } from "react";
-import { ArrowLeft, Calendar, MapPin, Route, Navigation, Image as ImageIcon, FileText, Trash2, Loader2, Video, XCircle } from "lucide-react";
+import { ArrowLeft, Calendar, MapPin, Route, Navigation, Image as ImageIcon, FileText, Trash2, Loader2, Video, XCircle, Plus } from "lucide-react";
 import { getTripStatus, getTripStatusLabel, getTripStatusStyle, formatTripDateRange } from "@/lib/tripStatus";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -41,6 +41,7 @@ const TripDetail = () => {
   const [isOwner, setIsOwner] = useState(false);
   const [showPhotoImport, setShowPhotoImport] = useState(false);
   const [showItineraryImport, setShowItineraryImport] = useState(false);
+  const [showAddEvent, setShowAddEvent] = useState(false);
   const [activeStepId, setActiveStepId] = useState<string | null>(null);
   const [pendingVideoJobs, setPendingVideoJobs] = useState(0);
   const [importProgress, setImportProgress] = useState({ importing: false, current: 0, total: 0, phase: "upload" as "upload" | "sorting" });
@@ -334,13 +335,24 @@ const TripDetail = () => {
         </div>
       )}
 
+      {/* Button row — fixed height, never deforms */}
       <div className="flex flex-wrap gap-3">
-        <AddEventForm tripId={trip.id} onEventAdded={fetchData} />
         <button
-          onClick={() => { setShowPhotoImport(!showPhotoImport); if (!showPhotoImport) setShowItineraryImport(false); }}
+          onClick={() => { setShowAddEvent(!showAddEvent); if (!showAddEvent) { setShowPhotoImport(false); setShowItineraryImport(false); } }}
+          className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition-colors ${
+            showAddEvent
+              ? "bg-secondary/80 text-secondary-foreground ring-2 ring-primary/20"
+              : "bg-secondary text-secondary-foreground hover:bg-secondary/80"
+          }`}
+        >
+          <Plus className="h-4 w-4" />
+          Add Trip Stop
+        </button>
+        <button
+          onClick={() => { setShowPhotoImport(!showPhotoImport); if (!showPhotoImport) { setShowItineraryImport(false); setShowAddEvent(false); } }}
           className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition-colors ${
             showPhotoImport
-              ? "bg-primary text-primary-foreground hover:bg-primary/90"
+              ? "bg-secondary/80 text-secondary-foreground ring-2 ring-primary/20"
               : "bg-secondary text-secondary-foreground hover:bg-secondary/80"
           }`}
         >
@@ -348,10 +360,10 @@ const TripDetail = () => {
           Add from Photo / Video
         </button>
         <button
-          onClick={() => { setShowItineraryImport(!showItineraryImport); if (!showItineraryImport) setShowPhotoImport(false); }}
+          onClick={() => { setShowItineraryImport(!showItineraryImport); if (!showItineraryImport) { setShowPhotoImport(false); setShowAddEvent(false); } }}
           className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition-colors ${
             showItineraryImport
-              ? "bg-primary text-primary-foreground hover:bg-primary/90"
+              ? "bg-secondary/80 text-secondary-foreground ring-2 ring-primary/20"
               : "bg-secondary text-secondary-foreground hover:bg-secondary/80"
           }`}
         >
@@ -369,14 +381,16 @@ const TripDetail = () => {
         )}
       </div>
 
-      {/* Progress is now shown inside the StagingInbox component */}
+      {/* Forms render BELOW the button row */}
+      {showAddEvent && (
+        <AddEventForm tripId={trip.id} onEventAdded={() => { fetchData(); setShowAddEvent(false); }} isOpen onClose={() => setShowAddEvent(false)} />
+      )}
 
       {showPhotoImport && (
         <PhotoImport
           tripId={trip.id}
           onImportComplete={async () => {
             await fetchData();
-            // Auto-hide the inbox after successful import (Phase 3 hand-off)
             setShowPhotoImport(false);
           }}
           onCancel={() => setShowPhotoImport(false)}
