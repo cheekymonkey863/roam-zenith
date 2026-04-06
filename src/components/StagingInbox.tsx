@@ -151,7 +151,16 @@ export function StagingInbox({
     setSelectedIds(new Set());
   };
 
-  // No beforeunload lock — TUS uploads resume automatically on return
+  // Block navigation during import
+  useEffect(() => {
+    if (!importing) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [importing]);
 
   // Report progress up to parent
   useEffect(() => {
@@ -175,7 +184,46 @@ export function StagingInbox({
       for (const group of selectedGroups) {
         const groupFiles = group.files;
 
-        // ── 1. Create the trip_step FIRST so workers can reference stepId ──
+        // ── 1. Upload all files in this group ──
+        const CONCURRENCY = 5;
+        let nextIdx = 0;
+        const queue = [...groupFiles];
+        const uploadedFiles: Array<{ file: LocalStagedFile; objectName: string }> = [];
+
+        async function uploadWorker() {
+          while (nextIdx < queue.length) {
+            const idx = nextIdx++;
+            const file = queue[idx];
+            try {
+              const ext = file.fileName.split(".").pop() || "jpg";
+              const objectName = `${user!.id}/${tripId}/staging/${crypto.randomUUID()}.${ext}`;
+
+              await resumableUpload({
+                bucketName: "trip-photos",
+                objectName,
+                file: file.file,
+                contentType: file.mimeType || undefined,
+              });
+
+              uploadedFiles.push({ file, objectName });
+            } catch (err) {
+              console.error("Upload failed for", file.fileName, err);
+            }
+            completed++;
+            setImportProgress({ current: completed, total, phase: "upload" });
+          }
+        }
+
+        await Promise.all(
+          Array.from({ length: Math.min(CONCURRENCY, queue.length) }, () => uploadWorker()),
+        );
+
+        if (uploadedFiles.length === 0) {
+          setCompletedGroups((prev) => new Set(prev).add(group.key));
+          continue;
+        }
+
+        // ── 2. Create trip_step for this group ──
         const coords = getGroupRepresentativeCoordinates(group)
           ?? (existingSteps[0]
             ? { latitude: existingSteps[0].latitude, longitude: existingSteps[0].longitude }
@@ -209,86 +257,58 @@ export function StagingInbox({
 
         allNewStepIds.push(stepId);
 
-        // ── 2. Upload workers — each inserts step_photos immediately on success ──
-        const CONCURRENCY = 5;
-        let nextIdx = 0;
-        const queue = [...groupFiles];
+        // ── 3. Batch-insert step_photos ──
+        const photoRows = uploadedFiles.map(({ file, objectName }) => ({
+          step_id: stepId,
+          user_id: user.id,
+          storage_path: objectName,
+          file_name: file.fileName,
+          latitude: file.latitude ?? null,
+          longitude: file.longitude ?? null,
+          taken_at: file.takenAt?.toISOString() ?? null,
+          exif_data: {
+            latitude: file.latitude,
+            longitude: file.longitude,
+            cameraMake: file.cameraMake,
+            cameraModel: file.cameraModel,
+          },
+        }));
 
-        async function uploadWorker() {
-          while (nextIdx < queue.length) {
-            const idx = nextIdx++;
-            const file = queue[idx];
-            try {
-              const ext = file.fileName.split(".").pop() || "jpg";
-              const objectName = `${user!.id}/${tripId}/staging/${crypto.randomUUID()}.${ext}`;
+        const { error: photosError } = await supabase.from("step_photos").insert(photoRows);
+        if (photosError) {
+          console.error("Batch photo insert failed:", photosError);
+        }
 
-              await resumableUpload({
-                bucketName: "trip-photos",
-                objectName,
-                file: file.file,
-                contentType: file.mimeType || undefined,
-              });
-
-              // Insert step_photos row immediately
-              const { error: photoError } = await supabase.from("step_photos").insert({
-                step_id: stepId,
-                user_id: user!.id,
-                storage_path: objectName,
-                file_name: file.fileName,
-                latitude: file.latitude ?? null,
-                longitude: file.longitude ?? null,
-                taken_at: file.takenAt?.toISOString() ?? null,
-                exif_data: {
-                  latitude: file.latitude,
-                  longitude: file.longitude,
-                  cameraMake: file.cameraMake,
-                  cameraModel: file.cameraModel,
-                },
-              });
-
-              if (photoError) {
-                console.error("Photo insert failed for", file.fileName, photoError);
-              }
-
-              // Queue video analysis immediately for videos
-              if (file.mimeType.startsWith("video/")) {
-                queueVideoAnalysisJob({
-                  captionId: file.id,
-                  userId: user!.id,
-                  tripId,
-                  storagePath: objectName,
-                  fileName: file.fileName,
-                  mimeType: file.mimeType,
-                  takenAt: file.takenAt?.toISOString() ?? null,
-                  latitude: group.latitude ?? null,
-                  longitude: group.longitude ?? null,
-                  locationName: group.locationName ?? "",
-                  country: "",
-                  nearbyPlaces: [],
-                  itinerarySteps: existingSteps?.map((s) => ({
-                    location_name: s.location_name,
-                    country: s.country,
-                    latitude: s.latitude,
-                    longitude: s.longitude,
-                    recorded_at: s.recorded_at,
-                    event_type: s.event_type,
-                    description: s.description,
-                  })),
-                }).catch((err) => console.error("Video queue failed:", err));
-              }
-            } catch (err) {
-              console.error("Upload failed for", file.fileName, err);
-            }
-            completed++;
-            setImportProgress({ current: completed, total, phase: "upload" });
+        // ── 4. Queue video analysis jobs ──
+        for (const { file, objectName } of uploadedFiles) {
+          if (file.mimeType.startsWith("video/")) {
+            queueVideoAnalysisJob({
+              captionId: file.id,
+              userId: user.id,
+              tripId,
+              storagePath: objectName,
+              fileName: file.fileName,
+              mimeType: file.mimeType,
+              takenAt: file.takenAt?.toISOString() ?? null,
+              latitude: group.latitude ?? null,
+              longitude: group.longitude ?? null,
+              locationName: group.locationName ?? "",
+              country: "",
+              nearbyPlaces: [],
+              itinerarySteps: existingSteps?.map((s) => ({
+                location_name: s.location_name,
+                country: s.country,
+                latitude: s.latitude,
+                longitude: s.longitude,
+                recorded_at: s.recorded_at,
+                event_type: s.event_type,
+                description: s.description,
+              })),
+            }).catch((err) => console.error("Video queue failed:", err));
           }
         }
 
-        await Promise.all(
-          Array.from({ length: Math.min(CONCURRENCY, queue.length) }, () => uploadWorker()),
-        );
-
-        // ✅ Mark this group as completed — green checkmark appears
+        // ✅ Mark this group as completed
         setCompletedGroups((prev) => new Set(prev).add(group.key));
       }
 
@@ -358,7 +378,7 @@ export function StagingInbox({
             />
           </div>
           {importing && (
-            <p className="text-xs text-muted-foreground">Upload in progress — you can navigate away safely, it will resume automatically</p>
+            <p className="text-xs text-muted-foreground">Upload in progress — please do not close this tab</p>
           )}
         </div>
       )}
