@@ -223,25 +223,33 @@ export function useStagingInbox(tripId: string) {
     async (ids: string[]) => {
       const toDelete = stagedFiles.filter((f) => ids.includes(f.id));
 
-      // Delete from storage
-      const storagePaths = toDelete.map((f) => f.storage_path);
-      if (storagePaths.length > 0) {
-        await supabase.storage.from("trip-photos").remove(storagePaths);
+      // Optimistic UI update — remove from state immediately
+      setStagedFiles((prev) => prev.filter((f) => !ids.includes(f.id)));
+
+      try {
+        // Delete from storage
+        const storagePaths = toDelete.map((f) => f.storage_path);
+        if (storagePaths.length > 0) {
+          await supabase.storage.from("trip-photos").remove(storagePaths);
+        }
+
+        // Delete DB rows
+        const { error } = await supabase
+          .from("pending_media_imports")
+          .delete()
+          .in("id", ids);
+
+        if (error) {
+          console.error("Failed to delete staged files:", error);
+          toast.error("Failed to delete from database, but removed from view");
+          return;
+        }
+
+        toast.success(`Removed ${ids.length} file(s)`);
+      } catch (err) {
+        console.error("Delete failed:", err);
+        toast.error("Delete encountered an error, but items removed from view");
       }
-
-      // Delete DB rows
-      const { error } = await supabase
-        .from("pending_media_imports")
-        .delete()
-        .in("id", ids);
-
-      if (error) {
-        console.error("Failed to delete staged files:", error);
-        toast.error("Failed to delete files");
-        return;
-      }
-
-      toast.success(`Removed ${ids.length} file(s)`);
     },
     [stagedFiles],
   );
