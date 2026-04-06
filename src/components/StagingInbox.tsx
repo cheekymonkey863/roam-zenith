@@ -184,8 +184,132 @@ export function StagingInbox({
       for (const group of selectedGroups) {
         const groupFiles = group.files;
 
-        // ── 1. Create the trip_step FIRST so workers can reference stepId ──
+        // ── 1. Upload all files in this group ──
+        const CONCURRENCY = 5;
+        let nextIdx = 0;
+        const queue = [...groupFiles];
+        const uploadedFiles: Array<{ file: LocalStagedFile; objectName: string }> = [];
+
+        async function uploadWorker() {
+          while (nextIdx < queue.length) {
+            const idx = nextIdx++;
+            const file = queue[idx];
+            try {
+              const ext = file.fileName.split(".").pop() || "jpg";
+              const objectName = `${user!.id}/${tripId}/staging/${crypto.randomUUID()}.${ext}`;
+
+              await resumableUpload({
+                bucketName: "trip-photos",
+                objectName,
+                file: file.file,
+                contentType: file.mimeType || undefined,
+              });
+
+              uploadedFiles.push({ file, objectName });
+            } catch (err) {
+              console.error("Upload failed for", file.fileName, err);
+            }
+            completed++;
+            setImportProgress({ current: completed, total, phase: "upload" });
+          }
+        }
+
+        await Promise.all(
+          Array.from({ length: Math.min(CONCURRENCY, queue.length) }, () => uploadWorker()),
+        );
+
+        if (uploadedFiles.length === 0) {
+          setCompletedGroups((prev) => new Set(prev).add(group.key));
+          continue;
+        }
+
+        // ── 2. Create trip_step for this group ──
         const coords = getGroupRepresentativeCoordinates(group)
+          ?? (existingSteps[0]
+            ? { latitude: existingSteps[0].latitude, longitude: existingSteps[0].longitude }
+            : { latitude: 0, longitude: 0 });
+
+        const earliest = group.earliestDate?.toISOString() ?? new Date().toISOString();
+        const stepDetails = buildImportedStepDetails({
+          locationName: group.locationName ?? "",
+          country: "",
+        });
+
+        const stepId = crypto.randomUUID();
+        const { error: stepError } = await supabase.from("trip_steps").insert({
+          id: stepId,
+          trip_id: tripId,
+          user_id: user.id,
+          latitude: coords.latitude,
+          longitude: coords.longitude,
+          recorded_at: earliest,
+          source: "photo_import",
+          event_type: stepDetails.eventType,
+          is_confirmed: true,
+          location_name: null,
+          country: null,
+        });
+
+        if (stepError) {
+          console.error("Step insert failed:", stepError);
+          continue;
+        }
+
+        allNewStepIds.push(stepId);
+
+        // ── 3. Batch-insert step_photos ──
+        const photoRows = uploadedFiles.map(({ file, objectName }) => ({
+          step_id: stepId,
+          user_id: user.id,
+          storage_path: objectName,
+          file_name: file.fileName,
+          latitude: file.latitude ?? null,
+          longitude: file.longitude ?? null,
+          taken_at: file.takenAt?.toISOString() ?? null,
+          exif_data: {
+            latitude: file.latitude,
+            longitude: file.longitude,
+            cameraMake: file.cameraMake,
+            cameraModel: file.cameraModel,
+          },
+        }));
+
+        const { error: photosError } = await supabase.from("step_photos").insert(photoRows);
+        if (photosError) {
+          console.error("Batch photo insert failed:", photosError);
+        }
+
+        // ── 4. Queue video analysis jobs ──
+        for (const { file, objectName } of uploadedFiles) {
+          if (file.mimeType.startsWith("video/")) {
+            queueVideoAnalysisJob({
+              captionId: file.id,
+              userId: user.id,
+              tripId,
+              storagePath: objectName,
+              fileName: file.fileName,
+              mimeType: file.mimeType,
+              takenAt: file.takenAt?.toISOString() ?? null,
+              latitude: group.latitude ?? null,
+              longitude: group.longitude ?? null,
+              locationName: group.locationName ?? "",
+              country: "",
+              nearbyPlaces: [],
+              itinerarySteps: existingSteps?.map((s) => ({
+                location_name: s.location_name,
+                country: s.country,
+                latitude: s.latitude,
+                longitude: s.longitude,
+                recorded_at: s.recorded_at,
+                event_type: s.event_type,
+                description: s.description,
+              })),
+            }).catch((err) => console.error("Video queue failed:", err));
+          }
+        }
+
+        // ✅ Mark this group as completed
+        setCompletedGroups((prev) => new Set(prev).add(group.key));
           ?? (existingSteps[0]
             ? { latitude: existingSteps[0].latitude, longitude: existingSteps[0].longitude }
             : { latitude: 0, longitude: 0 });
