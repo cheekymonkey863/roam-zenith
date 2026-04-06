@@ -335,13 +335,24 @@ const TripDetail = () => {
         </div>
       )}
 
+      {/* Button row — fixed height, never deforms */}
       <div className="flex flex-wrap gap-3">
-        <AddEventForm tripId={trip.id} onEventAdded={fetchData} />
         <button
-          onClick={() => { setShowPhotoImport(!showPhotoImport); if (!showPhotoImport) setShowItineraryImport(false); }}
+          onClick={() => { setShowAddEvent(!showAddEvent); if (!showAddEvent) { setShowPhotoImport(false); setShowItineraryImport(false); } }}
+          className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition-colors ${
+            showAddEvent
+              ? "bg-secondary/80 text-secondary-foreground ring-2 ring-primary/20"
+              : "bg-secondary text-secondary-foreground hover:bg-secondary/80"
+          }`}
+        >
+          <Plus className="h-4 w-4" />
+          Add Trip Stop
+        </button>
+        <button
+          onClick={() => { setShowPhotoImport(!showPhotoImport); if (!showPhotoImport) { setShowItineraryImport(false); setShowAddEvent(false); } }}
           className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition-colors ${
             showPhotoImport
-              ? "bg-primary text-primary-foreground hover:bg-primary/90"
+              ? "bg-secondary/80 text-secondary-foreground ring-2 ring-primary/20"
               : "bg-secondary text-secondary-foreground hover:bg-secondary/80"
           }`}
         >
@@ -349,10 +360,10 @@ const TripDetail = () => {
           Add from Photo / Video
         </button>
         <button
-          onClick={() => { setShowItineraryImport(!showItineraryImport); if (!showItineraryImport) setShowPhotoImport(false); }}
+          onClick={() => { setShowItineraryImport(!showItineraryImport); if (!showItineraryImport) { setShowPhotoImport(false); setShowAddEvent(false); } }}
           className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition-colors ${
             showItineraryImport
-              ? "bg-primary text-primary-foreground hover:bg-primary/90"
+              ? "bg-secondary/80 text-secondary-foreground ring-2 ring-primary/20"
               : "bg-secondary text-secondary-foreground hover:bg-secondary/80"
           }`}
         >
@@ -370,14 +381,16 @@ const TripDetail = () => {
         )}
       </div>
 
-      {/* Progress is now shown inside the StagingInbox component */}
+      {/* Forms render BELOW the button row */}
+      {showAddEvent && (
+        <AddEventForm tripId={trip.id} onEventAdded={() => { fetchData(); setShowAddEvent(false); }} isOpen onClose={() => setShowAddEvent(false)} />
+      )}
 
       {showPhotoImport && (
         <PhotoImport
           tripId={trip.id}
           onImportComplete={async () => {
             await fetchData();
-            // Auto-hide the inbox after successful import (Phase 3 hand-off)
             setShowPhotoImport(false);
           }}
           onCancel={() => setShowPhotoImport(false)}
