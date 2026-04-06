@@ -1,9 +1,10 @@
 import { useState, useCallback, useRef, useEffect } from "react";
-import { Upload, X } from "lucide-react";
+import { Upload, X, Loader2 } from "lucide-react";
 import { extractExifFromFile, type PhotoExifData } from "@/lib/exif";
 import { StagingInbox } from "@/components/StagingInbox";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 import heic2any from "heic2any";
 
 export interface LocalStagedFile {
@@ -40,6 +41,7 @@ interface PhotoImportProps {
 export function PhotoImport({ tripId, onImportComplete, onCancel, onProgressChange, existingSteps = [] }: PhotoImportProps) {
   const [dragOver, setDragOver] = useState(false);
   const [files, setFiles] = useState<LocalStagedFile[]>([]);
+  const [exifProgress, setExifProgress] = useState({ done: 0, total: 0 });
   const fileInputRef = useRef<HTMLInputElement>(null);
   // Cache of existing file fingerprints for duplicate detection
   const existingFingerprints = useRef<Set<string> | null>(null);
@@ -156,8 +158,20 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, onProgressChan
     });
   }, []);
 
-  // Sequential EXIF extraction — ONE file at a time to prevent OOM on heavy .MOV files
+  // Sequential EXIF extraction — ONE file at a time, single bulk state update at end
   const extractExifSequential = useCallback(async (ids: string[], rawFiles: File[]) => {
+    setExifProgress({ done: 0, total: rawFiles.length });
+
+    const results: Array<{
+      id: string;
+      latitude: number | null;
+      longitude: number | null;
+      takenAt: Date | null;
+      cameraMake: string | null;
+      cameraModel: string | null;
+      newPreviewUrl: string | null;
+    }> = [];
+
     for (let i = 0; i < rawFiles.length; i++) {
       const id = ids[i];
       const file = rawFiles[i];
@@ -175,10 +189,10 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, onProgressChan
         }
       }
 
-      let result: { latitude: number | null; longitude: number | null; takenAt: Date | null; cameraMake: string | null; cameraModel: string | null };
+      let exifResult: { latitude: number | null; longitude: number | null; takenAt: Date | null; cameraMake: string | null; cameraModel: string | null };
       try {
         const exif = await extractExifFromFile(file);
-        result = {
+        exifResult = {
           latitude: exif.latitude,
           longitude: exif.longitude,
           takenAt: exif.takenAt,
@@ -186,28 +200,36 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, onProgressChan
           cameraModel: exif.cameraModel ?? null,
         };
       } catch {
-        result = { latitude: null, longitude: null, takenAt: null, cameraMake: null, cameraModel: null };
+        exifResult = { latitude: null, longitude: null, takenAt: null, cameraMake: null, cameraModel: null };
       }
 
-      // Single state update per file + immediate cleanup
-      setFiles((prev) =>
-        prev.map((f) => {
-          if (f.id !== id) return f;
-          if (newPreviewUrl) {
-            URL.revokeObjectURL(f.previewUrl);
-          }
-          return {
-            ...f,
-            ...result,
-            previewUrl: newPreviewUrl ?? f.previewUrl,
-            exifDone: true,
-          };
-        }),
-      );
+      results.push({ id, ...exifResult, newPreviewUrl });
+
+      // Update lightweight progress counter only
+      setExifProgress({ done: i + 1, total: rawFiles.length });
 
       // Yield to main thread & allow GC
       await new Promise((resolve) => setTimeout(resolve, 50));
     }
+
+    // Single bulk state update — revoke old URLs during the merge
+    setFiles((prev) =>
+      prev.map((f) => {
+        const r = results.find((x) => x.id === f.id);
+        if (!r) return f;
+        if (r.newPreviewUrl) URL.revokeObjectURL(f.previewUrl);
+        return {
+          ...f,
+          latitude: r.latitude,
+          longitude: r.longitude,
+          takenAt: r.takenAt,
+          cameraMake: r.cameraMake,
+          cameraModel: r.cameraModel,
+          previewUrl: r.newPreviewUrl ?? f.previewUrl,
+          exifDone: true,
+        };
+      }),
+    );
   }, []);
 
   const handleDrop = useCallback(
@@ -237,6 +259,8 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, onProgressChan
   }, []);
 
   const showDropZone = files.length === 0;
+  const isProcessingExif = files.length > 0 && files.some((f) => !f.exifDone);
+  const exifPercent = exifProgress.total > 0 ? Math.round((exifProgress.done / exifProgress.total) * 100) : 0;
 
   return (
     <div className="flex flex-col gap-6">
@@ -284,7 +308,27 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, onProgressChan
         </div>
       )}
 
-      {files.length > 0 && (
+      {/* Curtain: show only progress bar while EXIF is being read — do NOT mount StagingInbox */}
+      {isProcessingExif && (
+        <div className="flex flex-col gap-2 rounded-xl border border-border bg-card p-4">
+          <div className="flex items-center justify-between text-sm font-medium">
+            <span className="flex items-center gap-2 text-foreground">
+              <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+              Reading file data… ({exifProgress.done} of {exifProgress.total})
+            </span>
+            <span className="font-semibold text-muted-foreground">{exifPercent}%</span>
+          </div>
+          <div className="h-4 w-full overflow-hidden rounded-full bg-muted">
+            <div
+              className="h-full rounded-full bg-muted-foreground/40 transition-all duration-300"
+              style={{ width: `${Math.max(exifPercent, 2)}%` }}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Only mount StagingInbox after all EXIF processing is complete */}
+      {files.length > 0 && !isProcessingExif && (
         <StagingInbox
           tripId={tripId}
           localFiles={files}
