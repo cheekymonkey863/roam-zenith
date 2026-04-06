@@ -85,11 +85,11 @@ function groupStagedFiles(files: StagedMediaFile[]): StagingGroup[] {
       const cityName = file.ai_result?.suggestedCityName;
       const locationName = venueName && cityName
         ? `${venueName}, ${cityName}`
-        : venueName || "Unknown Location";
+        : venueName || null;
 
       groups.push({
         key: `group-${groups.length}`,
-        locationName,
+        locationName: locationName || "",
         country: "",
         latitude: lat,
         longitude: lng,
@@ -104,7 +104,7 @@ function groupStagedFiles(files: StagedMediaFile[]): StagingGroup[] {
   if (ungrouped.length > 0) {
     groups.push({
       key: "ungrouped",
-      locationName: "No GPS Data",
+      locationName: "",
       country: "",
       latitude: null,
       longitude: null,
@@ -175,33 +175,28 @@ function StagedFileThumbnail({ file }: { file: StagedMediaFile }) {
   );
 }
 
-function AiStatusBadge({ status }: { status: string }) {
-  if (status === "complete") {
+function AiStatusIndicator({ file }: { file: StagedMediaFile }) {
+  const status = file.ai_processing_status;
+  const hasNoGps = file.exif_metadata?.latitude == null || file.exif_metadata?.longitude == null;
+
+  if (status === "complete") return null; // Clean — no badge needed
+  if (status === "processing" || (status === "pending" && hasNoGps)) {
     return (
-      <span className="rounded-full bg-green-500/20 px-2 py-0.5 text-[10px] font-medium text-green-400">
-        AI Done
+      <span className="flex items-center gap-1 rounded-full bg-black/50 px-2 py-0.5 text-[10px] font-medium text-white/80 backdrop-blur-sm">
+        <Loader2 className="h-3 w-3 animate-spin" />
+        {hasNoGps ? "Locating…" : "Enhancing…"}
       </span>
     );
   }
-  if (status === "processing") {
+  if (status === "pending") {
     return (
-      <span className="flex items-center gap-1 rounded-full bg-amber-500/20 px-2 py-0.5 text-[10px] font-medium text-amber-400">
-        <Loader2 className="h-3 w-3 animate-spin" /> Processing
+      <span className="rounded-full bg-black/40 px-2 py-0.5 text-[10px] font-medium text-white/70 backdrop-blur-sm">
+        Queued
       </span>
     );
   }
-  if (status === "failed") {
-    return (
-      <span className="rounded-full bg-red-500/20 px-2 py-0.5 text-[10px] font-medium text-red-400">
-        Failed
-      </span>
-    );
-  }
-  return (
-    <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
-      Pending
-    </span>
-  );
+  // failed — subtle indicator
+  return null;
 }
 
 export function StagingInbox({
@@ -417,6 +412,24 @@ export function StagingInbox({
   const pendingAiCount = stagedFiles.filter((f) => f.ai_processing_status === "pending" || f.ai_processing_status === "processing").length;
   const selectedGroupCount = groups.filter((g) => groupSelection.get(g.key)).length;
 
+  // Helper: resolve display name for a group
+  const getGroupDisplayName = (group: StagingGroup) => {
+    if (group.locationName) return group.locationName;
+    // No venue yet — show date/time as placeholder
+    if (group.earliestDate) {
+      return group.earliestDate.toLocaleDateString("en-US", {
+        weekday: "short",
+        month: "short",
+        day: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+      });
+    }
+    return `${group.files.length} file${group.files.length !== 1 ? "s" : ""}`;
+  };
+
+  const isEnhancing = pendingAiCount > 0;
+
   return (
     <div className="flex flex-col gap-4">
       {/* Upload progress */}
@@ -426,7 +439,7 @@ export function StagingInbox({
             <Loader2 className="h-5 w-5 animate-spin text-primary" />
             <div className="flex-1">
               <div className="flex items-center justify-between text-sm">
-                <span className="font-medium text-foreground">Uploading to staging…</span>
+                <span className="font-medium text-foreground">Uploading…</span>
                 <span className="text-muted-foreground">{overallProgress}%</span>
               </div>
               <div className="mt-1.5 h-2 w-full overflow-hidden rounded-full bg-muted">
@@ -440,18 +453,22 @@ export function StagingInbox({
         </div>
       )}
 
+      {/* Enhancing bar */}
+      {isEnhancing && !isUploading && (
+        <div className="flex items-center gap-3 rounded-2xl bg-card p-3 shadow-card">
+          <Loader2 className="h-4 w-4 animate-spin text-primary" />
+          <span className="text-sm text-muted-foreground">Enhancing your timeline…</span>
+          <div className="ml-auto h-1.5 w-24 overflow-hidden rounded-full bg-muted">
+            <div className="h-full animate-pulse rounded-full bg-primary/60" style={{ width: "60%" }} />
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between">
-        <div>
-          <h3 className="font-display text-lg font-semibold text-foreground">
-            Staging Inbox ({stagedFiles.length} file{stagedFiles.length !== 1 ? "s" : ""})
-          </h3>
-          {pendingAiCount > 0 && (
-            <p className="text-xs text-muted-foreground">
-              {pendingAiCount} file{pendingAiCount !== 1 ? "s" : ""} awaiting AI analysis — you can close this tab safely
-            </p>
-          )}
-        </div>
+        <h3 className="font-display text-lg font-semibold text-foreground">
+          Trip Inbox ({stagedFiles.length})
+        </h3>
         <div className="flex items-center gap-2">
           {selectedIds.size > 0 && (
             <button
@@ -533,7 +550,12 @@ export function StagingInbox({
                 <div className="flex flex-1 flex-col gap-3">
                   <div className="flex flex-wrap items-center gap-2">
                     <MapPin className="h-4 w-4 text-primary" />
-                    <span className="text-lg font-medium text-foreground">{group.locationName}</span>
+                    <span className="text-lg font-medium text-foreground">{getGroupDisplayName(group)}</span>
+                    {!group.locationName && group.latitude != null && (
+                      <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                        <Loader2 className="h-3 w-3 animate-spin" /> Locating via Visual AI…
+                      </span>
+                    )}
                   </div>
 
                   {group.earliestDate && (
@@ -559,7 +581,7 @@ export function StagingInbox({
                       >
                         <StagedFileThumbnail file={file} />
                         <div className="absolute top-1 right-1">
-                          <AiStatusBadge status={file.ai_processing_status} />
+                          <AiStatusIndicator file={file} />
                         </div>
                         {selectedIds.has(file.id) && (
                           <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-destructive/20">
@@ -582,8 +604,8 @@ export function StagingInbox({
         <div className="flex flex-col items-center gap-4 rounded-2xl border-2 border-dashed border-border p-12 text-center">
           <ImageIcon className="h-10 w-10 text-muted-foreground" />
           <div>
-            <p className="font-medium text-foreground">No files in staging</p>
-            <p className="text-sm text-muted-foreground">Drop photos & videos to start</p>
+            <p className="font-medium text-foreground">Your Trip Inbox is empty</p>
+            <p className="text-sm text-muted-foreground">Drop photos & videos to start building your timeline</p>
           </div>
         </div>
       )}
