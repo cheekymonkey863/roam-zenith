@@ -112,19 +112,30 @@ function useGroupLocationNames(groups: StagingGroup[]) {
       let done = 0;
       for (const group of toResolve) {
         if (cancelled) break;
-        try {
-          // Removed forbidden User-Agent header which was silently crashing the fetch
-          const res = await fetch(
-            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${group.latitude}&lon=${group.longitude}&zoom=18`,
-          );
-          if (res.ok) {
-            const data = await res.json();
-            const label = parseNominatimAddress(data);
-            if (label) batch.set(group.key, label);
+        let success = false;
+        let attempts = 0;
+
+        // Added retry loop in case the tab is backgrounded during geocoding
+        while (!success && attempts < 3) {
+          try {
+            attempts++;
+            const res = await fetch(
+              `https://nominatim.openstreetmap.org/reverse?format=json&lat=${group.latitude}&lon=${group.longitude}&zoom=18`,
+            );
+            if (res.ok) {
+              const data = await res.json();
+              const label = parseNominatimAddress(data);
+              if (label) batch.set(group.key, label);
+              success = true;
+            } else {
+              throw new Error("Nominatim rate limit or error");
+            }
+          } catch (err) {
+            console.warn(`Geocoding failed for group ${group.key}, attempt ${attempts}`);
+            if (attempts < 3) await new Promise((r) => setTimeout(r, 2000));
           }
-        } catch (err) {
-          console.error("Geocoding fetch failed", err);
         }
+
         done++;
         if (!cancelled) {
           setGeocodingProgress({ current: done, total: toResolve.length });
@@ -218,7 +229,7 @@ export function StagingInbox({
     if (!importing) return;
     const handler = (e: BeforeUnloadEvent) => {
       e.preventDefault();
-      e.returnValue = "";
+      e.returnValue = "Upload in progress. Leaving this page will cancel the upload.";
     };
     window.addEventListener("beforeunload", handler);
     return () => window.removeEventListener("beforeunload", handler);
@@ -238,6 +249,16 @@ export function StagingInbox({
     setImporting(true);
     setCompletedGroups(new Set());
 
+    let wakeLock: any = null;
+    try {
+      // Request a wake lock to prevent the screen/tab from sleeping during heavy uploads
+      if ("wakeLock" in navigator) {
+        wakeLock = await (navigator as any).wakeLock.request("screen");
+      }
+    } catch (err) {
+      console.warn("Wake Lock API not supported or denied");
+    }
+
     const selectedGroups = groups.filter((g) => groupSelection.get(g.key));
     const allFiles = selectedGroups.flatMap((g) => g.files);
     const total = allFiles.length;
@@ -249,7 +270,7 @@ export function StagingInbox({
 
       for (const group of selectedGroups) {
         const groupFiles = group.files;
-        const CONCURRENCY = 5;
+        const CONCURRENCY = 3; // Reduced concurrency to prevent network timeouts when backgrounded
         let nextIdx = 0;
         const queue = [...groupFiles];
         const uploadedFiles: Array<{ file: LocalStagedFile; objectName: string }> = [];
@@ -258,20 +279,35 @@ export function StagingInbox({
           while (nextIdx < queue.length) {
             const idx = nextIdx++;
             const file = queue[idx];
-            try {
-              const ext = file.fileName.split(".").pop() || "jpg";
-              const objectName = `${user!.id}/${tripId}/staging/${crypto.randomUUID()}.${ext}`;
 
-              await resumableUpload({
-                bucketName: "trip-photos",
-                objectName,
-                file: file.file,
-                contentType: file.mimeType || undefined,
-              });
+            let success = false;
+            let attempts = 0;
 
-              uploadedFiles.push({ file, objectName });
-            } catch (err) {
-              console.error("Upload failed for", file.fileName, err);
+            // RESILIENCE FIX: Auto-retry up to 3 times if the browser throttles the tab and kills the connection
+            while (!success && attempts < 3) {
+              try {
+                attempts++;
+                const ext = file.fileName.split(".").pop() || "jpg";
+                const objectName = `${user!.id}/${tripId}/staging/${crypto.randomUUID()}.${ext}`;
+
+                await resumableUpload({
+                  bucketName: "trip-photos",
+                  objectName,
+                  file: file.file,
+                  contentType: file.mimeType || undefined,
+                });
+
+                uploadedFiles.push({ file, objectName });
+                success = true;
+              } catch (err) {
+                console.warn(`Upload failed for ${file.fileName} (Attempt ${attempts}):`, err);
+                if (attempts >= 3) {
+                  toast.error(`Skipped ${file.fileName} due to network timeout.`);
+                } else {
+                  // Wait 2 seconds before trying again
+                  await new Promise((r) => setTimeout(r, 2000));
+                }
+              }
             }
             completed++;
             setImportProgress({ current: completed, total, phase: "upload" });
@@ -298,8 +334,6 @@ export function StagingInbox({
 
         if (!coords) {
           setCompletedGroups((prev) => new Set(prev).add(group.key));
-          completed += groupFiles.length;
-          setImportProgress({ current: completed, total, phase: "upload" });
           continue;
         }
 
@@ -382,15 +416,19 @@ export function StagingInbox({
 
       toast.success("All media secured! Trip details are being populated in the background.", { duration: 5000 });
 
-      // Delay unmounting by 2.5 seconds so user can see the waterfall finish
       setTimeout(() => {
         onImportComplete();
       }, 2500);
     } catch (err) {
-      console.error("Import error:", err);
-      toast.error("Import failed");
+      console.error("Critical Import error:", err);
+      toast.error("Import sequence encountered an unexpected error.");
       setImporting(false);
-      setImportProgress({ current: 0, total: 0, phase: "upload" });
+    } finally {
+      if (wakeLock) {
+        try {
+          wakeLock.release();
+        } catch (err) {}
+      }
     }
   };
 
@@ -401,7 +439,6 @@ export function StagingInbox({
   const uploadPercent =
     importProgress.total > 0 ? Math.round((importProgress.current / importProgress.total) * 100) : 0;
 
-  // Geocoding is only pending if EXIF is fully complete AND we haven't finished fetching names yet
   const geocodingPending = !exifPending && !geocodingDone && groups.length > 0;
   const geocodingPercent =
     geocodingProgress.total > 0 ? Math.round((geocodingProgress.current / geocodingProgress.total) * 100) : 0;
@@ -433,7 +470,7 @@ export function StagingInbox({
   return (
     <div className="flex flex-col gap-4">
       {showProgressBar && (
-        <div className="flex flex-col gap-2 rounded-xl border border-border bg-card p-4">
+        <div className="flex flex-col gap-2 rounded-xl border border-border bg-card p-4 shadow-sm">
           <div className="flex items-center justify-between text-sm font-medium">
             <span className="flex items-center gap-2 text-foreground">
               <Loader2 className={cn("h-4 w-4 animate-spin", importing ? "text-blue-600" : "text-gray-400")} />
@@ -450,7 +487,9 @@ export function StagingInbox({
             />
           </div>
           {importing && (
-            <p className="text-xs text-muted-foreground">Upload in progress — please do not close this tab</p>
+            <p className="text-xs font-medium text-amber-600 flex items-center gap-1.5 mt-1">
+              ⚠️ Do not switch tabs. Backgrounding this page may pause the upload.
+            </p>
           )}
         </div>
       )}
@@ -590,6 +629,14 @@ export function StagingInbox({
                                   ? "ring-primary cursor-pointer"
                                   : "ring-transparent hover:ring-primary/50 cursor-pointer",
                             )}
+                            draggable={!importing && !isCompleted}
+                            onDragStart={(e) => {
+                              e.dataTransfer.setData(
+                                "text/plain",
+                                JSON.stringify({ fileId: file.id, sourceGroupKey: group.key }),
+                              );
+                              e.dataTransfer.effectAllowed = "move";
+                            }}
                             onClick={() => !importing && !isCompleted && toggleFileSelection(file.id)}
                           >
                             <FileThumbnail file={file} />
