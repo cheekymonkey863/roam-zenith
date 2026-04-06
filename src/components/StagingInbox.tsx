@@ -412,12 +412,14 @@ export function StagingInbox({
   const exifDoneCount = localFiles.filter((f) => f.exifDone).length;
   const exifPercent = localFiles.length > 0 ? Math.round((exifDoneCount / localFiles.length) * 100) : 0;
   const uploadPercent = importProgress.total > 0 ? Math.round((importProgress.current / importProgress.total) * 100) : 0;
+  const geocodingPending = !exifPending && !geocodingDone && groups.length > 0;
+  const geocodingPercent = geocodingProgress.total > 0 ? Math.round((geocodingProgress.current / geocodingProgress.total) * 100) : 0;
 
   // Determine unified progress bar state
-  const showProgressBar = exifPending || importing;
+  const showProgressBar = exifPending || geocodingPending || importing;
   let progressLabel = "";
   let progressPercent = 0;
-  let progressColor = "bg-gray-400"; // grey for reading, blue for uploading
+  let progressColor = "bg-gray-400";
 
   if (importing) {
     progressLabel = importProgress.phase === "sorting"
@@ -429,6 +431,10 @@ export function StagingInbox({
     progressLabel = "Reading file data…";
     progressPercent = exifPercent;
     progressColor = "bg-gray-400";
+  } else if (geocodingPending) {
+    progressLabel = `Fetching location names… (${geocodingProgress.current} of ${geocodingProgress.total})`;
+    progressPercent = geocodingPercent;
+    progressColor = "bg-amber-500";
   }
 
   return (
