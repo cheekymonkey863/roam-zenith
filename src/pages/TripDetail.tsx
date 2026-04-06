@@ -266,6 +266,9 @@ const TripDetail = () => {
             />
           </div>
 
+          {/* AI Progress Banner */}
+          <AiProgressBanner steps={steps} />
+
           {/* Timeline below map */}
           <div className="relative z-50 flex flex-col gap-4 px-4 py-8">
             <h2 className="max-w-3xl mx-auto w-full font-display text-2xl font-semibold text-foreground">Journey Timeline</h2>
