@@ -295,7 +295,7 @@ const TripDetail = () => {
           <AiProgressBanner steps={steps} tripId={trip.id} onCancelled={fetchData} />
 
           {/* Timeline below map */}
-          <div className="relative z-50 flex flex-col gap-4 px-4 py-8">
+          <div className="relative z-10 flex flex-col gap-4 px-4 py-8">
             <h2 className="max-w-3xl mx-auto w-full font-display text-2xl font-semibold text-foreground">Journey Timeline</h2>
             <div className="max-w-3xl mx-auto w-full">
               <TripTimeline steps={steps} onUpdated={fetchData} visualTypes={visualTypes} onStepInView={handleStepInView} />
