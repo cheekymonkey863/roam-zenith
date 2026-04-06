@@ -32,7 +32,7 @@ function formatDate(dateStr: string | null) {
 const TripDetail = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const isMobile = useIsMobile();
   const [trip, setTrip] = useState<Trip | null>(null);
   const [steps, setSteps] = useState<TripStep[]>([]);
@@ -47,30 +47,90 @@ const TripDetail = () => {
   const { cityCount, isResolvingCities } = useResolvedCities(steps);
   const mapRef = useRef<WorldMapHandle>(null);
 
-  const fetchData = async () => {
-    if (!user || !id) return;
-    const tripRes = await supabase.from("trips").select("*").eq("id", id).single();
-    const stepsRes = await supabase.from("trip_steps").select("*").eq("trip_id", id).order("sort_order", { ascending: true }).order("recorded_at", { ascending: true });
+  const fetchData = useCallback(async () => {
+    if (!id) {
+      setTrip(null);
+      setSteps([]);
+      setIsOwner(false);
+      setLoading(false);
+      return;
+    }
+
+    if (authLoading) {
+      setLoading(true);
+      return;
+    }
+
+    if (!user) {
+      setTrip(null);
+      setSteps([]);
+      setIsOwner(false);
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+
+    const [tripRes, stepsRes] = await Promise.all([
+      supabase.from("trips").select("*").eq("id", id).single(),
+      supabase
+        .from("trip_steps")
+        .select("*")
+        .eq("trip_id", id)
+        .order("sort_order", { ascending: true })
+        .order("recorded_at", { ascending: true }),
+    ]);
+
+    if (tripRes.error) {
+      if (tripRes.error.code === "PGRST116") {
+        setTrip(null);
+        setSteps([]);
+        setIsOwner(false);
+        setLoading(false);
+        return;
+      }
+
+      console.error("Failed to fetch trip", tripRes.error);
+      setTrip(null);
+      setSteps([]);
+      setIsOwner(false);
+      setLoading(false);
+      return;
+    }
+
+    if (stepsRes.error) {
+      console.error("Failed to fetch trip steps", stepsRes.error);
+      setSteps([]);
+    } else {
+      setSteps(stepsRes.data || []);
+    }
+
     setTrip(tripRes.data);
-    setSteps(stepsRes.data || []);
-    setIsOwner(tripRes.data?.user_id === user.id);
+    setIsOwner(tripRes.data.user_id === user.id);
     setLoading(false);
-  };
+  }, [authLoading, id, user]);
 
   // Fetch pending video analysis jobs count
-  const fetchPendingJobs = async () => {
-    if (!user || !id) return;
+  const fetchPendingJobs = useCallback(async () => {
+    if (authLoading || !user || !id) return;
+
     const { count } = await supabase
       .from("video_analysis_jobs")
       .select("id", { count: "exact", head: true })
       .eq("user_id", user.id)
       .in("status", ["pending", "processing"]);
     setPendingVideoJobs(count ?? 0);
-  };
+  }, [authLoading, id, user]);
 
   useEffect(() => {
-    fetchData();
-    fetchPendingJobs();
+    if (authLoading) {
+      setLoading(true);
+      return;
+    }
+
+    void fetchData();
+    void fetchPendingJobs();
+
     // Check for staged files to auto-show import panel
     if (user && id) {
       supabaseClient
@@ -85,11 +145,11 @@ const TripDetail = () => {
           }
         });
     }
-  }, [user, id]);
+  }, [authLoading, fetchData, fetchPendingJobs, user, id]);
 
   // Subscribe to video analysis job updates via Realtime
   useEffect(() => {
-    if (!user || !id) return;
+    if (authLoading || !user || !id) return;
 
     const channel = supabase
       .channel(`video-jobs-${id}`)
@@ -103,9 +163,9 @@ const TripDetail = () => {
         (payload) => {
           const newStatus = (payload.new as { status: string }).status;
           if (newStatus === "complete" || newStatus === "failed") {
-            fetchPendingJobs();
+            void fetchPendingJobs();
             if (newStatus === "complete") {
-              fetchData();
+              void fetchData();
             }
           }
         },
@@ -115,11 +175,11 @@ const TripDetail = () => {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [user, id]);
+  }, [authLoading, fetchData, fetchPendingJobs, id, user]);
 
   // Subscribe to trip_steps updates for real-time enrichment
   useEffect(() => {
-    if (!user || !id) return;
+    if (authLoading || !user || !id) return;
 
     const channel = supabase
       .channel(`trip-steps-${id}`)
@@ -132,7 +192,7 @@ const TripDetail = () => {
           filter: `trip_id=eq.${id}`,
         },
         () => {
-          fetchData();
+          void fetchData();
         },
       )
       .subscribe();
@@ -140,7 +200,7 @@ const TripDetail = () => {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [user, id]);
+  }, [authLoading, fetchData, id, user]);
 
   const handleStepInView = useCallback((stepId: string) => {
     setActiveStepId(stepId);
@@ -151,7 +211,7 @@ const TripDetail = () => {
     }
   }, [steps]);
 
-  if (loading) return <div className="py-20 text-center text-muted-foreground">Loading...</div>;
+  if (authLoading || loading) return <div className="py-20 text-center text-muted-foreground">Loading...</div>;
 
   if (!trip) {
     return (
