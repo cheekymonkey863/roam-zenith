@@ -364,7 +364,7 @@ const TripDetail = () => {
             className="flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium text-destructive bg-destructive/10 hover:bg-destructive/20 transition-colors"
           >
             <XCircle className="h-4 w-4" />
-            Clear All Steps
+            Clear All Stops
           </button>
         )}
       </div>
