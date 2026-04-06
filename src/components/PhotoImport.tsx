@@ -1,9 +1,10 @@
 import { useState, useCallback, useRef, useEffect } from "react";
-import { Upload, X } from "lucide-react";
+import { Upload, X, Loader2 } from "lucide-react";
 import { extractExifFromFile, type PhotoExifData } from "@/lib/exif";
 import { StagingInbox } from "@/components/StagingInbox";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 import heic2any from "heic2any";
 
 export interface LocalStagedFile {
