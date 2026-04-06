@@ -300,7 +300,7 @@ export function StepMediaGallery({ photos, stepId, allSteps, onUpdated }: StepMe
                   <img src={poster} alt={photo.file_name} className="h-full w-full object-cover" />
                 ) : (
                   <video
-                    src={url + "#t=0.5"}
+                    src={url + "#t=0.001"}
                     className="h-full w-full object-cover"
                     muted
                     playsInline
