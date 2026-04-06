@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Check, Loader2, MapPin, Trash2, Upload, X, Film, Image as ImageIcon } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -218,6 +218,17 @@ export function StagingInbox({
     setSelectedIds(new Set());
   };
 
+  // Prevent accidental navigation during import
+  useEffect(() => {
+    if (!importing) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "Upload in progress. Leaving this page will cancel your import.";
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [importing]);
+
   const importSelected = async () => {
     if (!user) return;
     setImporting(true);
@@ -227,6 +238,7 @@ export function StagingInbox({
     const total = allFiles.length;
     let completed = 0;
     setImportProgress({ current: 0, total });
+    const createdStepIds: string[] = [];
 
     try {
       for (const group of selectedGroups) {
@@ -279,7 +291,7 @@ export function StagingInbox({
             continue;
           }
           stepId = stepData.id;
-        }
+          createdStepIds.push(stepId);
 
         // Upload each file and create step_photo
         for (const file of group.files) {
@@ -345,7 +357,14 @@ export function StagingInbox({
         }
       }
 
-      toast.success("Import complete!");
+      // Trigger backend processing for reverse-geocoding + AI enrichment
+      if (createdStepIds.length > 0) {
+        supabase.functions.invoke("process-trip-steps", {
+          body: { step_ids: createdStepIds },
+        }).catch((err) => console.error("Background processing trigger failed:", err));
+      }
+
+      toast.success("Import complete! Enhancing locations in the background…");
       onImportComplete();
     } catch (err) {
       console.error("Import error:", err);

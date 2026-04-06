@@ -11,3 +11,6 @@ verify_jwt = false
 
 [functions.process-video-queue]
 verify_jwt = false
+
+[functions.process-trip-steps]
+verify_jwt = false
