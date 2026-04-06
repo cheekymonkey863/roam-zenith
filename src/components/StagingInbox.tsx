@@ -280,7 +280,7 @@ export function StagingInbox({
             continue;
           }
           stepId = stepData.id;
-        }
+          createdStepIds.push(stepId);
 
         // Upload each file and create step_photo
         for (const file of group.files) {
