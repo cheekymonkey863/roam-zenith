@@ -362,9 +362,9 @@ export function TripTimeline({
                 <div className="flex items-center justify-between gap-4">
                   <div>
                     <h4 className="font-display text-lg font-semibold text-foreground">
-                      {step.location_name && !step.location_name.toLowerCase().includes("unknown")
+                    {step.location_name && !step.location_name.toLowerCase().includes("unknown")
                         ? step.location_name
-                        : step.latitude && step.longitude
+                        : step.latitude !== 0 && step.longitude !== 0
                           ? (
                             <span className="flex items-center gap-2">
                               <span className="text-muted-foreground">{step.latitude.toFixed(4)}°, {step.longitude.toFixed(4)}°</span>

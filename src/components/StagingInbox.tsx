@@ -262,10 +262,21 @@ export function StagingInbox({
         }
 
         // ── 2. Create trip_step for this group ──
-        const coords = getGroupRepresentativeCoordinates(group)
-          ?? (existingSteps[0]
-            ? { latitude: existingSteps[0].latitude, longitude: existingSteps[0].longitude }
-            : { latitude: 0, longitude: 0 });
+        const rawCoords = getGroupRepresentativeCoordinates(group);
+        // Never store exactly 0,0 — inherit from previous step or skip
+        const coords = rawCoords && (rawCoords.latitude !== 0 || rawCoords.longitude !== 0)
+          ? rawCoords
+          : existingSteps.length > 0
+            ? { latitude: existingSteps[existingSteps.length - 1].latitude, longitude: existingSteps[existingSteps.length - 1].longitude }
+            : null;
+
+        if (!coords) {
+          console.warn("Skipping group with no valid coordinates:", group.key);
+          setCompletedGroups((prev) => new Set(prev).add(group.key));
+          completed += groupFiles.length;
+          setImportProgress({ current: completed, total, phase: "upload" });
+          continue;
+        }
 
         const earliest = group.earliestDate?.toISOString() ?? new Date().toISOString();
         const stepDetails = buildImportedStepDetails({
