@@ -231,6 +231,11 @@ export function StagingInbox({
     return () => window.removeEventListener("beforeunload", handler);
   }, [importing]);
 
+  // Report progress up to parent
+  useEffect(() => {
+    onProgressChange?.({ importing, current: importProgress.current, total: importProgress.total });
+  }, [importing, importProgress, onProgressChange]);
+
   const importSelected = async () => {
     if (!user) return;
     setImporting(true);
