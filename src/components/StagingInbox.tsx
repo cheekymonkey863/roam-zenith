@@ -87,8 +87,6 @@ function parseNominatimAddress(data: any): string | null {
 
 function useGroupLocationNames(groups: StagingGroup[]) {
   const [names, setNames] = useState<Map<string, string>>(new Map());
-  const [geocodingDone, setGeocodingDone] = useState(false);
-  const [geocodingProgress, setGeocodingProgress] = useState({ current: 0, total: 0 });
   const prevKeysRef = useRef<string>("");
 
   useEffect(() => {
@@ -98,18 +96,12 @@ function useGroupLocationNames(groups: StagingGroup[]) {
 
     const toResolve = groups.filter((g) => g.latitude != null && g.longitude != null && !names.has(g.key));
 
-    if (toResolve.length === 0) {
-      setGeocodingDone(true);
-      return;
-    }
+    if (toResolve.length === 0) return;
 
-    setGeocodingDone(false);
-    setGeocodingProgress({ current: 0, total: toResolve.length });
     let cancelled = false;
 
     (async () => {
       const batch = new Map<string, string>();
-      let done = 0;
       for (const group of toResolve) {
         if (cancelled) break;
         let success = false;
@@ -135,22 +127,15 @@ function useGroupLocationNames(groups: StagingGroup[]) {
           }
         }
 
-        done++;
-        if (!cancelled) {
-          setGeocodingProgress({ current: done, total: toResolve.length });
-          if (batch.size > 0) {
-            const snapshot = new Map(batch);
-            setNames((prev) => {
-              const next = new Map(prev);
-              snapshot.forEach((v, k) => next.set(k, v));
-              return next;
-            });
-          }
-          await new Promise((r) => setTimeout(r, 1000));
+        if (!cancelled && batch.size > 0) {
+          const snapshot = new Map(batch);
+          setNames((prev) => {
+            const next = new Map(prev);
+            snapshot.forEach((v, k) => next.set(k, v));
+            return next;
+          });
         }
-      }
-      if (!cancelled) {
-        setGeocodingDone(true);
+        if (!cancelled) await new Promise((r) => setTimeout(r, 1000));
       }
     })();
 
@@ -159,7 +144,7 @@ function useGroupLocationNames(groups: StagingGroup[]) {
     };
   }, [groups]);
 
-  return { names, geocodingDone, geocodingProgress };
+  return { names };
 }
 
 export function StagingInbox({
@@ -183,7 +168,7 @@ export function StagingInbox({
   const [completedGroups, setCompletedGroups] = useState<Set<string>>(new Set());
 
   const groups = useMemo(() => groupLocalFiles(localFiles), [localFiles]);
-  const { names: resolvedNames, geocodingDone, geocodingProgress } = useGroupLocationNames(groups);
+  const { names: resolvedNames } = useGroupLocationNames(groups);
 
   const [groupSelection, setGroupSelection] = useState<Map<string, boolean>>(() => {
     const map = new Map<string, boolean>();
@@ -430,20 +415,15 @@ export function StagingInbox({
 
   const selectedGroupCount = groups.filter((g) => groupSelection.get(g.key)).length;
 
-  // Unified Progress Math
+  // STRICT EXIF ONLY PROGRESS
   const exifPending = localFiles.some((f) => !f.exifDone);
   const exifDoneCount = localFiles.filter((f) => f.exifDone).length;
-  const geocodingPending = !exifPending && !geocodingDone && groups.length > 0;
-
-  const totalAnalysisSteps = localFiles.length + (groups.length > 0 ? groups.length : 0);
-  const completedAnalysisSteps = exifDoneCount + geocodingProgress.current;
-  const analysisPercent = totalAnalysisSteps > 0 ? Math.round((completedAnalysisSteps / totalAnalysisSteps) * 100) : 0;
+  const analysisPercent = localFiles.length > 0 ? Math.round((exifDoneCount / localFiles.length) * 100) : 0;
   const uploadPercent =
     importProgress.total > 0 ? Math.round((importProgress.current / importProgress.total) * 100) : 0;
 
-  const isAnalyzing = exifPending || geocodingPending;
-  const showProgressBar = isAnalyzing || importing;
-  const isCurtainLifted = !isAnalyzing;
+  const showProgressBar = exifPending || importing;
+  const isCurtainLifted = !exifPending;
 
   let progressLabel = "";
   let progressPercent = 0;
@@ -456,7 +436,7 @@ export function StagingInbox({
         : `Uploading & importing… (${importProgress.current} of ${importProgress.total})`;
     progressPercent = uploadPercent;
     progressColor = "bg-blue-600";
-  } else if (isAnalyzing) {
+  } else if (exifPending) {
     progressLabel = "Analyzing media…";
     progressPercent = analysisPercent;
     progressColor = "bg-gray-400";
@@ -522,11 +502,11 @@ export function StagingInbox({
             )}
             <button
               onClick={importSelected}
-              disabled={importing || selectedGroupCount === 0 || !isCurtainLifted}
+              disabled={importing || selectedGroupCount === 0 || exifPending}
               className="flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
             >
               {importing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-              {importing ? `Importing… (${uploadPercent}%)` : isAnalyzing ? "Analyzing media…" : "Import Selected"}
+              {importing ? `Importing… (${uploadPercent}%)` : exifPending ? "Analyzing media…" : "Import Selected"}
             </button>
           </div>
         </div>
