@@ -395,7 +395,7 @@ const TripDetail = () => {
             />
           </div>
 
-          {/* AI Progress Banner */}
+          {/* Progress Banner */}
           <AiProgressBanner steps={steps} tripId={trip.id} onCancelled={fetchData} />
 
           {/* Timeline below map */}
