@@ -70,9 +70,11 @@ async function extractTextFromFile(file: File): Promise<string> {
   return file.text();
 }
 
-export function AddEventForm({ tripId, onEventAdded }: AddEventFormProps) {
+export function AddEventForm({ tripId, onEventAdded, isOpen, onClose }: AddEventFormProps & { isOpen?: boolean; onClose?: () => void }) {
   const { user } = useAuth();
-  const [open, setOpen] = useState(false);
+  const [internalOpen, setInternalOpen] = useState(false);
+  const open = isOpen ?? internalOpen;
+  const setOpen = onClose ? (v: boolean) => { if (!v) onClose(); } : setInternalOpen;
   const [saving, setSaving] = useState(false);
   const [parsing, setParsing] = useState(false);
   const [eventType, setEventType] = useState("");
