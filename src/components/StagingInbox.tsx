@@ -151,7 +151,16 @@ export function StagingInbox({
     setSelectedIds(new Set());
   };
 
-  // No beforeunload lock — TUS uploads resume automatically on return
+  // Block navigation during import
+  useEffect(() => {
+    if (!importing) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [importing]);
 
   // Report progress up to parent
   useEffect(() => {
