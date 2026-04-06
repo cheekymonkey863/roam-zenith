@@ -530,15 +530,6 @@ export function StagingInbox({
                     )}
                   </div>
 
-                  {group.earliestDate && (
-                    <p className="text-xs text-muted-foreground">
-                      {group.earliestDate.toLocaleDateString("en-US", {
-                        month: "short",
-                        day: "numeric",
-                        year: "numeric",
-                      })}
-                    </p>
-                  )}
 
                   {/* File grid */}
                   <div className="grid grid-cols-4 gap-2 sm:grid-cols-6 md:grid-cols-8">
