@@ -444,7 +444,7 @@ const TripDetail = () => {
           <h2 className="font-display text-2xl font-semibold text-foreground">Journey Timeline</h2>
           <div className="flex flex-col items-center gap-3 rounded-2xl bg-card p-12 shadow-card text-center">
             <Navigation className="h-8 w-8 text-muted-foreground/50" />
-            <p className="text-muted-foreground">No steps yet. Start tracking or import photos to auto-detect locations.</p>
+            <p className="text-muted-foreground">No stops yet. Start tracking or import photos to auto-detect locations.</p>
           </div>
         </div>
       )}
