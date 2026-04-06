@@ -138,6 +138,24 @@ export function useStagingInbox(tripId: string) {
 
       const results = await Promise.allSettled(
         mediaFiles.map(async (file) => {
+          // 0. Duplicate check — skip if file already staged for this trip
+          const { data: existing } = await supabase
+            .from("pending_media_imports")
+            .select("id, storage_path")
+            .eq("file_name", file.name)
+            .eq("trip_id", tripId)
+            .maybeSingle();
+
+          if (existing) {
+            console.log(`[staging] Skipping duplicate: ${file.name}`);
+            setUploads((prev) => {
+              const next = new Map(prev);
+              next.set(file.name, { fileName: file.name, percent: 100, status: "done" });
+              return next;
+            });
+            return existing.storage_path;
+          }
+
           // 1. Extract EXIF (fast, client-side)
           let exif: PhotoExifData;
           try {
