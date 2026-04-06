@@ -267,7 +267,7 @@ const TripDetail = () => {
           </div>
 
           {/* AI Progress Banner */}
-          <AiProgressBanner steps={steps} />
+          <AiProgressBanner steps={steps} tripId={trip.id} onCancelled={fetchData} />
 
           {/* Timeline below map */}
           <div className="relative z-50 flex flex-col gap-4 px-4 py-8">
