@@ -428,7 +428,9 @@ export function TripTimeline({
                 <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground/60">
                   <span>Stop {index + 1}</span>
                   <span>·</span>
-                  <span>{step.latitude.toFixed(2)}°, {step.longitude.toFixed(2)}°</span>
+                  {step.latitude !== 0 && step.longitude !== 0 && (
+                    <span>{step.latitude.toFixed(2)}°, {step.longitude.toFixed(2)}°</span>
+                  )}
                   <span>·</span>
                   <span className="rounded bg-secondary px-1.5 py-0.5 text-[10px]">{step.event_type}</span>
                   {photos.length > 0 && (
