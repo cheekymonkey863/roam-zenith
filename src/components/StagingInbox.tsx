@@ -284,7 +284,7 @@ export function StagingInbox({
             console.error("Upload failed for", file.fileName, err);
           }
           completed++;
-          setImportProgress({ current: completed, total });
+          setImportProgress({ current: completed, total, phase: "upload" });
         }
       }
 
