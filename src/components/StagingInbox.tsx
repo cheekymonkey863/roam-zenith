@@ -1,32 +1,27 @@
 import { useState, useMemo } from "react";
 import { Check, Loader2, MapPin, Trash2, Upload, X, Film, Image as ImageIcon } from "lucide-react";
-import { type StagedMediaFile, type UploadProgress } from "@/hooks/useStagingInbox";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { buildImportedStepDetails } from "@/lib/placeClassification";
 import { queueVideoAnalysisJob } from "@/lib/videoAnalysisQueue";
-import { buildStoredMediaMetadata } from "@/lib/mediaMetadata";
+import { resumableUpload } from "@/lib/resumableUpload";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import type { LocalStagedFile } from "@/components/PhotoImport";
 
 interface StagingGroup {
   key: string;
   locationName: string;
-  country: string;
   latitude: number | null;
   longitude: number | null;
-  files: StagedMediaFile[];
+  files: LocalStagedFile[];
   earliestDate: Date | null;
-  selected: boolean;
 }
 
 interface StagingInboxProps {
   tripId: string;
-  stagedFiles: StagedMediaFile[];
-  uploads: Map<string, UploadProgress>;
-  isUploading: boolean;
-  overallProgress: number;
-  onDeleteFiles: (ids: string[]) => Promise<void>;
+  localFiles: LocalStagedFile[];
+  onDeleteFiles: (ids: string[]) => void;
   onImportComplete: () => void;
   onCancel?: () => void;
   onAddMore: () => void;
@@ -49,20 +44,17 @@ function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: numbe
   const dLat = ((lat2 - lat1) * Math.PI) / 180;
   const dLon = ((lon2 - lon1) * Math.PI) / 180;
   const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLon / 2) ** 2;
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-function groupStagedFiles(files: StagedMediaFile[]): StagingGroup[] {
+function groupLocalFiles(files: LocalStagedFile[]): StagingGroup[] {
   const groups: StagingGroup[] = [];
-  const ungrouped: StagedMediaFile[] = [];
+  const ungrouped: LocalStagedFile[] = [];
 
   for (const file of files) {
-    const lat = file.exif_metadata?.latitude;
-    const lng = file.exif_metadata?.longitude;
-
-    if (lat == null || lng == null) {
+    if (file.latitude == null || file.longitude == null) {
       ungrouped.push(file);
       continue;
     }
@@ -70,8 +62,7 @@ function groupStagedFiles(files: StagedMediaFile[]): StagingGroup[] {
     let matched = false;
     for (const group of groups) {
       if (group.latitude != null && group.longitude != null) {
-        const dist = haversineDistance(lat, lng, group.latitude, group.longitude);
-        if (dist <= LOCATION_GROUP_RADIUS_METERS) {
+        if (haversineDistance(file.latitude, file.longitude, group.latitude, group.longitude) <= LOCATION_GROUP_RADIUS_METERS) {
           group.files.push(file);
           matched = true;
           break;
@@ -80,60 +71,31 @@ function groupStagedFiles(files: StagedMediaFile[]): StagingGroup[] {
     }
 
     if (!matched) {
-      // Check AI result for location name
-      const venueName = file.ai_result?.suggestedVenueName;
-      const cityName = file.ai_result?.suggestedCityName;
-      const locationName = venueName && cityName
-        ? `${venueName}, ${cityName}`
-        : venueName || null;
-
       groups.push({
         key: `group-${groups.length}`,
-        locationName: locationName || "",
-        country: "",
-        latitude: lat,
-        longitude: lng,
+        locationName: "",
+        latitude: file.latitude,
+        longitude: file.longitude,
         files: [file],
-        earliestDate: file.exif_metadata?.takenAt ? new Date(file.exif_metadata.takenAt) : null,
-        selected: true,
+        earliestDate: file.takenAt,
       });
     }
   }
 
-  // Add ungrouped files as their own group
   if (ungrouped.length > 0) {
     groups.push({
       key: "ungrouped",
       locationName: "",
-      country: "",
       latitude: null,
       longitude: null,
       files: ungrouped,
       earliestDate: null,
-      selected: true,
     });
   }
 
-  // Update group location names from AI results
+  // Compute earliest date per group
   for (const group of groups) {
-    const aiFile = group.files.find(
-      (f) => f.ai_result?.suggestedVenueName || f.ai_result?.suggestedCityName,
-    );
-    if (aiFile?.ai_result) {
-      const venue = aiFile.ai_result.suggestedVenueName;
-      const city = aiFile.ai_result.suggestedCityName;
-      if (venue && city) {
-        group.locationName = `${venue}, ${city}`;
-      } else if (venue) {
-        group.locationName = venue;
-      }
-    }
-
-    // Compute earliest date
-    const dates = group.files
-      .map((f) => f.exif_metadata?.takenAt)
-      .filter(Boolean)
-      .map((d) => new Date(d!));
+    const dates = group.files.map((f) => f.takenAt).filter(Boolean) as Date[];
     group.earliestDate = dates.length > 0 ? new Date(Math.min(...dates.map((d) => d.getTime()))) : null;
   }
 
@@ -142,17 +104,14 @@ function groupStagedFiles(files: StagedMediaFile[]): StagingGroup[] {
   );
 }
 
-function StagedFileThumbnail({ file }: { file: StagedMediaFile }) {
-  const isVideo = file.mime_type.startsWith("video/");
-  // Prefer local object URL for instant render, fall back to remote
-  const url = file.localPreviewUrl || file.publicUrl;
-  const isLocal = !!file.isLocalOnly;
+function FileThumbnail({ file }: { file: LocalStagedFile }) {
+  const isVideo = file.mimeType.startsWith("video/");
 
   if (isVideo) {
     return (
       <div className="relative aspect-square w-full overflow-hidden rounded-lg bg-slate-900">
         <video
-          src={`${url}#t=0.001`}
+          src={`${file.previewUrl}#t=0.001`}
           preload="metadata"
           muted
           playsInline
@@ -166,43 +125,46 @@ function StagedFileThumbnail({ file }: { file: StagedMediaFile }) {
         <div className="absolute bottom-1 right-1 rounded bg-black/60 px-1.5 py-0.5 text-[10px] font-medium text-white">
           VIDEO
         </div>
-        {isLocal && (
-          <div className="absolute inset-0 bg-black/10">
-            <div className="absolute bottom-0 left-0 h-1 w-full bg-primary/40 animate-pulse" />
-          </div>
-        )}
       </div>
     );
   }
 
   return (
     <div className="relative aspect-square w-full overflow-hidden rounded-lg bg-muted">
-      <img src={url} alt={file.file_name} className="h-full w-full object-cover" loading="lazy" />
-      {isLocal && (
-        <div className="absolute inset-0 bg-black/10">
-          <div className="absolute bottom-0 left-0 h-1 w-full bg-primary/40 animate-pulse" />
-        </div>
-      )}
+      <img src={file.previewUrl} alt={file.fileName} className="h-full w-full object-cover" loading="lazy" />
     </div>
   );
 }
 
-function UploadIndicator({ file }: { file: StagedMediaFile }) {
-  if (!file.isLocalOnly) return null;
-  return (
-    <span className="flex items-center gap-1 rounded-full bg-black/50 px-2 py-0.5 text-[10px] font-medium text-white/80 backdrop-blur-sm">
-      <Loader2 className="h-3 w-3 animate-spin" />
-      Uploading…
-    </span>
-  );
+function getGroupDisplayName(group: StagingGroup) {
+  if (group.locationName) return group.locationName;
+  if (group.latitude != null && group.longitude != null) {
+    if (group.earliestDate) {
+      return group.earliestDate.toLocaleDateString("en-US", {
+        weekday: "short",
+        month: "short",
+        day: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+      });
+    }
+    return `📍 ${group.latitude.toFixed(4)}, ${group.longitude.toFixed(4)}`;
+  }
+  if (group.earliestDate) {
+    return group.earliestDate.toLocaleDateString("en-US", {
+      weekday: "short",
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+    });
+  }
+  return `${group.files.length} file${group.files.length !== 1 ? "s" : ""}`;
 }
 
 export function StagingInbox({
   tripId,
-  stagedFiles,
-  uploads,
-  isUploading,
-  overallProgress,
+  localFiles,
   onDeleteFiles,
   onImportComplete,
   onCancel,
@@ -214,7 +176,7 @@ export function StagingInbox({
   const [importProgress, setImportProgress] = useState({ current: 0, total: 0 });
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
-  const groups = useMemo(() => groupStagedFiles(stagedFiles), [stagedFiles]);
+  const groups = useMemo(() => groupLocalFiles(localFiles), [localFiles]);
 
   const [groupSelection, setGroupSelection] = useState<Map<string, boolean>>(() => {
     const map = new Map<string, boolean>();
@@ -250,9 +212,9 @@ export function StagingInbox({
     });
   };
 
-  const deleteSelected = async () => {
+  const deleteSelected = () => {
     if (selectedIds.size === 0) return;
-    await onDeleteFiles(Array.from(selectedIds));
+    onDeleteFiles(Array.from(selectedIds));
     setSelectedIds(new Set());
   };
 
@@ -261,196 +223,154 @@ export function StagingInbox({
     setImporting(true);
 
     const selectedGroups = groups.filter((g) => groupSelection.get(g.key));
-    const totalItems = selectedGroups.reduce((n, g) => n + g.files.length, 0) + selectedGroups.length;
+    const allFiles = selectedGroups.flatMap((g) => g.files);
+    const total = allFiles.length;
     let completed = 0;
-    setImportProgress({ current: 0, total: totalItems });
+    setImportProgress({ current: 0, total });
 
-    for (const group of selectedGroups) {
-      if (group.latitude == null || group.longitude == null) {
-        completed++;
-        setImportProgress({ current: completed, total: totalItems });
-        continue;
-      }
-
-      const stepDetails = buildImportedStepDetails({
-        locationName: group.locationName,
-        country: group.country,
-      });
-
-      // Check if we match an existing step
-      let stepId: string | null = null;
-      for (const existing of existingSteps) {
-        const dlat = (existing.latitude - group.latitude) * 111320;
-        const dlng = (existing.longitude - group.longitude) * 111320 * Math.cos((group.latitude * Math.PI) / 180);
-        if (Math.sqrt(dlat * dlat + dlng * dlng) < 60) {
-          stepId = existing.id;
-          break;
-        }
-      }
-
-      if (!stepId) {
-        const { data: stepData, error: stepError } = await supabase
-          .from("trip_steps")
-          .insert({
-            trip_id: tripId,
-            user_id: user.id,
-            location_name: group.locationName,
-            country: group.country || null,
-            latitude: group.latitude,
-            longitude: group.longitude,
-            recorded_at: group.earliestDate?.toISOString() || new Date().toISOString(),
-            source: "photo_import",
-            event_type: stepDetails.eventType,
-            is_confirmed: true,
-          })
-          .select()
-          .single();
-
-        if (stepError || !stepData) {
-          console.error("Step insert error:", stepError);
-          toast.error(`Failed to create step for ${group.locationName}`);
-          completed++;
+    try {
+      for (const group of selectedGroups) {
+        if (group.latitude == null || group.longitude == null) {
+          // Skip ungrouped/no-GPS files for now
+          completed += group.files.length;
+          setImportProgress({ current: completed, total });
           continue;
         }
-        stepId = stepData.id;
-      }
 
-      completed++;
-      setImportProgress({ current: completed, total: totalItems });
+        const stepDetails = buildImportedStepDetails({
+          locationName: group.locationName,
+          country: "",
+        });
 
-      for (const file of group.files) {
-        // Move file from staging to final path
-        const finalPath = `${user.id}/${tripId}/${stepId}/${crypto.randomUUID()}.${file.file_name.split(".").pop() || "jpg"}`;
-        const { error: moveError } = await supabase.storage
-          .from("trip-photos")
-          .move(file.storage_path, finalPath);
-
-        if (moveError) {
-          console.error("File move error:", moveError);
-          // Try copy instead
-          const { error: copyError } = await supabase.storage
-            .from("trip-photos")
-            .copy(file.storage_path, finalPath);
-          if (copyError) {
-            console.error("File copy error:", copyError);
-            completed++;
-            setImportProgress({ current: completed, total: totalItems });
-            continue;
+        // Check if we match an existing step
+        let stepId: string | null = null;
+        for (const existing of existingSteps) {
+          const dlat = (existing.latitude - group.latitude) * 111320;
+          const dlng = (existing.longitude - group.longitude) * 111320 * Math.cos((group.latitude * Math.PI) / 180);
+          if (Math.sqrt(dlat * dlat + dlng * dlng) < 60) {
+            stepId = existing.id;
+            break;
           }
         }
 
-        const exifData: Record<string, any> = {
-          latitude: file.exif_metadata?.latitude,
-          longitude: file.exif_metadata?.longitude,
-          locationName: group.locationName,
-          country: group.country,
-        };
-        if (file.ai_result) {
-          exifData.caption = file.ai_result.caption;
-          exifData.essence = file.ai_result.essence;
-          exifData.sceneDescription = file.ai_result.sceneDescription;
-          exifData.aiTags = file.ai_result.tags;
+        if (!stepId) {
+          const { data: stepData, error: stepError } = await supabase
+            .from("trip_steps")
+            .insert({
+              trip_id: tripId,
+              user_id: user.id,
+              location_name: group.locationName || null,
+              country: null,
+              latitude: group.latitude,
+              longitude: group.longitude,
+              recorded_at: group.earliestDate?.toISOString() || new Date().toISOString(),
+              source: "photo_import",
+              event_type: stepDetails.eventType,
+              is_confirmed: true,
+            })
+            .select()
+            .single();
+
+          if (stepError || !stepData) {
+            console.error("Step insert error:", stepError);
+            toast.error("Failed to create step");
+            completed += group.files.length;
+            setImportProgress({ current: completed, total });
+            continue;
+          }
+          stepId = stepData.id;
         }
 
-        await supabase.from("step_photos").insert({
-          step_id: stepId,
-          user_id: user.id,
-          storage_path: finalPath,
-          file_name: file.file_name,
-          latitude: file.exif_metadata?.latitude ?? null,
-          longitude: file.exif_metadata?.longitude ?? null,
-          taken_at: file.exif_metadata?.takenAt ?? null,
-          exif_data: exifData,
-        });
+        // Upload each file and create step_photo
+        for (const file of group.files) {
+          try {
+            const ext = file.fileName.split(".").pop() || "jpg";
+            const objectName = `${user.id}/${tripId}/${stepId}/${crypto.randomUUID()}.${ext}`;
 
-        // Queue video analysis for videos
-        if (file.mime_type.startsWith("video/")) {
-          await queueVideoAnalysisJob({
-            captionId: file.id,
-            userId: user.id,
-            tripId,
-            storagePath: finalPath,
-            fileName: file.file_name,
-            mimeType: file.mime_type,
-            takenAt: file.exif_metadata?.takenAt ?? null,
-            latitude: group.latitude,
-            longitude: group.longitude,
-            locationName: group.locationName,
-            country: group.country,
-            nearbyPlaces: [],
-            itinerarySteps: existingSteps?.map((s) => ({
-              location_name: s.location_name,
-              country: s.country,
-              latitude: s.latitude,
-              longitude: s.longitude,
-              recorded_at: s.recorded_at,
-              event_type: s.event_type,
-              description: s.description,
-            })),
-          });
+            await resumableUpload({
+              bucketName: "trip-photos",
+              objectName,
+              file: file.file,
+              contentType: file.mimeType || undefined,
+            });
+
+            await supabase.from("step_photos").insert({
+              step_id: stepId,
+              user_id: user.id,
+              storage_path: objectName,
+              file_name: file.fileName,
+              latitude: file.latitude ?? null,
+              longitude: file.longitude ?? null,
+              taken_at: file.takenAt?.toISOString() ?? null,
+              exif_data: {
+                latitude: file.latitude,
+                longitude: file.longitude,
+                cameraMake: file.cameraMake,
+                cameraModel: file.cameraModel,
+              },
+            });
+
+            // Queue video analysis for videos
+            if (file.mimeType.startsWith("video/")) {
+              await queueVideoAnalysisJob({
+                captionId: file.id,
+                userId: user.id,
+                tripId,
+                storagePath: objectName,
+                fileName: file.fileName,
+                mimeType: file.mimeType,
+                takenAt: file.takenAt?.toISOString() ?? null,
+                latitude: group.latitude,
+                longitude: group.longitude,
+                locationName: group.locationName,
+                country: "",
+                nearbyPlaces: [],
+                itinerarySteps: existingSteps?.map((s) => ({
+                  location_name: s.location_name,
+                  country: s.country,
+                  latitude: s.latitude,
+                  longitude: s.longitude,
+                  recorded_at: s.recorded_at,
+                  event_type: s.event_type,
+                  description: s.description,
+                })),
+              });
+            }
+          } catch (err) {
+            console.error("Upload failed for", file.fileName, err);
+          }
+
+          completed++;
+          setImportProgress({ current: completed, total });
         }
-
-        completed++;
-        setImportProgress({ current: completed, total: totalItems });
       }
 
-      // Clean up DB rows for this group
-      await supabase
-        .from("pending_media_imports")
-        .delete()
-        .in("id", group.files.map((f) => f.id));
+      toast.success("Import complete!");
+      onImportComplete();
+    } catch (err) {
+      console.error("Import error:", err);
+      toast.error("Import failed");
+    } finally {
+      setImporting(false);
+      setImportProgress({ current: 0, total: 0 });
     }
-
-    toast.success("Import complete!");
-    setImporting(false);
-    setImportProgress({ current: 0, total: 0 });
-    onImportComplete();
   };
 
   const selectedGroupCount = groups.filter((g) => groupSelection.get(g.key)).length;
-
-  // Helper: resolve display name for a group
-  const getGroupDisplayName = (group: StagingGroup) => {
-    if (group.locationName) return group.locationName;
-    if (group.earliestDate) {
-      return group.earliestDate.toLocaleDateString("en-US", {
-        weekday: "short",
-        month: "short",
-        day: "numeric",
-        hour: "numeric",
-        minute: "2-digit",
-      });
-    }
-    return `${group.files.length} file${group.files.length !== 1 ? "s" : ""}`;
-  };
+  const exifPending = localFiles.some((f) => !f.exifDone);
 
   return (
     <div className="flex flex-col gap-4">
-      {/* Upload progress */}
-      {isUploading && (
-        <div className="rounded-2xl bg-card p-4 shadow-card">
-          <div className="flex items-center gap-3">
-            <Loader2 className="h-5 w-5 animate-spin text-primary" />
-            <div className="flex-1">
-              <div className="flex items-center justify-between text-sm">
-                <span className="font-medium text-foreground">Uploading…</span>
-                <span className="text-muted-foreground">{overallProgress}%</span>
-              </div>
-              <div className="mt-1.5 h-2 w-full overflow-hidden rounded-full bg-muted">
-                <div
-                  className="h-full rounded-full bg-primary transition-all duration-300"
-                  style={{ width: `${overallProgress}%` }}
-                />
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Header */}
       <div className="flex items-center justify-between">
         <h3 className="font-display text-lg font-semibold text-foreground">
-          Trip Inbox ({stagedFiles.length})
+          Trip Inbox ({localFiles.length})
+          {exifPending && (
+            <span className="ml-2 text-xs font-normal text-muted-foreground">
+              <Loader2 className="inline h-3 w-3 animate-spin mr-1" />
+              Reading metadata…
+            </span>
+          )}
         </h3>
         <div className="flex items-center gap-2">
           {selectedIds.size > 0 && (
@@ -495,7 +415,7 @@ export function StagingInbox({
       {importing && importProgress.total > 0 && (
         <div className="flex flex-col gap-1.5">
           <div className="flex items-center justify-between text-xs text-muted-foreground">
-            <span>Moving files to trip…</span>
+            <span>Uploading & creating timeline…</span>
             <span>{Math.round((importProgress.current / importProgress.total) * 100)}%</span>
           </div>
           <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
@@ -557,10 +477,7 @@ export function StagingInbox({
                         )}
                         onClick={() => toggleFileSelection(file.id)}
                       >
-                        <StagedFileThumbnail file={file} />
-                        <div className="absolute top-1 right-1">
-                          <UploadIndicator file={file} />
-                        </div>
+                        <FileThumbnail file={file} />
                         {selectedIds.has(file.id) && (
                           <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-destructive/20">
                             <Trash2 className="h-5 w-5 text-destructive" />
@@ -569,8 +486,6 @@ export function StagingInbox({
                       </div>
                     ))}
                   </div>
-
-                  {/* AI captions hidden in staging — data preserved in ai_result for import */}
                 </div>
               </div>
             </div>
@@ -578,7 +493,7 @@ export function StagingInbox({
         })}
       </div>
 
-      {stagedFiles.length === 0 && !isUploading && (
+      {localFiles.length === 0 && (
         <div className="flex flex-col items-center gap-4 rounded-2xl border-2 border-dashed border-border p-12 text-center">
           <ImageIcon className="h-10 w-10 text-muted-foreground" />
           <div>

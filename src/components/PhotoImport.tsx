@@ -1,7 +1,21 @@
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { Upload, X } from "lucide-react";
-import { useStagingInbox } from "@/hooks/useStagingInbox";
+import { extractExifFromFile, type PhotoExifData } from "@/lib/exif";
 import { StagingInbox } from "@/components/StagingInbox";
+
+export interface LocalStagedFile {
+  id: string;
+  file: File;
+  previewUrl: string;
+  mimeType: string;
+  fileName: string;
+  latitude: number | null;
+  longitude: number | null;
+  takenAt: Date | null;
+  cameraMake: string | null;
+  cameraModel: string | null;
+  exifDone: boolean;
+}
 
 interface PhotoImportProps {
   tripId: string;
@@ -21,15 +35,88 @@ interface PhotoImportProps {
 
 export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps = [] }: PhotoImportProps) {
   const [dragOver, setDragOver] = useState(false);
+  const [files, setFiles] = useState<LocalStagedFile[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const staging = useStagingInbox(tripId);
 
-  const handleFiles = useCallback(
-    (files: File[]) => {
-      staging.stageFiles(files);
-    },
-    [staging.stageFiles],
-  );
+  // Cleanup preview URLs on unmount
+  useEffect(() => {
+    return () => {
+      files.forEach((f) => URL.revokeObjectURL(f.previewUrl));
+    };
+  }, []); // intentionally empty — cleanup on unmount only
+
+  const handleFiles = useCallback((incoming: File[]) => {
+    const mediaFiles = incoming.filter(
+      (f) => f.type.startsWith("image/") || f.type.startsWith("video/"),
+    );
+    if (mediaFiles.length === 0) return;
+
+    // Deduplicate by name+size
+    setFiles((prev) => {
+      const existingKeys = new Set(prev.map((f) => `${f.fileName}::${f.file.size}`));
+      const newFiles: LocalStagedFile[] = [];
+
+      for (const file of mediaFiles) {
+        const key = `${file.name}::${file.size}`;
+        if (existingKeys.has(key)) continue;
+        existingKeys.add(key);
+
+        newFiles.push({
+          id: crypto.randomUUID(),
+          file,
+          previewUrl: URL.createObjectURL(file),
+          mimeType: file.type,
+          fileName: file.name,
+          latitude: null,
+          longitude: null,
+          takenAt: null,
+          cameraMake: null,
+          cameraModel: null,
+          exifDone: false,
+        });
+      }
+
+      if (newFiles.length === 0) return prev;
+
+      // Kick off sequential EXIF extraction in background
+      extractExifSequentially(newFiles.map((f) => f.id), mediaFiles.filter((_, i) => {
+        const key = `${mediaFiles[i].name}::${mediaFiles[i].size}`;
+        return newFiles.some((nf) => `${nf.fileName}::${nf.file.size}` === key);
+      }));
+
+      return [...prev, ...newFiles];
+    });
+  }, []);
+
+  // Sequential EXIF extraction — won't freeze the UI
+  const extractExifSequentially = useCallback(async (ids: string[], rawFiles: File[]) => {
+    for (let i = 0; i < rawFiles.length; i++) {
+      const file = rawFiles[i];
+      const id = ids[i];
+      try {
+        const exif = await extractExifFromFile(file);
+        setFiles((prev) =>
+          prev.map((f) =>
+            f.id === id
+              ? {
+                  ...f,
+                  latitude: exif.latitude,
+                  longitude: exif.longitude,
+                  takenAt: exif.takenAt,
+                  cameraMake: exif.cameraMake ?? null,
+                  cameraModel: exif.cameraModel ?? null,
+                  exifDone: true,
+                }
+              : f,
+          ),
+        );
+      } catch {
+        setFiles((prev) =>
+          prev.map((f) => (f.id === id ? { ...f, exifDone: true } : f)),
+        );
+      }
+    }
+  }, []);
 
   const handleDrop = useCallback(
     (e: React.DragEvent) => {
@@ -43,11 +130,21 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
   const handleFileSelect = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       handleFiles(Array.from(e.target.files || []));
+      if (e.target) e.target.value = "";
     },
     [handleFiles],
   );
 
-  const showDropZone = staging.stagedFiles.length === 0 && !staging.isUploading;
+  const deleteFiles = useCallback((ids: string[]) => {
+    setFiles((prev) => {
+      const idSet = new Set(ids);
+      const removed = prev.filter((f) => idSet.has(f.id));
+      removed.forEach((f) => URL.revokeObjectURL(f.previewUrl));
+      return prev.filter((f) => !idSet.has(f.id));
+    });
+  }, []);
+
+  const showDropZone = files.length === 0;
 
   return (
     <div className="flex flex-col gap-6">
@@ -68,7 +165,7 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
             <div className="text-center">
               <p className="font-medium text-foreground">Drop photos & videos here</p>
               <p className="text-sm text-muted-foreground">
-                Files upload instantly to the cloud — you can close your browser safely
+                Files stay local until you click Import
               </p>
             </div>
             <input
@@ -95,14 +192,11 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
         </div>
       )}
 
-      {(staging.stagedFiles.length > 0 || staging.isUploading) && (
+      {files.length > 0 && (
         <StagingInbox
           tripId={tripId}
-          stagedFiles={staging.stagedFiles}
-          uploads={staging.uploads}
-          isUploading={staging.isUploading}
-          overallProgress={staging.overallProgress}
-          onDeleteFiles={staging.deleteStagedFiles}
+          localFiles={files}
+          onDeleteFiles={deleteFiles}
           onImportComplete={onImportComplete}
           onCancel={onCancel}
           onAddMore={() => fileInputRef.current?.click()}
