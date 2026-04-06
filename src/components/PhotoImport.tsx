@@ -2,6 +2,8 @@ import { useState, useCallback, useRef, useEffect } from "react";
 import { Upload, X } from "lucide-react";
 import { extractExifFromFile, type PhotoExifData } from "@/lib/exif";
 import { StagingInbox } from "@/components/StagingInbox";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
 import heic2any from "heic2any";
 
 export interface LocalStagedFile {
@@ -39,6 +41,53 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, onProgressChan
   const [dragOver, setDragOver] = useState(false);
   const [files, setFiles] = useState<LocalStagedFile[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // Cache of existing file fingerprints for duplicate detection
+  const existingFingerprints = useRef<Set<string> | null>(null);
+
+  // Fetch existing photo fingerprints on mount for duplicate bouncer
+  useEffect(() => {
+    async function loadFingerprints() {
+      const { data } = await supabase
+        .from("step_photos")
+        .select("file_name, exif_data")
+        .eq("user_id", (await supabase.auth.getUser()).data.user?.id ?? "")
+        // filter to this trip's photos via step_id join isn't easy, so we load by joining steps
+      ;
+      // We'll also query step_ids for this trip to filter
+      const { data: stepData } = await supabase
+        .from("trip_steps")
+        .select("id")
+        .eq("trip_id", tripId);
+      const stepIds = new Set((stepData || []).map(s => s.id));
+
+      const fps = new Set<string>();
+      if (data) {
+        for (const photo of data) {
+          if (photo.file_name && stepIds.size > 0) {
+            // We need step_id to filter — re-query with step_id
+            fps.add(photo.file_name);
+          }
+        }
+      }
+
+      // More efficient: query step_photos for this trip's steps
+      if (stepIds.size > 0) {
+        fps.clear();
+        const { data: tripPhotos } = await supabase
+          .from("step_photos")
+          .select("file_name")
+          .in("step_id", Array.from(stepIds).slice(0, 100));
+        if (tripPhotos) {
+          for (const p of tripPhotos) {
+            fps.add(p.file_name);
+          }
+        }
+      }
+
+      existingFingerprints.current = fps;
+    }
+    loadFingerprints();
+  }, [tripId]);
 
   // Cleanup preview URLs on unmount
   useEffect(() => {
@@ -54,12 +103,28 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, onProgressChan
     );
     if (mediaFiles.length === 0) return;
 
-    // Deduplicate by name+size
+    // Duplicate bouncer: check against DB fingerprints
+    let skippedCount = 0;
+    const filtered = mediaFiles.filter((f) => {
+      if (existingFingerprints.current?.has(f.name)) {
+        skippedCount++;
+        return false;
+      }
+      return true;
+    });
+
+    if (skippedCount > 0) {
+      toast.info(`Skipped ${skippedCount} duplicate file${skippedCount !== 1 ? "s" : ""}`);
+    }
+
+    if (filtered.length === 0) return;
+
+    // Deduplicate against local state by name+size
     setFiles((prev) => {
       const existingKeys = new Set(prev.map((f) => `${f.fileName}::${f.file.size}`));
       const newFiles: LocalStagedFile[] = [];
 
-      for (const file of mediaFiles) {
+      for (const file of filtered) {
         const key = `${file.name}::${file.size}`;
         if (existingKeys.has(key)) continue;
         existingKeys.add(key);
@@ -82,8 +147,8 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, onProgressChan
       if (newFiles.length === 0) return prev;
 
       // Kick off sequential EXIF extraction in background
-      extractExifSequentially(newFiles.map((f) => f.id), mediaFiles.filter((_, i) => {
-        const key = `${mediaFiles[i].name}::${mediaFiles[i].size}`;
+      extractExifSequentially(newFiles.map((f) => f.id), filtered.filter((_, i) => {
+        const key = `${filtered[i].name}::${filtered[i].size}`;
         return newFiles.some((nf) => `${nf.fileName}::${nf.file.size}` === key);
       }));
 
