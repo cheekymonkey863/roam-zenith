@@ -175,7 +175,7 @@ export function StagingInbox({
 }: StagingInboxProps) {
   const { user } = useAuth();
   const [importing, setImporting] = useState(false);
-  const [importProgress, setImportProgress] = useState({ current: 0, total: 0 });
+  const [importProgress, setImportProgress] = useState({ current: 0, total: 0, phase: "upload" as "upload" | "sorting" });
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   const groups = useMemo(() => groupLocalFiles(localFiles), [localFiles]);
