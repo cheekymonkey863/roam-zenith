@@ -1,4 +1,5 @@
-import { useState, useRef } from "react";
+import { useState } from "react";
+import { createPortal } from "react-dom";
 import { X, Play, Trash2, ArrowRightLeft, Check, ChevronLeft, ChevronRight } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -40,7 +41,9 @@ function MediaLightbox({
   const prev = () => setIndex((i) => (i > 0 ? i - 1 : photos.length - 1));
   const next = () => setIndex((i) => (i < photos.length - 1 ? i + 1 : 0));
 
-  return (
+  if (typeof document === "undefined") return null;
+
+  return createPortal(
     <div
       className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/90 p-4 backdrop-blur-sm"
       onClick={onClose}
@@ -95,7 +98,8 @@ function MediaLightbox({
           {index + 1} / {photos.length}
         </div>
       )}
-    </div>
+    </div>,
+    document.body,
   );
 }
 

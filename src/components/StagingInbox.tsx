@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from "react";
-import { Check, CheckCircle2, Loader2, MapPin, Trash2, Upload, X, Film, Image as ImageIcon } from "lucide-react";
+import { Check, CheckCircle2, CheckSquare, Loader2, MapPin, Square, Trash2, Upload, X, Film, Image as ImageIcon } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { buildImportedStepDetails } from "@/lib/placeClassification";
@@ -600,7 +600,7 @@ export function StagingInbox({
                             isCompleted
                               ? "ring-green-300 opacity-75"
                               : isFileSelected
-                                ? "ring-destructive cursor-pointer"
+                                ? "ring-primary cursor-pointer"
                                 : "ring-transparent hover:ring-primary/50 cursor-pointer",
                           )}
                           draggable={!importing && !isCompleted}
@@ -611,17 +611,28 @@ export function StagingInbox({
                           onClick={() => !importing && !isCompleted && toggleFileSelection(file.id)}
                         >
                           <FileThumbnail file={file} />
-                          {/* Hover checkbox */}
-                          <div
+                          <button
+                            type="button"
+                            aria-pressed={isFileSelected}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (!importing && !isCompleted) {
+                                toggleFileSelection(file.id);
+                              }
+                            }}
                             className={cn(
                               "absolute top-1 left-1 flex h-5 w-5 items-center justify-center rounded-sm border-2 transition-all",
                               isFileSelected
-                                ? "bg-destructive border-destructive opacity-100"
+                                ? "border-primary bg-primary opacity-100"
                                 : "border-white/70 bg-black/30 opacity-0 group-hover/thumb:opacity-100",
                             )}
                           >
-                            {isFileSelected ? <Trash2 className="h-3 w-3 text-white" /> : <Check className="h-3 w-3 text-white" />}
-                          </div>
+                            {isFileSelected ? (
+                              <CheckSquare className="h-3.5 w-3.5 text-primary-foreground" />
+                            ) : (
+                              <Square className="h-3.5 w-3.5 text-white" />
+                            )}
+                          </button>
                         </div>
                       );
                     })}

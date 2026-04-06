@@ -150,7 +150,10 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
   return (
     <div
       ref={containerRef}
-      className={className ?? "relative w-full overflow-hidden rounded-2xl shadow-card"}
+      className={className
+        ? `relative z-0 max-h-[40vh] mb-8 w-full overflow-hidden ${className}`
+        : "relative z-0 max-h-[40vh] mb-8 w-full overflow-hidden rounded-2xl shadow-card"
+      }
       style={style ?? { minHeight: singleTrip ? 420 : 340 }}
     />
   );

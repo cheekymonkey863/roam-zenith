@@ -389,10 +389,12 @@ const TripDetail = () => {
       {showPhotoImport && (
         <PhotoImport
           tripId={trip.id}
-          onImportComplete={async () => {
-            await fetchData();
-            setTimeout(() => setShowPhotoImport(false), 3000);
-            setHasStagedFiles(false);
+          onImportComplete={() => {
+            void fetchData();
+            window.setTimeout(() => {
+              setShowPhotoImport(false);
+              setHasStagedFiles(false);
+            }, 3000);
           }}
           onCancel={() => setShowPhotoImport(false)}
           onProgressChange={setImportProgress}
@@ -417,14 +419,14 @@ const TripDetail = () => {
       {steps.length > 0 ? (
         <div className="flex flex-col">
           {/* Sticky Top Map */}
-          <div className="sticky top-0 z-10 w-full max-h-[40vh] h-[35vh] lg:h-[40vh] mb-8 shadow-md bg-background">
+          <div className="sticky top-0 relative z-0 max-h-[40vh] mb-8 h-[35vh] w-full bg-background lg:h-[40vh]">
             <WorldMap
               ref={mapRef}
               steps={steps}
               singleTrip
               visualTypes={visualTypes}
               activeStepId={activeStepId}
-              className="w-full h-full overflow-hidden rounded-b-2xl"
+              className="h-full w-full overflow-hidden rounded-b-2xl"
             />
           </div>
 
