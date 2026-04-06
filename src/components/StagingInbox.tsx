@@ -477,12 +477,6 @@ export function StagingInbox({
       <div className="flex items-center justify-between">
         <h3 className="font-display text-lg font-semibold text-foreground">
           Trip Inbox ({localFiles.length})
-          {exifPending && (
-            <span className="ml-2 text-xs font-normal text-muted-foreground">
-              <Loader2 className="inline h-3 w-3 animate-spin mr-1" />
-              Reading metadata…
-            </span>
-          )}
         </h3>
         <div className="flex items-center gap-2">
           {selectedIds.size > 0 && (
