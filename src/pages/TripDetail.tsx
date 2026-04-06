@@ -391,8 +391,8 @@ const TripDetail = () => {
           tripId={trip.id}
           onImportComplete={async () => {
             await fetchData();
-            // 3-second delay so user sees the completed waterfall before unmount
             setTimeout(() => setShowPhotoImport(false), 3000);
+            setHasStagedFiles(false);
           }}
           onCancel={() => setShowPhotoImport(false)}
           onProgressChange={setImportProgress}
@@ -417,7 +417,7 @@ const TripDetail = () => {
       {steps.length > 0 ? (
         <div className="flex flex-col">
           {/* Sticky Top Map */}
-          <div className="sticky top-0 z-50 w-full h-[35vh] lg:h-[40vh] shadow-md bg-background">
+          <div className="sticky top-0 z-10 w-full max-h-[40vh] h-[35vh] lg:h-[40vh] mb-8 shadow-md bg-background">
             <WorldMap
               ref={mapRef}
               steps={steps}
