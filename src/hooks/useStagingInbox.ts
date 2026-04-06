@@ -132,7 +132,25 @@ export function useStagingInbox(tripId: string) {
         return;
       }
 
-      toast.info(`Uploading ${mediaFiles.length} file(s) to staging...`);
+      // --- INSTANT RENDER: add local preview placeholders immediately ---
+      const localPreviews: StagedMediaFile[] = mediaFiles.map((file) => ({
+        id: `local-${crypto.randomUUID()}`,
+        trip_id: tripId,
+        storage_path: "",
+        mime_type: file.type,
+        file_name: file.name,
+        exif_metadata: {},
+        ai_processing_status: "pending" as const,
+        ai_result: null,
+        group_key: null,
+        created_at: new Date().toISOString(),
+        publicUrl: "",
+        localPreviewUrl: URL.createObjectURL(file),
+        isLocalOnly: true,
+      }));
+      setStagedFiles((prev) => [...prev, ...localPreviews]);
+
+      toast.info(`Uploading ${mediaFiles.length} file(s)…`);
 
       const newUploads = new Map<string, UploadProgress>();
       mediaFiles.forEach((f) => {
