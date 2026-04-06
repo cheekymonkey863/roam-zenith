@@ -41,8 +41,8 @@ function FileThumbnail({ file }: { file: LocalStagedFile }) {
     return (
       <div className="relative aspect-square w-full overflow-hidden rounded-lg bg-slate-900">
         <video
-          src={`${file.previewUrl}#t=0.001`}
-          preload="metadata"
+          preload="none"
+          poster={file.previewUrl}
           muted
           playsInline
           className="h-full w-full object-cover"
