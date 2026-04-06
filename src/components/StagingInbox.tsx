@@ -8,15 +8,11 @@ import { resumableUpload } from "@/lib/resumableUpload";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import type { LocalStagedFile } from "@/components/PhotoImport";
-
-interface StagingGroup {
-  key: string;
-  locationName: string;
-  latitude: number | null;
-  longitude: number | null;
-  files: LocalStagedFile[];
-  earliestDate: Date | null;
-}
+import {
+  getGroupRepresentativeCoordinates,
+  groupLocalFiles,
+  type StagingGroup,
+} from "@/lib/stagingGrouping";
 
 interface StagingInboxProps {
   tripId: string;
@@ -36,117 +32,6 @@ interface StagingInboxProps {
     event_type: string;
     description: string | null;
   }>;
-}
-
-// GPS grouping: 60m radius (building-sized)
-const LOCATION_GROUP_RADIUS_METERS = 60;
-// Only split into a new group if GPS > 60m AND time gap > 2 hours
-const TIME_GAP_MS = 2 * 60 * 60 * 1000;
-
-function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
-  const R = 6371000;
-  const dLat = ((lat2 - lat1) * Math.PI) / 180;
-  const dLon = ((lon2 - lon1) * Math.PI) / 180;
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLon / 2) ** 2;
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-}
-
-function groupLocalFiles(files: LocalStagedFile[]): StagingGroup[] {
-  const groups: StagingGroup[] = [];
-  const noGpsFiles: LocalStagedFile[] = [];
-
-  // Sort all files by time first so groups are chronological
-  const sorted = [...files].sort(
-    (a, b) => (a.takenAt?.getTime() ?? Infinity) - (b.takenAt?.getTime() ?? Infinity),
-  );
-
-  for (const file of sorted) {
-    if (file.latitude == null || file.longitude == null) {
-      noGpsFiles.push(file);
-      continue;
-    }
-
-    // Try to match an existing group: must be within 60m AND within 2h time gap
-    let matched = false;
-    for (const group of groups) {
-      if (group.latitude != null && group.longitude != null) {
-        const dist = haversineDistance(file.latitude, file.longitude, group.latitude, group.longitude);
-        if (dist <= LOCATION_GROUP_RADIUS_METERS) {
-          // Within 60m — check time gap against closest file in group
-          const fileTime = file.takenAt?.getTime();
-          if (fileTime) {
-            const groupTimes = group.files
-              .map((f) => f.takenAt?.getTime())
-              .filter((t): t is number => t != null);
-            const closestGap = groupTimes.length > 0
-              ? Math.min(...groupTimes.map((t) => Math.abs(fileTime - t)))
-              : 0;
-            if (closestGap > TIME_GAP_MS) continue; // too far apart in time, try next group
-          }
-          group.files.push(file);
-          matched = true;
-          break;
-        }
-      }
-    }
-
-    if (!matched) {
-      groups.push({
-        key: `group-${groups.length}`,
-        locationName: "",
-        latitude: file.latitude,
-        longitude: file.longitude,
-        files: [file],
-        earliestDate: file.takenAt,
-      });
-    }
-  }
-
-  // Second pass: group no-GPS files by 2-hour time gap
-  if (noGpsFiles.length > 0) {
-    const sortedNoGps = [...noGpsFiles].sort(
-      (a, b) => (a.takenAt?.getTime() ?? Infinity) - (b.takenAt?.getTime() ?? Infinity),
-    );
-
-    let currentGroup: LocalStagedFile[] = [sortedNoGps[0]];
-    for (let i = 1; i < sortedNoGps.length; i++) {
-      const prevTime = sortedNoGps[i - 1].takenAt?.getTime();
-      const currTime = sortedNoGps[i].takenAt?.getTime();
-      if (prevTime && currTime && currTime - prevTime <= TIME_GAP_MS) {
-        currentGroup.push(sortedNoGps[i]);
-      } else {
-        groups.push({
-          key: `nogps-${groups.length}`,
-          locationName: "",
-          latitude: null,
-          longitude: null,
-          files: currentGroup,
-          earliestDate: null,
-        });
-        currentGroup = [sorted[i]];
-      }
-    }
-    groups.push({
-      key: `nogps-${groups.length}`,
-      locationName: "",
-      latitude: null,
-      longitude: null,
-      files: currentGroup,
-      earliestDate: null,
-    });
-  }
-
-  // Compute earliest date per group
-  for (const group of groups) {
-    const dates = group.files.map((f) => f.takenAt).filter(Boolean) as Date[];
-    group.earliestDate = dates.length > 0 ? new Date(Math.min(...dates.map((d) => d.getTime()))) : null;
-  }
-
-  return groups.sort(
-    (a, b) => (a.earliestDate?.getTime() ?? Infinity) - (b.earliestDate?.getTime() ?? Infinity),
-  );
 }
 
 function FileThumbnail({ file }: { file: LocalStagedFile }) {
@@ -231,11 +116,11 @@ export function StagingInbox({
   });
 
   // Sync group selection when groups change
-  useMemo(() => {
+  useEffect(() => {
     setGroupSelection((prev) => {
-      const next = new Map(prev);
+      const next = new Map<string, boolean>();
       groups.forEach((g) => {
-        if (!next.has(g.key)) next.set(g.key, true);
+        next.set(g.key, prev.get(g.key) ?? true);
       });
       return next;
     });
@@ -350,6 +235,13 @@ export function StagingInbox({
         groupToUploads.set(ur.groupKey, arr);
       }
 
+      const batchCoordinates = selectedGroups
+        .map((group) => getGroupRepresentativeCoordinates(group))
+        .find((coords): coords is { latitude: number; longitude: number } => coords !== null)
+        ?? (existingSteps[0]
+          ? { latitude: existingSteps[0].latitude, longitude: existingSteps[0].longitude }
+          : { latitude: 0, longitude: 0 });
+
       const stepRows: Array<{
         id: string;
         trip_id: string;
@@ -369,40 +261,28 @@ export function StagingInbox({
       for (const group of selectedGroups) {
         const uploads = groupToUploads.get(group.key);
         if (!uploads || uploads.length === 0) continue;
-        if (group.latitude == null || group.longitude == null) continue;
 
-        // Check if we match an existing step (using same 60m radius)
-        let existingStepId: string | null = null;
-        for (const existing of existingSteps) {
-          if (haversineDistance(existing.latitude, existing.longitude, group.latitude, group.longitude) < LOCATION_GROUP_RADIUS_METERS) {
-            existingStepId = existing.id;
-            break;
-          }
-        }
+        const newId = crypto.randomUUID();
+        const representativeCoordinates = getGroupRepresentativeCoordinates(group) ?? batchCoordinates;
+        const stepDetails = buildImportedStepDetails({
+          locationName: group.locationName,
+          country: "",
+        });
 
-        if (existingStepId) {
-          stepIdByGroupKey.set(group.key, existingStepId);
-        } else {
-          const newId = crypto.randomUUID();
-          stepIdByGroupKey.set(group.key, newId);
-          const stepDetails = buildImportedStepDetails({
-            locationName: group.locationName,
-            country: "",
-          });
-          stepRows.push({
-            id: newId,
-            trip_id: tripId,
-            user_id: user.id,
-            latitude: group.latitude,
-            longitude: group.longitude,
-            recorded_at: group.earliestDate?.toISOString() || new Date().toISOString(),
-            source: "photo_import",
-            event_type: stepDetails.eventType,
-            is_confirmed: true,
-            location_name: null,
-            country: null,
-          });
-        }
+        stepIdByGroupKey.set(group.key, newId);
+        stepRows.push({
+          id: newId,
+          trip_id: tripId,
+          user_id: user.id,
+          latitude: representativeCoordinates.latitude,
+          longitude: representativeCoordinates.longitude,
+          recorded_at: group.earliestDate?.toISOString() || new Date().toISOString(),
+          source: "photo_import",
+          event_type: stepDetails.eventType,
+          is_confirmed: true,
+          location_name: null,
+          country: null,
+        });
       }
 
       // Bulk insert all new steps at once
