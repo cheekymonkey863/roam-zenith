@@ -2,6 +2,7 @@ import { useState, useCallback, useRef, useEffect } from "react";
 import { Upload, X } from "lucide-react";
 import { extractExifFromFile, type PhotoExifData } from "@/lib/exif";
 import { StagingInbox } from "@/components/StagingInbox";
+import heic2any from "heic2any";
 
 export interface LocalStagedFile {
   id: string;
