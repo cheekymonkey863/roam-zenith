@@ -144,7 +144,9 @@ function groupStagedFiles(files: StagedMediaFile[]): StagingGroup[] {
 
 function StagedFileThumbnail({ file }: { file: StagedMediaFile }) {
   const isVideo = file.mime_type.startsWith("video/");
-  const url = file.publicUrl;
+  // Prefer local object URL for instant render, fall back to remote
+  const url = file.localPreviewUrl || file.publicUrl;
+  const isLocal = !!file.isLocalOnly;
 
   if (isVideo) {
     return (
@@ -164,13 +166,23 @@ function StagedFileThumbnail({ file }: { file: StagedMediaFile }) {
         <div className="absolute bottom-1 right-1 rounded bg-black/60 px-1.5 py-0.5 text-[10px] font-medium text-white">
           VIDEO
         </div>
+        {isLocal && (
+          <div className="absolute inset-0 bg-black/10">
+            <div className="absolute bottom-0 left-0 h-1 w-full bg-primary/40 animate-pulse" />
+          </div>
+        )}
       </div>
     );
   }
 
   return (
-    <div className="aspect-square w-full overflow-hidden rounded-lg bg-muted">
+    <div className="relative aspect-square w-full overflow-hidden rounded-lg bg-muted">
       <img src={url} alt={file.file_name} className="h-full w-full object-cover" loading="lazy" />
+      {isLocal && (
+        <div className="absolute inset-0 bg-black/10">
+          <div className="absolute bottom-0 left-0 h-1 w-full bg-primary/40 animate-pulse" />
+        </div>
+      )}
     </div>
   );
 }

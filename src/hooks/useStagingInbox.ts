@@ -31,6 +31,10 @@ export interface StagedMediaFile {
   group_key: string | null;
   created_at: string;
   publicUrl: string;
+  /** Local object URL for instant preview before upload completes */
+  localPreviewUrl?: string;
+  /** True while the file is still uploading to storage */
+  isLocalOnly?: boolean;
 }
 
 export interface UploadProgress {
@@ -96,8 +100,18 @@ export function useStagingInbox(tripId: string) {
           if (payload.eventType === "INSERT") {
             const row = payload.new as any;
             setStagedFiles((prev) => {
-              if (prev.some((f) => f.id === row.id)) return prev;
-              return [...prev, { ...row, publicUrl: getPublicUrl(row.storage_path) }];
+              // Revoke object URLs from local placeholders being replaced
+              const replaced = prev.filter(
+                (f) => f.isLocalOnly && f.file_name === row.file_name,
+              );
+              replaced.forEach((f) => {
+                if (f.localPreviewUrl) URL.revokeObjectURL(f.localPreviewUrl);
+              });
+              const withoutLocal = prev.filter(
+                (f) => !(f.isLocalOnly && f.file_name === row.file_name),
+              );
+              if (withoutLocal.some((f) => f.id === row.id)) return withoutLocal;
+              return [...withoutLocal, { ...row, publicUrl: getPublicUrl(row.storage_path) }];
             });
           } else if (payload.eventType === "UPDATE") {
             const row = payload.new as any;
@@ -128,7 +142,25 @@ export function useStagingInbox(tripId: string) {
         return;
       }
 
-      toast.info(`Uploading ${mediaFiles.length} file(s) to staging...`);
+      // --- INSTANT RENDER: add local preview placeholders immediately ---
+      const localPreviews: StagedMediaFile[] = mediaFiles.map((file) => ({
+        id: `local-${crypto.randomUUID()}`,
+        trip_id: tripId,
+        storage_path: "",
+        mime_type: file.type,
+        file_name: file.name,
+        exif_metadata: {},
+        ai_processing_status: "pending" as const,
+        ai_result: null,
+        group_key: null,
+        created_at: new Date().toISOString(),
+        publicUrl: "",
+        localPreviewUrl: URL.createObjectURL(file),
+        isLocalOnly: true,
+      }));
+      setStagedFiles((prev) => [...prev, ...localPreviews]);
+
+      toast.info(`Uploading ${mediaFiles.length} file(s)…`);
 
       const newUploads = new Map<string, UploadProgress>();
       mediaFiles.forEach((f) => {
