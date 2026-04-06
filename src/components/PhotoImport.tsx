@@ -156,54 +156,79 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, onProgressChan
     });
   }, []);
 
-  // Sequential EXIF extraction — won't freeze the UI
-  const extractExifSequentially = useCallback(async (ids: string[], rawFiles: File[]) => {
-    for (let i = 0; i < rawFiles.length; i++) {
-      const file = rawFiles[i];
-      const id = ids[i];
-      try {
-        // Convert HEIC to JPEG for browser preview
-        const isHeic = file.name.toLowerCase().endsWith(".heic") || file.name.toLowerCase().endsWith(".heif") || file.type === "image/heic";
-        if (isHeic) {
-          try {
-            const convertedBlob = await heic2any({ blob: file, toType: "image/jpeg", quality: 0.8 });
-            const blob = Array.isArray(convertedBlob) ? convertedBlob[0] : convertedBlob;
-            const newPreviewUrl = URL.createObjectURL(blob);
-            setFiles((prev) =>
-              prev.map((f) => {
-                if (f.id === id) {
-                  URL.revokeObjectURL(f.previewUrl);
-                  return { ...f, previewUrl: newPreviewUrl };
-                }
-                return f;
-              }),
-            );
-          } catch (heicErr) {
-            console.warn("HEIC conversion failed, keeping original:", heicErr);
-          }
-        }
+  // Batched EXIF extraction — process in chunks of 5, ONE state update per batch
+  const extractExifBatched = useCallback(async (ids: string[], rawFiles: File[]) => {
+    const BATCH_SIZE = 5;
 
-        const exif = await extractExifFromFile(file);
-        setFiles((prev) =>
-          prev.map((f) =>
-            f.id === id
-              ? {
-                  ...f,
-                  latitude: exif.latitude,
-                  longitude: exif.longitude,
-                  takenAt: exif.takenAt,
-                  cameraMake: exif.cameraMake ?? null,
-                  cameraModel: exif.cameraModel ?? null,
-                  exifDone: true,
-                }
-              : f,
-          ),
-        );
-      } catch {
-        setFiles((prev) =>
-          prev.map((f) => (f.id === id ? { ...f, exifDone: true } : f)),
-        );
+    for (let batchStart = 0; batchStart < rawFiles.length; batchStart += BATCH_SIZE) {
+      const batchIds = ids.slice(batchStart, batchStart + BATCH_SIZE);
+      const batchFiles = rawFiles.slice(batchStart, batchStart + BATCH_SIZE);
+
+      // Process batch concurrently
+      const results = await Promise.allSettled(
+        batchFiles.map(async (file, idx) => {
+          const id = batchIds[idx];
+          let newPreviewUrl: string | null = null;
+
+          // Convert HEIC to JPEG for browser preview
+          const isHeic = file.name.toLowerCase().endsWith(".heic") || file.name.toLowerCase().endsWith(".heif") || file.type === "image/heic";
+          if (isHeic) {
+            try {
+              const convertedBlob = await heic2any({ blob: file, toType: "image/jpeg", quality: 0.8 });
+              const blob = Array.isArray(convertedBlob) ? convertedBlob[0] : convertedBlob;
+              newPreviewUrl = URL.createObjectURL(blob);
+            } catch (heicErr) {
+              console.warn("HEIC conversion failed, keeping original:", heicErr);
+            }
+          }
+
+          try {
+            const exif = await extractExifFromFile(file);
+            return {
+              id,
+              latitude: exif.latitude,
+              longitude: exif.longitude,
+              takenAt: exif.takenAt,
+              cameraMake: exif.cameraMake ?? null,
+              cameraModel: exif.cameraModel ?? null,
+              newPreviewUrl,
+            };
+          } catch {
+            return { id, latitude: null, longitude: null, takenAt: null, cameraMake: null, cameraModel: null, newPreviewUrl };
+          }
+        }),
+      );
+
+      // ONE state update for the entire batch
+      const successResults = results
+        .filter((r): r is PromiseFulfilledResult<{ id: string; latitude: number | null; longitude: number | null; takenAt: Date | null; cameraMake: string | null; cameraModel: string | null; newPreviewUrl: string | null }> => r.status === "fulfilled")
+        .map((r) => r.value);
+
+      if (successResults.length > 0) {
+        setFiles((prev) => {
+          const resultMap = new Map(successResults.map((r) => [r.id, r]));
+          return prev.map((f) => {
+            const result = resultMap.get(f.id);
+            if (!result) return f;
+            if (result.newPreviewUrl) {
+              URL.revokeObjectURL(f.previewUrl);
+            }
+            return {
+              ...f,
+              latitude: result.latitude,
+              longitude: result.longitude,
+              takenAt: result.takenAt,
+              cameraMake: result.cameraMake,
+              cameraModel: result.cameraModel,
+              previewUrl: result.newPreviewUrl ?? f.previewUrl,
+              exifDone: true,
+            };
+          });
+        });
       }
+
+      // Yield to main thread between batches
+      await new Promise((r) => setTimeout(r, 0));
     }
   }, []);
 
