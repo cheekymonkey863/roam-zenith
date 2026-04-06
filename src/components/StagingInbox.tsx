@@ -378,7 +378,7 @@ export function StagingInbox({
             />
           </div>
           {importing && (
-            <p className="text-xs text-muted-foreground">Upload in progress — you can navigate away safely, it will resume automatically</p>
+            <p className="text-xs text-muted-foreground">Upload in progress — please do not close this tab</p>
           )}
         </div>
       )}
