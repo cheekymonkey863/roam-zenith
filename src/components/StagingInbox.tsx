@@ -371,10 +371,10 @@ export function StagingInbox({
         if (!uploads || uploads.length === 0) continue;
         if (group.latitude == null || group.longitude == null) continue;
 
-        // Check if we match an existing step (using same 500m radius)
+        // Check if we match an existing step (using same 60m radius)
         let existingStepId: string | null = null;
         for (const existing of existingSteps) {
-          if (haversineDistance(existing.latitude, existing.longitude, group.latitude, group.longitude) < 500) {
+          if (haversineDistance(existing.latitude, existing.longitude, group.latitude, group.longitude) < LOCATION_GROUP_RADIUS_METERS) {
             existingStepId = existing.id;
             break;
           }
