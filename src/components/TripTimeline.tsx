@@ -426,7 +426,7 @@ export function TripTimeline({
                 )}
 
                 <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground/60">
-                  <span>Step {index + 1}</span>
+                  <span>Stop {index + 1}</span>
                   <span>·</span>
                   <span>{step.latitude.toFixed(2)}°, {step.longitude.toFixed(2)}°</span>
                   <span>·</span>
