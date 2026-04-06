@@ -158,8 +158,20 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, onProgressChan
     });
   }, []);
 
-  // Sequential EXIF extraction — ONE file at a time to prevent OOM on heavy .MOV files
+  // Sequential EXIF extraction — ONE file at a time, single bulk state update at end
   const extractExifSequential = useCallback(async (ids: string[], rawFiles: File[]) => {
+    setExifProgress({ done: 0, total: rawFiles.length });
+
+    const results: Array<{
+      id: string;
+      latitude: number | null;
+      longitude: number | null;
+      takenAt: Date | null;
+      cameraMake: string | null;
+      cameraModel: string | null;
+      newPreviewUrl: string | null;
+    }> = [];
+
     for (let i = 0; i < rawFiles.length; i++) {
       const id = ids[i];
       const file = rawFiles[i];
@@ -177,10 +189,10 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, onProgressChan
         }
       }
 
-      let result: { latitude: number | null; longitude: number | null; takenAt: Date | null; cameraMake: string | null; cameraModel: string | null };
+      let exifResult: { latitude: number | null; longitude: number | null; takenAt: Date | null; cameraMake: string | null; cameraModel: string | null };
       try {
         const exif = await extractExifFromFile(file);
-        result = {
+        exifResult = {
           latitude: exif.latitude,
           longitude: exif.longitude,
           takenAt: exif.takenAt,
@@ -188,28 +200,36 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, onProgressChan
           cameraModel: exif.cameraModel ?? null,
         };
       } catch {
-        result = { latitude: null, longitude: null, takenAt: null, cameraMake: null, cameraModel: null };
+        exifResult = { latitude: null, longitude: null, takenAt: null, cameraMake: null, cameraModel: null };
       }
 
-      // Single state update per file + immediate cleanup
-      setFiles((prev) =>
-        prev.map((f) => {
-          if (f.id !== id) return f;
-          if (newPreviewUrl) {
-            URL.revokeObjectURL(f.previewUrl);
-          }
-          return {
-            ...f,
-            ...result,
-            previewUrl: newPreviewUrl ?? f.previewUrl,
-            exifDone: true,
-          };
-        }),
-      );
+      results.push({ id, ...exifResult, newPreviewUrl });
+
+      // Update lightweight progress counter only
+      setExifProgress({ done: i + 1, total: rawFiles.length });
 
       // Yield to main thread & allow GC
       await new Promise((resolve) => setTimeout(resolve, 50));
     }
+
+    // Single bulk state update — revoke old URLs during the merge
+    setFiles((prev) =>
+      prev.map((f) => {
+        const r = results.find((x) => x.id === f.id);
+        if (!r) return f;
+        if (r.newPreviewUrl) URL.revokeObjectURL(f.previewUrl);
+        return {
+          ...f,
+          latitude: r.latitude,
+          longitude: r.longitude,
+          takenAt: r.takenAt,
+          cameraMake: r.cameraMake,
+          cameraModel: r.cameraModel,
+          previewUrl: r.newPreviewUrl ?? f.previewUrl,
+          exifDone: true,
+        };
+      }),
+    );
   }, []);
 
   const handleDrop = useCallback(
