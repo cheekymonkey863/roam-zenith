@@ -367,7 +367,7 @@ export function StagingInbox({
       }
 
       // Build photo rows
-      const photoRows: Array<{
+      const photoRows = [] as Array<{
         step_id: string;
         user_id: string;
         storage_path: string;
@@ -375,8 +375,8 @@ export function StagingInbox({
         latitude: number | null;
         longitude: number | null;
         taken_at: string | null;
-        exif_data: Record<string, unknown>;
-      }> = [];
+        exif_data: { latitude: number | null; longitude: number | null; cameraMake: string | null; cameraModel: string | null } | null;
+      }>;
 
       const videoUploads: UploadResult[] = [];
 
