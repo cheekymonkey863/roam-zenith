@@ -259,6 +259,8 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, onProgressChan
   }, []);
 
   const showDropZone = files.length === 0;
+  const isProcessingExif = files.length > 0 && files.some((f) => !f.exifDone);
+  const exifPercent = exifProgress.total > 0 ? Math.round((exifProgress.done / exifProgress.total) * 100) : 0;
 
   return (
     <div className="flex flex-col gap-6">
@@ -306,7 +308,27 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, onProgressChan
         </div>
       )}
 
-      {files.length > 0 && (
+      {/* Curtain: show only progress bar while EXIF is being read — do NOT mount StagingInbox */}
+      {isProcessingExif && (
+        <div className="flex flex-col gap-2 rounded-xl border border-border bg-card p-4">
+          <div className="flex items-center justify-between text-sm font-medium">
+            <span className="flex items-center gap-2 text-foreground">
+              <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+              Reading file data… ({exifProgress.done} of {exifProgress.total})
+            </span>
+            <span className="font-semibold text-muted-foreground">{exifPercent}%</span>
+          </div>
+          <div className="h-4 w-full overflow-hidden rounded-full bg-muted">
+            <div
+              className="h-full rounded-full bg-muted-foreground/40 transition-all duration-300"
+              style={{ width: `${Math.max(exifPercent, 2)}%` }}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Only mount StagingInbox after all EXIF processing is complete */}
+      {files.length > 0 && !isProcessingExif && (
         <StagingInbox
           tripId={tripId}
           localFiles={files}
