@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useCallback } from "react";
+import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { Check, CheckCircle2, Loader2, MapPin, Trash2, Upload, X, Film, Image as ImageIcon } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -56,30 +56,77 @@ function FileThumbnail({ file }: { file: LocalStagedFile }) {
   );
 }
 
-function getGroupDisplayName(group: StagingGroup) {
-  if (group.locationName) return group.locationName;
-  if (group.latitude != null && group.longitude != null) {
-    if (group.earliestDate) {
-      return group.earliestDate.toLocaleDateString("en-US", {
-        weekday: "short",
-        month: "short",
-        day: "numeric",
-        hour: "numeric",
-        minute: "2-digit",
-      });
-    }
-    return `📍 ${group.latitude.toFixed(4)}, ${group.longitude.toFixed(4)}`;
+/** Extract a 'Place - City, CC' string from Nominatim reverse response */
+function parseNominatimAddress(data: any): string | null {
+  const addr = data?.address;
+  if (!addr) return null;
+
+  const place =
+    addr.amenity || addr.leisure || addr.tourism || addr.shop ||
+    addr.historic || addr.building || addr.road || null;
+  const city = addr.city || addr.town || addr.village || null;
+  const cc = addr.country_code ? addr.country_code.toUpperCase() : null;
+
+  if (city && cc) {
+    return place ? `${place} - ${city}, ${cc}` : `${city}, ${cc}`;
   }
-  if (group.earliestDate) {
-    return group.earliestDate.toLocaleDateString("en-US", {
-      weekday: "short",
-      month: "short",
-      day: "numeric",
-      hour: "numeric",
-      minute: "2-digit",
-    });
-  }
-  return `${group.files.length} file${group.files.length !== 1 ? "s" : ""}`;
+  if (place) return place;
+  return data?.display_name?.split(",").slice(0, 2).join(",").trim() || null;
+}
+
+/** Hook: sequentially reverse-geocode groups via Nominatim (1 req/s) */
+function useGroupLocationNames(groups: StagingGroup[]) {
+  const [names, setNames] = useState<Map<string, string>>(new Map());
+  const prevKeysRef = useRef<string>("");
+
+  useEffect(() => {
+    // Build a stable key so we don't re-fetch on every render
+    const coordKeys = groups
+      .map((g) => `${g.key}:${g.latitude}:${g.longitude}`)
+      .join("|");
+    if (coordKeys === prevKeysRef.current) return;
+    prevKeysRef.current = coordKeys;
+
+    const toResolve = groups.filter(
+      (g) => g.latitude != null && g.longitude != null && !names.has(g.key),
+    );
+    if (toResolve.length === 0) return;
+
+    let cancelled = false;
+
+    (async () => {
+      const batch = new Map<string, string>();
+      for (const group of toResolve) {
+        if (cancelled) break;
+        try {
+          const res = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${group.latitude}&lon=${group.longitude}&zoom=18`,
+            { headers: { "User-Agent": "TravelTrkr/1.0" } },
+          );
+          if (res.ok) {
+            const data = await res.json();
+            const label = parseNominatimAddress(data);
+            if (label) batch.set(group.key, label);
+          }
+        } catch {
+          /* skip */
+        }
+        // Rate-limit: 1 request per second
+        if (!cancelled) await new Promise((r) => setTimeout(r, 1000));
+      }
+      if (!cancelled && batch.size > 0) {
+        setNames((prev) => {
+          const next = new Map(prev);
+          batch.forEach((v, k) => next.set(k, v));
+          return next;
+        });
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [groups]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  return names;
 }
 
 export function StagingInbox({
@@ -100,6 +147,7 @@ export function StagingInbox({
   const [completedGroups, setCompletedGroups] = useState<Set<string>>(new Set());
 
   const groups = useMemo(() => groupLocalFiles(localFiles), [localFiles]);
+  const resolvedNames = useGroupLocationNames(groups);
 
   const [groupSelection, setGroupSelection] = useState<Map<string, boolean>>(() => {
     const map = new Map<string, boolean>();
@@ -464,9 +512,14 @@ export function StagingInbox({
                     ) : (
                       <MapPin className="h-4 w-4 text-primary" />
                     )}
-                    <span className="text-lg font-medium text-foreground">
-                      {getGroupDisplayName(group)}
+                    <span className="text-lg font-semibold text-foreground">
+                      {resolvedNames.get(group.key) || (group.latitude != null ? `📍 ${group.latitude!.toFixed(4)}, ${group.longitude!.toFixed(4)}` : `${group.files.length} file${group.files.length !== 1 ? "s" : ""}`)}
                     </span>
+                    {group.earliestDate && (
+                      <span className="text-sm text-muted-foreground">
+                        {group.earliestDate.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
+                      </span>
+                    )}
                     <span className="text-sm text-muted-foreground">
                       ({group.files.length} file{group.files.length !== 1 ? "s" : ""})
                     </span>
@@ -477,15 +530,6 @@ export function StagingInbox({
                     )}
                   </div>
 
-                  {group.earliestDate && (
-                    <p className="text-xs text-muted-foreground">
-                      {group.earliestDate.toLocaleDateString("en-US", {
-                        month: "short",
-                        day: "numeric",
-                        year: "numeric",
-                      })}
-                    </p>
-                  )}
 
                   {/* File grid */}
                   <div className="grid grid-cols-4 gap-2 sm:grid-cols-6 md:grid-cols-8">
