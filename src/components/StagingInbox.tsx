@@ -25,6 +25,7 @@ interface StagingInboxProps {
   onImportComplete: () => void;
   onCancel?: () => void;
   onAddMore: () => void;
+  onProgressChange?: (progress: { importing: boolean; current: number; total: number }) => void;
   existingSteps?: Array<{
     id: string;
     latitude: number;
