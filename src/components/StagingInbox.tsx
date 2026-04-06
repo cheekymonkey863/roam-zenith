@@ -244,7 +244,7 @@ export function StagingInbox({
     const allFiles = selectedGroups.flatMap((g) => g.files);
     const total = allFiles.length;
     let completed = 0;
-    setImportProgress({ current: 0, total });
+    setImportProgress({ current: 0, total, phase: "upload" });
 
     try {
       // ── STEP A: Upload all files to storage in parallel (concurrency 5) ──
