@@ -518,6 +518,25 @@ export function StagingInbox({
         </div>
       </div>
 
+      {/* EXIF reading progress */}
+      {exifPending && (
+        <div className="flex flex-col gap-1.5 rounded-xl border border-muted bg-muted/30 px-4 py-3">
+          <div className="flex items-center justify-between text-xs text-muted-foreground">
+            <span className="flex items-center gap-2">
+              <Loader2 className="h-3 w-3 animate-spin" />
+              Importing and sorting media…
+            </span>
+            <span>{localFiles.filter(f => f.exifDone).length} / {localFiles.length}</span>
+          </div>
+          <div className="h-2 w-full overflow-hidden rounded-full bg-secondary">
+            <div
+              className="h-full rounded-full bg-primary/60 transition-all duration-300"
+              style={{ width: `${(localFiles.filter(f => f.exifDone).length / localFiles.length) * 100}%` }}
+            />
+          </div>
+        </div>
+      )}
+
       {/* Groups */}
       <div className="flex flex-col gap-3">
         {groups.map((group) => {
