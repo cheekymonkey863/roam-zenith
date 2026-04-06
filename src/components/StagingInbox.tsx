@@ -84,12 +84,12 @@ function groupStagedFiles(files: StagedMediaFile[]): StagingGroup[] {
       const venueName = file.ai_result?.suggestedVenueName;
       const cityName = file.ai_result?.suggestedCityName;
       const locationName = venueName && cityName
-        ? `${venueName}, ${cityName}`
-        : venueName || "Unknown Location";
+87:         ? `${venueName}, ${cityName}`
+88:         : venueName || null; // null = pending resolution
 
       groups.push({
         key: `group-${groups.length}`,
-        locationName,
+        locationName: locationName || "",
         country: "",
         latitude: lat,
         longitude: lng,
@@ -104,7 +104,7 @@ function groupStagedFiles(files: StagedMediaFile[]): StagingGroup[] {
   if (ungrouped.length > 0) {
     groups.push({
       key: "ungrouped",
-      locationName: "No GPS Data",
+      locationName: "",
       country: "",
       latitude: null,
       longitude: null,
