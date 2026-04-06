@@ -100,8 +100,12 @@ export function useStagingInbox(tripId: string) {
           if (payload.eventType === "INSERT") {
             const row = payload.new as any;
             setStagedFiles((prev) => {
-              if (prev.some((f) => f.id === row.id)) return prev;
-              return [...prev, { ...row, publicUrl: getPublicUrl(row.storage_path) }];
+              // Remove any local-only placeholder for this file_name, then add the real row
+              const withoutLocal = prev.filter(
+                (f) => !(f.isLocalOnly && f.file_name === row.file_name),
+              );
+              if (withoutLocal.some((f) => f.id === row.id)) return withoutLocal;
+              return [...withoutLocal, { ...row, publicUrl: getPublicUrl(row.storage_path) }];
             });
           } else if (payload.eventType === "UPDATE") {
             const row = payload.new as any;
