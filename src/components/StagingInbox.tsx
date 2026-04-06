@@ -462,10 +462,11 @@ export function StagingInbox({
       )}
 
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <h3 className="font-display text-lg font-semibold text-foreground">
-          Trip Inbox ({localFiles.length})
-        </h3>
+      <div className="flex flex-col gap-1">
+        <div className="flex items-center justify-between">
+          <h3 className="font-display text-lg font-semibold text-foreground">
+            Trip Inbox ({localFiles.length})
+          </h3>
         <div className="flex items-center gap-2">
           {selectedIds.size > 0 && (
             <button
