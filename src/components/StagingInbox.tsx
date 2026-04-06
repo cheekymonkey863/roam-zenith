@@ -318,7 +318,7 @@ export function StagingInbox({
           source: "photo_import",
           event_type: stepDetails.eventType,
           is_confirmed: true,
-          location_name: null,
+          location_name: resolvedNames.get(group.key) || null,
           country: null,
         });
 
