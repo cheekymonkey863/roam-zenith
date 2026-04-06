@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { extractExifFromFile, type PhotoExifData } from "@/lib/exif";
@@ -43,11 +43,37 @@ export interface UploadProgress {
   status: "uploading" | "done" | "error";
 }
 
+/** Run async tasks with a concurrency cap */
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  fn: (item: T, index: number) => Promise<R>,
+): Promise<PromiseSettledResult<R>[]> {
+  const results: PromiseSettledResult<R>[] = new Array(items.length);
+  let nextIndex = 0;
+
+  async function worker() {
+    while (nextIndex < items.length) {
+      const i = nextIndex++;
+      try {
+        results[i] = { status: "fulfilled", value: await fn(items[i], i) };
+      } catch (reason: any) {
+        results[i] = { status: "rejected", reason };
+      }
+    }
+  }
+
+  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, () => worker()));
+  return results;
+}
+
 export function useStagingInbox(tripId: string) {
   const { user } = useAuth();
   const [stagedFiles, setStagedFiles] = useState<StagedMediaFile[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploads, setUploads] = useState<Map<string, UploadProgress>>(new Map());
+  // Track local preview URLs for cleanup
+  const localUrlsRef = useRef<Set<string>>(new Set());
 
   const getPublicUrl = useCallback((storagePath: string) => {
     const { data } = supabase.storage.from("trip-photos").getPublicUrl(storagePath);
@@ -82,7 +108,16 @@ export function useStagingInbox(tripId: string) {
     fetchStaged();
   }, [fetchStaged]);
 
-  // Realtime subscription for AI status updates
+  // Cleanup all local object URLs on unmount
+  useEffect(() => {
+    const urls = localUrlsRef.current;
+    return () => {
+      urls.forEach((u) => URL.revokeObjectURL(u));
+      urls.clear();
+    };
+  }, []);
+
+  // Realtime subscription
   useEffect(() => {
     if (!user || !tripId) return;
 
@@ -100,16 +135,15 @@ export function useStagingInbox(tripId: string) {
           if (payload.eventType === "INSERT") {
             const row = payload.new as any;
             setStagedFiles((prev) => {
-              // Revoke object URLs from local placeholders being replaced
-              const replaced = prev.filter(
-                (f) => f.isLocalOnly && f.file_name === row.file_name,
-              );
+              // Revoke + remove local placeholders for this file
+              const replaced = prev.filter((f) => f.isLocalOnly && f.file_name === row.file_name);
               replaced.forEach((f) => {
-                if (f.localPreviewUrl) URL.revokeObjectURL(f.localPreviewUrl);
+                if (f.localPreviewUrl) {
+                  URL.revokeObjectURL(f.localPreviewUrl);
+                  localUrlsRef.current.delete(f.localPreviewUrl);
+                }
               });
-              const withoutLocal = prev.filter(
-                (f) => !(f.isLocalOnly && f.file_name === row.file_name),
-              );
+              const withoutLocal = prev.filter((f) => !(f.isLocalOnly && f.file_name === row.file_name));
               if (withoutLocal.some((f) => f.id === row.id)) return withoutLocal;
               return [...withoutLocal, { ...row, publicUrl: getPublicUrl(row.storage_path) }];
             });
@@ -131,7 +165,6 @@ export function useStagingInbox(tripId: string) {
     };
   }, [user, tripId, getPublicUrl]);
 
-  // Upload files: extract EXIF → TUS upload → insert DB row
   const stageFiles = useCallback(
     async (files: File[]) => {
       if (!user) return;
@@ -142,22 +175,51 @@ export function useStagingInbox(tripId: string) {
         return;
       }
 
-      // --- INSTANT RENDER: add local preview placeholders immediately ---
-      const localPreviews: StagedMediaFile[] = mediaFiles.map((file) => ({
-        id: `local-${crypto.randomUUID()}`,
-        trip_id: tripId,
-        storage_path: "",
-        mime_type: file.type,
-        file_name: file.name,
-        exif_metadata: {},
-        ai_processing_status: "pending" as const,
-        ai_result: null,
-        group_key: null,
-        created_at: new Date().toISOString(),
-        publicUrl: "",
-        localPreviewUrl: URL.createObjectURL(file),
-        isLocalOnly: true,
-      }));
+      // ── PHASE 1: Parallel EXIF extraction (all at once) ──
+      const exifResults = await Promise.all(
+        mediaFiles.map(async (file): Promise<PhotoExifData> => {
+          try {
+            return await extractExifFromFile(file);
+          } catch {
+            return {
+              file,
+              captionId: crypto.randomUUID(),
+              latitude: null,
+              longitude: null,
+              takenAt: null,
+            };
+          }
+        }),
+      );
+
+      // ── PHASE 2: Instant render — local previews with EXIF metadata ──
+      const localPreviews: StagedMediaFile[] = mediaFiles.map((file, i) => {
+        const exif = exifResults[i];
+        const previewUrl = URL.createObjectURL(file);
+        localUrlsRef.current.add(previewUrl);
+        return {
+          id: `local-${crypto.randomUUID()}`,
+          trip_id: tripId,
+          storage_path: "",
+          mime_type: file.type,
+          file_name: file.name,
+          exif_metadata: {
+            latitude: exif.latitude,
+            longitude: exif.longitude,
+            takenAt: exif.takenAt?.toISOString() ?? null,
+            cameraMake: exif.cameraMake ?? null,
+            cameraModel: exif.cameraModel ?? null,
+            duration: exif.duration ?? null,
+          },
+          ai_processing_status: "pending" as const,
+          ai_result: null,
+          group_key: null,
+          created_at: new Date().toISOString(),
+          publicUrl: "",
+          localPreviewUrl: previewUrl,
+          isLocalOnly: true,
+        };
+      });
       setStagedFiles((prev) => [...prev, ...localPreviews]);
 
       toast.info(`Uploading ${mediaFiles.length} file(s)…`);
@@ -168,177 +230,121 @@ export function useStagingInbox(tripId: string) {
       });
       setUploads(new Map(newUploads));
 
-      const results = await Promise.allSettled(
-        mediaFiles.map(async (file) => {
-          // 0. Duplicate check — skip if file already staged for this trip
-          const { data: existing } = await supabase
-            .from("pending_media_imports")
-            .select("id, storage_path")
-            .eq("file_name", file.name)
-            .eq("trip_id", tripId)
-            .maybeSingle();
+      // ── PHASE 3: Concurrent upload + DB insert (max 5 at a time) ──
+      const results = await mapWithConcurrency(mediaFiles, 5, async (file, i) => {
+        const exif = exifResults[i];
 
-          if (existing) {
-            console.log(`[staging] Skipping duplicate: ${file.name}`);
-            setUploads((prev) => {
-              const next = new Map(prev);
-              next.set(file.name, { fileName: file.name, percent: 100, status: "done" });
-              return next;
-            });
-            return existing.storage_path;
-          }
+        // Duplicate check
+        const { data: existing } = await supabase
+          .from("pending_media_imports")
+          .select("id, storage_path")
+          .eq("file_name", file.name)
+          .eq("trip_id", tripId)
+          .maybeSingle();
 
-          // 1. Extract EXIF (fast, client-side)
-          let exif: PhotoExifData;
-          try {
-            exif = await extractExifFromFile(file);
-          } catch {
-            exif = {
-              file,
-              captionId: crypto.randomUUID(),
-              latitude: null,
-              longitude: null,
-              takenAt: null,
-            };
-          }
-
-          // 2. Upload to staging path via TUS
-          const ext = file.name.split(".").pop() || (file.type.startsWith("video/") ? "mp4" : "jpg");
-          const objectName = `${user.id}/${tripId}/staging/${crypto.randomUUID()}.${ext}`;
-
-          await resumableUpload({
-            bucketName: "trip-photos",
-            objectName,
-            file: exif.uploadFile ?? file,
-            contentType: file.type || undefined,
-            onProgress: (percent) => {
-              setUploads((prev) => {
-                const next = new Map(prev);
-                next.set(file.name, { fileName: file.name, percent, status: "uploading" });
-                return next;
-              });
-            },
-          });
-
+        if (existing) {
           setUploads((prev) => {
             const next = new Map(prev);
             next.set(file.name, { fileName: file.name, percent: 100, status: "done" });
             return next;
           });
+          return existing.storage_path;
+        }
 
-          // 3. Insert DB row
-          const { data: inserted, error: insertError } = await supabase.from("pending_media_imports").insert({
-            trip_id: tripId,
-            user_id: user.id,
-            storage_path: objectName,
-            mime_type: file.type || "application/octet-stream",
-            file_name: file.name,
-            exif_metadata: {
-              latitude: exif.latitude,
-              longitude: exif.longitude,
-              takenAt: exif.takenAt?.toISOString() ?? null,
-              cameraMake: exif.cameraMake ?? null,
-              cameraModel: exif.cameraModel ?? null,
-              duration: exif.duration ?? null,
-            },
-          }).select("id").single();
+        // Upload via TUS
+        const ext = file.name.split(".").pop() || (file.type.startsWith("video/") ? "mp4" : "jpg");
+        const objectName = `${user.id}/${tripId}/staging/${crypto.randomUUID()}.${ext}`;
 
-          if (insertError) {
-            console.error("Failed to insert staged file:", insertError);
-            throw insertError;
-          }
-
-          // 4. If no GPS from EXIF, request AI location inference in background
-          if (exif.latitude === null || exif.longitude === null) {
-            const publicUrl = getPublicUrl(objectName);
-            supabase.functions.invoke("photo-location-inference", {
-              body: {
-                mediaId: inserted?.id,
-                imageUrl: publicUrl,
-                fileName: file.name,
-                mimeType: file.type,
-                takenAt: exif.takenAt?.toISOString() ?? null,
-              },
-            }).then(({ data, error: aiErr }) => {
-              if (aiErr) {
-                console.warn(`[staging] AI location inference failed for ${file.name}:`, aiErr);
-                return;
-              }
-              if (data?.latitude && data?.longitude) {
-                console.log(`[staging] AI inferred location for ${file.name}:`, data.latitude, data.longitude);
-                // Update the DB row with inferred location
-                supabase.from("pending_media_imports").update({
-                  exif_metadata: {
-                    latitude: data.latitude,
-                    longitude: data.longitude,
-                    takenAt: exif.takenAt?.toISOString() ?? null,
-                    cameraMake: exif.cameraMake ?? null,
-                    cameraModel: exif.cameraModel ?? null,
-                    duration: exif.duration ?? null,
-                  },
-                  ai_processing_status: "complete",
-                  ai_result: data,
-                }).eq("id", inserted?.id).then(({ error: updateErr }) => {
-                  if (updateErr) console.warn("[staging] Failed to update AI result:", updateErr);
-                });
-              }
-            }).catch((err) => {
-              console.warn(`[staging] AI inference error for ${file.name}:`, err);
+        await resumableUpload({
+          bucketName: "trip-photos",
+          objectName,
+          file: exif.uploadFile ?? file,
+          contentType: file.type || undefined,
+          onProgress: (percent) => {
+            setUploads((prev) => {
+              const next = new Map(prev);
+              next.set(file.name, { fileName: file.name, percent, status: "uploading" });
+              return next;
             });
-          }
+          },
+        });
 
-          return objectName;
-        }),
-      );
+        setUploads((prev) => {
+          const next = new Map(prev);
+          next.set(file.name, { fileName: file.name, percent: 100, status: "done" });
+          return next;
+        });
+
+        // Insert DB row (no AI calls — AI runs only after "Import Selected")
+        const { error: insertError } = await supabase.from("pending_media_imports").insert({
+          trip_id: tripId,
+          user_id: user.id,
+          storage_path: objectName,
+          mime_type: file.type || "application/octet-stream",
+          file_name: file.name,
+          exif_metadata: {
+            latitude: exif.latitude,
+            longitude: exif.longitude,
+            takenAt: exif.takenAt?.toISOString() ?? null,
+            cameraMake: exif.cameraMake ?? null,
+            cameraModel: exif.cameraModel ?? null,
+            duration: exif.duration ?? null,
+          },
+        });
+
+        if (insertError) {
+          console.error("Failed to insert staged file:", insertError);
+          throw insertError;
+        }
+
+        return objectName;
+      });
 
       const succeeded = results.filter((r) => r.status === "fulfilled").length;
       const failed = results.filter((r) => r.status === "rejected").length;
 
-      if (failed > 0) {
-        toast.error(`${failed} file(s) failed to upload`);
-      }
-      if (succeeded > 0) {
-        toast.success(`${succeeded} file(s) uploaded to staging`);
-      }
+      if (failed > 0) toast.error(`${failed} file(s) failed to upload`);
+      if (succeeded > 0) toast.success(`${succeeded} file(s) ready in inbox`);
 
-      // Clear upload progress after a short delay
       setTimeout(() => setUploads(new Map()), 2000);
     },
-    [user, tripId],
+    [user, tripId, getPublicUrl],
   );
 
-  // Delete staged files
+  // Delete staged files — instant, no waiting for AI
   const deleteStagedFiles = useCallback(
     async (ids: string[]) => {
+      // Snapshot what to delete before removing from state
       const toDelete = stagedFiles.filter((f) => ids.includes(f.id));
 
-      // Optimistic UI update — remove from state immediately
+      // Revoke any local preview URLs
+      toDelete.forEach((f) => {
+        if (f.localPreviewUrl) {
+          URL.revokeObjectURL(f.localPreviewUrl);
+          localUrlsRef.current.delete(f.localPreviewUrl);
+        }
+      });
+
+      // Instant UI removal
       setStagedFiles((prev) => prev.filter((f) => !ids.includes(f.id)));
 
-      try {
-        // Delete from storage
-        const storagePaths = toDelete.map((f) => f.storage_path);
-        if (storagePaths.length > 0) {
-          await supabase.storage.from("trip-photos").remove(storagePaths);
-        }
+      // Background cleanup — don't block UI
+      const realFiles = toDelete.filter((f) => !f.isLocalOnly);
+      if (realFiles.length > 0) {
+        const storagePaths = realFiles.map((f) => f.storage_path).filter(Boolean);
+        const realIds = realFiles.map((f) => f.id);
 
-        // Delete DB rows
-        const { error } = await supabase
-          .from("pending_media_imports")
-          .delete()
-          .in("id", ids);
-
-        if (error) {
-          console.error("Failed to delete staged files:", error);
-          toast.error("Failed to delete from database, but removed from view");
-          return;
-        }
-
-        toast.success(`Removed ${ids.length} file(s)`);
-      } catch (err) {
-        console.error("Delete failed:", err);
-        toast.error("Delete encountered an error, but items removed from view");
+        Promise.all([
+          storagePaths.length > 0
+            ? supabase.storage.from("trip-photos").remove(storagePaths)
+            : Promise.resolve(),
+          supabase.from("pending_media_imports").delete().in("id", realIds),
+        ]).catch((err) => {
+          console.error("Background delete failed:", err);
+        });
       }
+
+      toast.success(`Removed ${ids.length} file(s)`);
     },
     [stagedFiles],
   );

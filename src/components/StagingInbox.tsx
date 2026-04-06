@@ -187,28 +187,14 @@ function StagedFileThumbnail({ file }: { file: StagedMediaFile }) {
   );
 }
 
-function AiStatusIndicator({ file }: { file: StagedMediaFile }) {
-  const status = file.ai_processing_status;
-  const hasNoGps = file.exif_metadata?.latitude == null || file.exif_metadata?.longitude == null;
-
-  if (status === "complete") return null; // Clean — no badge needed
-  if (status === "processing" || (status === "pending" && hasNoGps)) {
-    return (
-      <span className="flex items-center gap-1 rounded-full bg-black/50 px-2 py-0.5 text-[10px] font-medium text-white/80 backdrop-blur-sm">
-        <Loader2 className="h-3 w-3 animate-spin" />
-        {hasNoGps ? "Locating…" : "Enhancing…"}
-      </span>
-    );
-  }
-  if (status === "pending") {
-    return (
-      <span className="rounded-full bg-black/40 px-2 py-0.5 text-[10px] font-medium text-white/70 backdrop-blur-sm">
-        Queued
-      </span>
-    );
-  }
-  // failed — subtle indicator
-  return null;
+function UploadIndicator({ file }: { file: StagedMediaFile }) {
+  if (!file.isLocalOnly) return null;
+  return (
+    <span className="flex items-center gap-1 rounded-full bg-black/50 px-2 py-0.5 text-[10px] font-medium text-white/80 backdrop-blur-sm">
+      <Loader2 className="h-3 w-3 animate-spin" />
+      Uploading…
+    </span>
+  );
 }
 
 export function StagingInbox({
@@ -421,13 +407,11 @@ export function StagingInbox({
     onImportComplete();
   };
 
-  const pendingAiCount = stagedFiles.filter((f) => f.ai_processing_status === "pending" || f.ai_processing_status === "processing").length;
   const selectedGroupCount = groups.filter((g) => groupSelection.get(g.key)).length;
 
   // Helper: resolve display name for a group
   const getGroupDisplayName = (group: StagingGroup) => {
     if (group.locationName) return group.locationName;
-    // No venue yet — show date/time as placeholder
     if (group.earliestDate) {
       return group.earliestDate.toLocaleDateString("en-US", {
         weekday: "short",
@@ -439,8 +423,6 @@ export function StagingInbox({
     }
     return `${group.files.length} file${group.files.length !== 1 ? "s" : ""}`;
   };
-
-  const isEnhancing = pendingAiCount > 0;
 
   return (
     <div className="flex flex-col gap-4">
@@ -461,17 +443,6 @@ export function StagingInbox({
                 />
               </div>
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* Enhancing bar */}
-      {isEnhancing && !isUploading && (
-        <div className="flex items-center gap-3 rounded-2xl bg-card p-3 shadow-card">
-          <Loader2 className="h-4 w-4 animate-spin text-primary" />
-          <span className="text-sm text-muted-foreground">Enhancing your timeline…</span>
-          <div className="ml-auto h-1.5 w-24 overflow-hidden rounded-full bg-muted">
-            <div className="h-full animate-pulse rounded-full bg-primary/60" style={{ width: "60%" }} />
           </div>
         </div>
       )}
@@ -563,11 +534,6 @@ export function StagingInbox({
                   <div className="flex flex-wrap items-center gap-2">
                     <MapPin className="h-4 w-4 text-primary" />
                     <span className="text-lg font-medium text-foreground">{getGroupDisplayName(group)}</span>
-                    {!group.locationName && group.latitude != null && (
-                      <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                        <Loader2 className="h-3 w-3 animate-spin" /> Locating via Visual AI…
-                      </span>
-                    )}
                   </div>
 
                   {group.earliestDate && (
@@ -593,7 +559,7 @@ export function StagingInbox({
                       >
                         <StagedFileThumbnail file={file} />
                         <div className="absolute top-1 right-1">
-                          <AiStatusIndicator file={file} />
+                          <UploadIndicator file={file} />
                         </div>
                         {selectedIds.has(file.id) && (
                           <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-destructive/20">
