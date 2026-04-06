@@ -60,7 +60,8 @@ function PendingMediaLightbox({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4 backdrop-blur-sm"
+      // NUCLEAR Z-INDEX FIX: Forces the lightbox over the map canvas
+      className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/90 p-4 backdrop-blur-sm"
       onClick={onClose}
     >
       <button
@@ -181,9 +182,7 @@ function PendingMediaThumbnail({
 }) {
   const isVideo = photo.file.type.startsWith("video/");
   const previewImage = photo.thumbnail || photo.analysisImage || null;
-  // For images without a preview, create an object URL from the file
   const fileUrl = useObjectUrl(!isVideo && !previewImage ? (photo.uploadFile ?? photo.file) : null);
-  // For videos without a preview image, create an object URL to use with <video> poster generation
   const videoUrl = useObjectUrl(isVideo && !previewImage ? (photo.uploadFile ?? photo.file) : null);
   const imageSrc = !isVideo ? previewImage || fileUrl : previewImage;
 
@@ -209,7 +208,6 @@ function PendingMediaThumbnail({
               className="h-full w-full object-cover"
             />
           ) : null}
-          {/* Stylized overlay — covers black-box codec failures gracefully */}
           <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/70 via-black/30 to-transparent" />
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
             <div className="flex h-8 w-8 items-center justify-center rounded-full bg-white/20 shadow-[0_0_12px_rgba(255,255,255,0.25)] backdrop-blur-md ring-1 ring-white/30">
@@ -377,11 +375,7 @@ export function PendingMediaGallery({ photos, stepId, allSteps, onMove, onRemove
       </div>
 
       {lightboxIndex !== null && (
-        <PendingMediaLightbox
-          photos={photos}
-          initialIndex={lightboxIndex}
-          onClose={() => setLightboxIndex(null)}
-        />
+        <PendingMediaLightbox photos={photos} initialIndex={lightboxIndex} onClose={() => setLightboxIndex(null)} />
       )}
     </div>
   );
