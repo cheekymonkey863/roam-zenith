@@ -8,6 +8,7 @@ import { useStepVisualTypes } from "@/hooks/useStepVisualTypes";
 import { useResolvedCities } from "@/hooks/useResolvedCities";
 import { supabase as supabaseClient } from "@/integrations/supabase/client";
 import { TripTimeline } from "@/components/TripTimeline";
+import { AiProgressBanner } from "@/components/AiProgressBanner";
 
 import { PhotoImport } from "@/components/PhotoImport";
 import { ItineraryImport } from "@/components/ItineraryImport";
