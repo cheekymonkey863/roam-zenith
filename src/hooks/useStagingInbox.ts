@@ -195,7 +195,7 @@ export function useStagingInbox(tripId: string) {
           });
 
           // 3. Insert DB row
-          const { error: insertError } = await supabase.from("pending_media_imports").insert({
+          const { data: inserted, error: insertError } = await supabase.from("pending_media_imports").insert({
             trip_id: tripId,
             user_id: user.id,
             storage_path: objectName,
@@ -209,11 +209,50 @@ export function useStagingInbox(tripId: string) {
               cameraModel: exif.cameraModel ?? null,
               duration: exif.duration ?? null,
             },
-          });
+          }).select("id").single();
 
           if (insertError) {
             console.error("Failed to insert staged file:", insertError);
             throw insertError;
+          }
+
+          // 4. If no GPS from EXIF, request AI location inference in background
+          if (exif.latitude === null || exif.longitude === null) {
+            const publicUrl = getPublicUrl(objectName);
+            supabase.functions.invoke("photo-location-inference", {
+              body: {
+                mediaId: inserted?.id,
+                imageUrl: publicUrl,
+                fileName: file.name,
+                mimeType: file.type,
+                takenAt: exif.takenAt?.toISOString() ?? null,
+              },
+            }).then(({ data, error: aiErr }) => {
+              if (aiErr) {
+                console.warn(`[staging] AI location inference failed for ${file.name}:`, aiErr);
+                return;
+              }
+              if (data?.latitude && data?.longitude) {
+                console.log(`[staging] AI inferred location for ${file.name}:`, data.latitude, data.longitude);
+                // Update the DB row with inferred location
+                supabase.from("pending_media_imports").update({
+                  exif_metadata: {
+                    latitude: data.latitude,
+                    longitude: data.longitude,
+                    takenAt: exif.takenAt?.toISOString() ?? null,
+                    cameraMake: exif.cameraMake ?? null,
+                    cameraModel: exif.cameraModel ?? null,
+                    duration: exif.duration ?? null,
+                  },
+                  ai_processing_status: "complete",
+                  ai_result: data,
+                }).eq("id", inserted?.id).then(({ error: updateErr }) => {
+                  if (updateErr) console.warn("[staging] Failed to update AI result:", updateErr);
+                });
+              }
+            }).catch((err) => {
+              console.warn(`[staging] AI inference error for ${file.name}:`, err);
+            });
           }
 
           return objectName;
