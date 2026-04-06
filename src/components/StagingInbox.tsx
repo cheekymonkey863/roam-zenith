@@ -364,7 +364,7 @@ export function StagingInbox({
         }).catch((err) => console.error("Background processing trigger failed:", err));
       }
 
-      toast.success("Import complete! Enhancing locations in the background…");
+      toast.success("Import complete! Enhancing locations in the background...");
       onImportComplete();
     } catch (err) {
       console.error("Import error:", err);
