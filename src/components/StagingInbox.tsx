@@ -511,8 +511,8 @@ export function StagingInbox({
         </div>
       </div>
 
-      {/* Groups */}
-      <div className="flex flex-col gap-3">
+      {/* Groups — hidden behind curtain until geocoding completes */}
+      {(geocodingDone || groups.length === 0) && <div className="flex flex-col gap-3">
         {groups.map((group) => {
           const isSelected = groupSelection.get(group.key) ?? true;
           const isCompleted = completedGroups.has(group.key);
