@@ -187,16 +187,13 @@ function StagedFileThumbnail({ file }: { file: StagedMediaFile }) {
   );
 }
 
-function AiStatusIndicator({ file }: { file: StagedMediaFile }) {
-  const status = file.ai_processing_status;
-  const hasNoGps = file.exif_metadata?.latitude == null || file.exif_metadata?.longitude == null;
-
-  if (status === "complete") return null; // Clean — no badge needed
-  if (status === "processing" || (status === "pending" && hasNoGps)) {
-    return (
-      <span className="flex items-center gap-1 rounded-full bg-black/50 px-2 py-0.5 text-[10px] font-medium text-white/80 backdrop-blur-sm">
-        <Loader2 className="h-3 w-3 animate-spin" />
-        {hasNoGps ? "Locating…" : "Enhancing…"}
+function UploadIndicator({ file }: { file: StagedMediaFile }) {
+  if (!file.isLocalOnly) return null;
+  return (
+    <span className="flex items-center gap-1 rounded-full bg-black/50 px-2 py-0.5 text-[10px] font-medium text-white/80 backdrop-blur-sm">
+      <Loader2 className="h-3 w-3 animate-spin" />
+      Uploading…
+    </span>
       </span>
     );
   }
