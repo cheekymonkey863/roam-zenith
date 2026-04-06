@@ -35,7 +35,7 @@ interface PhotoImportProps {
   }>;
 }
 
-export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps = [] }: PhotoImportProps) {
+export function PhotoImport({ tripId, onImportComplete, onCancel, onProgressChange, existingSteps = [] }: PhotoImportProps) {
   const [dragOver, setDragOver] = useState(false);
   const [files, setFiles] = useState<LocalStagedFile[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
