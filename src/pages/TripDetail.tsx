@@ -316,25 +316,29 @@ const TripDetail = () => {
       </div>
 
       {/* Prominent import progress bar — between buttons and inbox */}
-      {importProgress.importing && importProgress.total > 0 && (
+      {importProgress.importing && (
         <div className="flex flex-col gap-2 rounded-xl border border-primary/20 bg-primary/5 p-4">
           <div className="flex items-center justify-between text-sm font-medium">
             <span className="flex items-center gap-2 text-foreground">
               <Loader2 className="h-4 w-4 animate-spin text-primary" />
-              Uploading & creating timeline…
+              {importProgress.total > 0
+                ? `Uploading & creating timeline… (${importProgress.current} of ${importProgress.total})`
+                : "Preparing import…"}
             </span>
-            <span className="text-primary font-semibold">
-              {Math.round((importProgress.current / importProgress.total) * 100)}%
-            </span>
+            {importProgress.total > 0 && (
+              <span className="text-primary font-semibold">
+                {Math.round((importProgress.current / importProgress.total) * 100)}%
+              </span>
+            )}
           </div>
           <div className="h-3 w-full overflow-hidden rounded-full bg-secondary">
             <div
               className="h-full rounded-full bg-primary transition-all duration-300"
-              style={{ width: `${(importProgress.current / importProgress.total) * 100}%` }}
+              style={{ width: importProgress.total > 0 ? `${(importProgress.current / importProgress.total) * 100}%` : "5%" }}
             />
           </div>
           <p className="text-xs text-muted-foreground">
-            {importProgress.current} of {importProgress.total} files · Do not close this page
+            Do not close this page
           </p>
         </div>
       )}
