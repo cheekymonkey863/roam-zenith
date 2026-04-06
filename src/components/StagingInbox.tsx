@@ -227,6 +227,7 @@ export function StagingInbox({
     const total = allFiles.length;
     let completed = 0;
     setImportProgress({ current: 0, total });
+    const createdStepIds: string[] = [];
 
     try {
       for (const group of selectedGroups) {
