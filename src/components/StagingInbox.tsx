@@ -407,13 +407,11 @@ export function StagingInbox({
     onImportComplete();
   };
 
-  const pendingAiCount = stagedFiles.filter((f) => f.ai_processing_status === "pending" || f.ai_processing_status === "processing").length;
   const selectedGroupCount = groups.filter((g) => groupSelection.get(g.key)).length;
 
   // Helper: resolve display name for a group
   const getGroupDisplayName = (group: StagingGroup) => {
     if (group.locationName) return group.locationName;
-    // No venue yet — show date/time as placeholder
     if (group.earliestDate) {
       return group.earliestDate.toLocaleDateString("en-US", {
         weekday: "short",
@@ -425,8 +423,6 @@ export function StagingInbox({
     }
     return `${group.files.length} file${group.files.length !== 1 ? "s" : ""}`;
   };
-
-  const isEnhancing = pendingAiCount > 0;
 
   return (
     <div className="flex flex-col gap-4">
