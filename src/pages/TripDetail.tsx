@@ -8,6 +8,7 @@ import { useStepVisualTypes } from "@/hooks/useStepVisualTypes";
 import { useResolvedCities } from "@/hooks/useResolvedCities";
 import { supabase as supabaseClient } from "@/integrations/supabase/client";
 import { TripTimeline } from "@/components/TripTimeline";
+import { AiProgressBanner } from "@/components/AiProgressBanner";
 
 import { PhotoImport } from "@/components/PhotoImport";
 import { ItineraryImport } from "@/components/ItineraryImport";
@@ -264,6 +265,9 @@ const TripDetail = () => {
               className="w-full h-full overflow-hidden rounded-b-2xl"
             />
           </div>
+
+          {/* AI Progress Banner */}
+          <AiProgressBanner steps={steps} />
 
           {/* Timeline below map */}
           <div className="relative z-50 flex flex-col gap-4 px-4 py-8">
