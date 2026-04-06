@@ -604,8 +604,8 @@ export function StagingInbox({
         <div className="flex flex-col items-center gap-4 rounded-2xl border-2 border-dashed border-border p-12 text-center">
           <ImageIcon className="h-10 w-10 text-muted-foreground" />
           <div>
-            <p className="font-medium text-foreground">No files in staging</p>
-            <p className="text-sm text-muted-foreground">Drop photos & videos to start</p>
+            <p className="font-medium text-foreground">Your Trip Inbox is empty</p>
+            <p className="text-sm text-muted-foreground">Drop photos & videos to start building your timeline</p>
           </div>
         </div>
       )}
