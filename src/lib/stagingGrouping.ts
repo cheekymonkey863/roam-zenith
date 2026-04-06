@@ -86,71 +86,63 @@ function sortFilesByTime(files: LocalStagedFile[]) {
  * 2. If either side is missing GPS, fall back to time and split when the gap > 30 minutes.
  */
 export function groupLocalFiles(files: LocalStagedFile[]): StagingGroup[] {
-  const sortedFiles = sortFilesByTime(files);
-  if (sortedFiles.length === 0) return [];
+  if (files.length === 0) return [];
+
+  // 1. Sort chronologically
+  const sorted = [...files].sort((a, b) => {
+    const timeA = a.takenAt ? a.takenAt.getTime() : 0;
+    const timeB = b.takenAt ? b.takenAt.getTime() : 0;
+    return timeA - timeB;
+  });
 
   const groups: StagingGroup[] = [];
-  let currentGroup: StagingGroup | null = null;
 
-  for (const file of sortedFiles) {
-    if (!currentGroup) {
-      currentGroup = createGroup(file, groups.length);
-      groups.push(currentGroup);
+  for (const file of sorted) {
+    if (groups.length === 0) {
+      groups.push({
+        key: `group-0`,
+        files: [file],
+        latitude: file.latitude ?? null,
+        longitude: file.longitude ?? null,
+        earliestDate: file.takenAt,
+        locationName: "",
+      });
       continue;
     }
 
-    const anchorCoordinates = getGroupRepresentativeCoordinates(currentGroup);
-    const latestInGroup = getLatestDate(currentGroup.files);
+    const currentGroup = groups[groups.length - 1];
+    const lastFile = currentGroup.files[currentGroup.files.length - 1];
+    let shouldSplit = false;
 
-    if (anchorCoordinates && hasCoordinates(file)) {
+    // 2. Strict 60m Distance Check (if BOTH have GPS)
+    if (file.latitude && file.longitude && lastFile.latitude && lastFile.longitude) {
       const distance = haversineDistance(
-        anchorCoordinates.latitude,
-        anchorCoordinates.longitude,
-        file.latitude,
-        file.longitude,
+        lastFile.latitude, lastFile.longitude,
+        file.latitude, file.longitude,
       );
-
-      if (distance > GROUP_SPLIT_DISTANCE_METERS) {
-        currentGroup = createGroup(file, groups.length);
-        groups.push(currentGroup);
-        continue;
-      }
+      if (distance > GROUP_SPLIT_DISTANCE_METERS) shouldSplit = true;
     } else {
-      const gap =
-        latestInGroup && file.takenAt
-          ? file.takenAt.getTime() - latestInGroup.getTime()
-          : Number.POSITIVE_INFINITY;
-
-      if (gap > GROUP_SPLIT_TIME_MS) {
-        currentGroup = createGroup(file, groups.length);
-        groups.push(currentGroup);
-        continue;
+      // 3. Fallback Time Check (if GPS is missing)
+      const timeA = file.takenAt ? file.takenAt.getTime() : 0;
+      const timeB = lastFile.takenAt ? lastFile.takenAt.getTime() : 0;
+      if (Math.abs(timeA - timeB) > GROUP_SPLIT_TIME_MS) {
+        shouldSplit = true;
       }
     }
 
-    currentGroup.files.push(file);
-
-    if (!anchorCoordinates && hasCoordinates(file)) {
-      currentGroup.latitude = file.latitude;
-      currentGroup.longitude = file.longitude;
-    }
-
-    const fileTime = file.takenAt?.getTime();
-    const earliestTime = currentGroup.earliestDate?.getTime();
-    if (fileTime != null && (earliestTime == null || fileTime < earliestTime)) {
-      currentGroup.earliestDate = file.takenAt;
+    if (shouldSplit) {
+      groups.push({
+        key: `group-${groups.length}`,
+        files: [file],
+        latitude: file.latitude ?? null,
+        longitude: file.longitude ?? null,
+        earliestDate: file.takenAt,
+        locationName: "",
+      });
+    } else {
+      currentGroup.files.push(file);
     }
   }
 
-  return groups.map((group, index) => {
-    const representativeCoordinates = getGroupRepresentativeCoordinates(group);
-
-    return {
-      ...group,
-      key: `group-${index}`,
-      latitude: representativeCoordinates?.latitude ?? null,
-      longitude: representativeCoordinates?.longitude ?? null,
-      earliestDate: getEarliestDate(group.files),
-    };
-  });
+  return groups;
 }
