@@ -1,10 +1,9 @@
 import { useState, useCallback, useRef, useEffect } from "react";
-import { Upload, X, Loader2 } from "lucide-react";
-import { extractExifFromFile, type PhotoExifData } from "@/lib/exif";
+import { Upload, X } from "lucide-react";
+import { extractExifFromFile } from "@/lib/exif";
 import { StagingInbox } from "@/components/StagingInbox";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { cn } from "@/lib/utils";
 import heic2any from "heic2any";
 
 export interface LocalStagedFile {
@@ -25,7 +24,12 @@ interface PhotoImportProps {
   tripId: string;
   onImportComplete: () => void;
   onCancel?: () => void;
-  onProgressChange?: (progress: { importing: boolean; current: number; total: number; phase: "upload" | "sorting" }) => void;
+  onProgressChange?: (progress: {
+    importing: boolean;
+    current: number;
+    total: number;
+    phase: "upload" | "sorting";
+  }) => void;
   existingSteps?: Array<{
     id: string;
     latitude: number;
@@ -38,43 +42,31 @@ interface PhotoImportProps {
   }>;
 }
 
-export function PhotoImport({ tripId, onImportComplete, onCancel, onProgressChange, existingSteps = [] }: PhotoImportProps) {
+export function PhotoImport({
+  tripId,
+  onImportComplete,
+  onCancel,
+  onProgressChange,
+  existingSteps = [],
+}: PhotoImportProps) {
   const [dragOver, setDragOver] = useState(false);
   const [files, setFiles] = useState<LocalStagedFile[]>([]);
-  const [exifProgress, setExifProgress] = useState({ done: 0, total: 0 });
   const fileInputRef = useRef<HTMLInputElement>(null);
-  // Cache of existing file fingerprints for duplicate detection
   const existingFingerprints = useRef<Set<string> | null>(null);
 
-  // Fetch existing photo fingerprints on mount for duplicate bouncer
   useEffect(() => {
     async function loadFingerprints() {
       const { data } = await supabase
         .from("step_photos")
         .select("file_name, exif_data")
-        .eq("user_id", (await supabase.auth.getUser()).data.user?.id ?? "")
-        // filter to this trip's photos via step_id join isn't easy, so we load by joining steps
-      ;
-      // We'll also query step_ids for this trip to filter
-      const { data: stepData } = await supabase
-        .from("trip_steps")
-        .select("id")
-        .eq("trip_id", tripId);
-      const stepIds = new Set((stepData || []).map(s => s.id));
+        .eq("user_id", (await supabase.auth.getUser()).data.user?.id ?? "");
 
+      const { data: stepData } = await supabase.from("trip_steps").select("id").eq("trip_id", tripId);
+
+      const stepIds = new Set((stepData || []).map((s) => s.id));
       const fps = new Set<string>();
-      if (data) {
-        for (const photo of data) {
-          if (photo.file_name && stepIds.size > 0) {
-            // We need step_id to filter — re-query with step_id
-            fps.add(photo.file_name);
-          }
-        }
-      }
 
-      // More efficient: query step_photos for this trip's steps
       if (stepIds.size > 0) {
-        fps.clear();
         const { data: tripPhotos } = await supabase
           .from("step_photos")
           .select("file_name")
@@ -91,21 +83,22 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, onProgressChan
     loadFingerprints();
   }, [tripId]);
 
-  // Cleanup preview URLs on unmount
   useEffect(() => {
     return () => {
       files.forEach((f) => URL.revokeObjectURL(f.previewUrl));
     };
-  }, []); // intentionally empty — cleanup on unmount only
+  }, []);
 
   const handleFiles = useCallback((incoming: File[]) => {
     const mediaFiles = incoming.filter(
-      (f) => f.type.startsWith("image/") || f.type.startsWith("video/") ||
-        f.name.toLowerCase().endsWith(".heic") || f.name.toLowerCase().endsWith(".heif"),
+      (f) =>
+        f.type.startsWith("image/") ||
+        f.type.startsWith("video/") ||
+        f.name.toLowerCase().endsWith(".heic") ||
+        f.name.toLowerCase().endsWith(".heif"),
     );
     if (mediaFiles.length === 0) return;
 
-    // Duplicate bouncer: check against DB fingerprints
     let skippedCount = 0;
     const filtered = mediaFiles.filter((f) => {
       if (existingFingerprints.current?.has(f.name)) {
@@ -121,7 +114,6 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, onProgressChan
 
     if (filtered.length === 0) return;
 
-    // Deduplicate against local state by name+size
     setFiles((prev) => {
       const existingKeys = new Set(prev.map((f) => `${f.fileName}::${f.file.size}`));
       const newFiles: LocalStagedFile[] = [];
@@ -148,17 +140,18 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, onProgressChan
 
       if (newFiles.length === 0) return prev;
 
-      // Kick off batched EXIF extraction in background
-      extractExifSequential(newFiles.map((f) => f.id), filtered.filter((_, i) => {
-        const key = `${filtered[i].name}::${filtered[i].size}`;
-        return newFiles.some((nf) => `${nf.fileName}::${nf.file.size}` === key);
-      }));
+      extractExifSequential(
+        newFiles.map((f) => f.id),
+        filtered.filter((_, i) => {
+          const key = `${filtered[i].name}::${filtered[i].size}`;
+          return newFiles.some((nf) => `${nf.fileName}::${nf.file.size}` === key);
+        }),
+      );
 
       return [...prev, ...newFiles];
     });
   }, []);
 
-  // Extract a lightweight JPEG snapshot from a video file
   const generateVideoThumbnail = (file: File): Promise<string | null> => {
     return new Promise((resolve) => {
       const video = document.createElement("video");
@@ -192,10 +185,7 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, onProgressChan
     });
   };
 
-  // Sequential EXIF extraction — ONE file at a time, single bulk state update at end
   const extractExifSequential = useCallback(async (ids: string[], rawFiles: File[]) => {
-    setExifProgress({ done: 0, total: rawFiles.length });
-
     const results: Array<{
       id: string;
       latitude: number | null;
@@ -212,10 +202,12 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, onProgressChan
       let newPreviewUrl: string | null = null;
 
       const isVideo = file.type.startsWith("video/");
-      const isHeic = file.name.toLowerCase().endsWith(".heic") || file.name.toLowerCase().endsWith(".heif") || file.type === "image/heic";
+      const isHeic =
+        file.name.toLowerCase().endsWith(".heic") ||
+        file.name.toLowerCase().endsWith(".heif") ||
+        file.type === "image/heic";
 
       if (isVideo) {
-        // Generate a lightweight JPEG snapshot for video files
         const snapshot = await generateVideoThumbnail(file);
         if (snapshot) newPreviewUrl = snapshot;
       } else if (isHeic) {
@@ -228,7 +220,13 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, onProgressChan
         }
       }
 
-      let exifResult: { latitude: number | null; longitude: number | null; takenAt: Date | null; cameraMake: string | null; cameraModel: string | null };
+      let exifResult: {
+        latitude: number | null;
+        longitude: number | null;
+        takenAt: Date | null;
+        cameraMake: string | null;
+        cameraModel: string | null;
+      };
       try {
         const exif = await extractExifFromFile(file);
         exifResult = {
@@ -243,28 +241,29 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, onProgressChan
       }
 
       results.push({ id, ...exifResult, newPreviewUrl });
-      setExifProgress({ done: i + 1, total: rawFiles.length });
+
+      // Update state incrementally so StagingInbox can track the single progress bar
+      setFiles((prev) =>
+        prev.map((f) => {
+          if (f.id === id) {
+            if (newPreviewUrl) URL.revokeObjectURL(f.previewUrl);
+            return {
+              ...f,
+              latitude: exifResult.latitude,
+              longitude: exifResult.longitude,
+              takenAt: exifResult.takenAt,
+              cameraMake: exifResult.cameraMake,
+              cameraModel: exifResult.cameraModel,
+              previewUrl: newPreviewUrl ?? f.previewUrl,
+              exifDone: true,
+            };
+          }
+          return f;
+        }),
+      );
+
       await new Promise((resolve) => setTimeout(resolve, 50));
     }
-
-    // Single bulk state update — revoke old URLs during the merge
-    setFiles((prev) =>
-      prev.map((f) => {
-        const r = results.find((x) => x.id === f.id);
-        if (!r) return f;
-        if (r.newPreviewUrl) URL.revokeObjectURL(f.previewUrl);
-        return {
-          ...f,
-          latitude: r.latitude,
-          longitude: r.longitude,
-          takenAt: r.takenAt,
-          cameraMake: r.cameraMake,
-          cameraModel: r.cameraModel,
-          previewUrl: r.newPreviewUrl ?? f.previewUrl,
-          exifDone: true,
-        };
-      }),
-    );
   }, []);
 
   const handleDrop = useCallback(
@@ -294,8 +293,6 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, onProgressChan
   }, []);
 
   const showDropZone = files.length === 0;
-  const isProcessingExif = files.length > 0 && files.some((f) => !f.exifDone);
-  const exifPercent = exifProgress.total > 0 ? Math.round((exifProgress.done / exifProgress.total) * 100) : 0;
 
   return (
     <div className="flex flex-col gap-6">
@@ -315,9 +312,7 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, onProgressChan
             <Upload className="h-10 w-10 text-muted-foreground" />
             <div className="text-center">
               <p className="font-medium text-foreground">Drop photos & videos here</p>
-              <p className="text-sm text-muted-foreground">
-                Files stay local until you click Import
-              </p>
+              <p className="text-sm text-muted-foreground">Files stay local until you click Import</p>
             </div>
             <input
               ref={fileInputRef}
@@ -343,27 +338,8 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, onProgressChan
         </div>
       )}
 
-      {/* Curtain: show only progress bar while EXIF is being read — do NOT mount StagingInbox */}
-      {isProcessingExif && (
-        <div className="flex flex-col gap-2 rounded-xl border border-border bg-card p-4">
-          <div className="flex items-center justify-between text-sm font-medium">
-            <span className="flex items-center gap-2 text-foreground">
-              <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-              Reading file data… ({exifProgress.done} of {exifProgress.total})
-            </span>
-            <span className="font-semibold text-muted-foreground">{exifPercent}%</span>
-          </div>
-          <div className="h-4 w-full overflow-hidden rounded-full bg-muted">
-            <div
-              className="h-full rounded-full bg-muted-foreground/40 transition-all duration-300"
-              style={{ width: `${Math.max(exifPercent, 2)}%` }}
-            />
-          </div>
-        </div>
-      )}
-
-      {/* Only mount StagingInbox after all EXIF processing is complete */}
-      {files.length > 0 && !isProcessingExif && (
+      {/* We mount StagingInbox immediately now, so it can control the unified progress bar */}
+      {files.length > 0 && (
         <StagingInbox
           tripId={tripId}
           localFiles={files}
@@ -376,7 +352,6 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, onProgressChan
         />
       )}
 
-      {/* Hidden file input for "Add More" */}
       {!showDropZone && (
         <input
           ref={fileInputRef}
