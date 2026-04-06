@@ -16,7 +16,7 @@ export function Navbar() {
     <header className="sticky top-0 z-50 border-b bg-card/80 backdrop-blur-md">
       <div className="container mx-auto flex h-16 items-center justify-between px-6">
         <Link to="/" className="flex items-center">
-          <img src={logo} alt="TravelTrkr" className="h-8" />
+          <img src={logo} alt="TravelTrkr" className="h-10" />
         </Link>
 
         <nav className="hidden items-center gap-1 md:flex">
