@@ -447,17 +447,6 @@ export function StagingInbox({
         </div>
       )}
 
-      {/* Enhancing bar */}
-      {isEnhancing && !isUploading && (
-        <div className="flex items-center gap-3 rounded-2xl bg-card p-3 shadow-card">
-          <Loader2 className="h-4 w-4 animate-spin text-primary" />
-          <span className="text-sm text-muted-foreground">Enhancing your timeline…</span>
-          <div className="ml-auto h-1.5 w-24 overflow-hidden rounded-full bg-muted">
-            <div className="h-full animate-pulse rounded-full bg-primary/60" style={{ width: "60%" }} />
-          </div>
-        </div>
-      )}
-
       {/* Header */}
       <div className="flex items-center justify-between">
         <h3 className="font-display text-lg font-semibold text-foreground">
