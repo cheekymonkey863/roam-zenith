@@ -1,6 +1,6 @@
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { useEffect, useState, useRef, useCallback } from "react";
-import { ArrowLeft, Calendar, MapPin, Route, Navigation, Image as ImageIcon, FileText, Trash2, Loader2, Video } from "lucide-react";
+import { ArrowLeft, Calendar, MapPin, Route, Navigation, Image as ImageIcon, FileText, Trash2, Loader2, Video, XCircle } from "lucide-react";
 import { getTripStatus, getTripStatusLabel, getTripStatusStyle, formatTripDateRange } from "@/lib/tripStatus";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -9,6 +9,7 @@ import { useResolvedCities } from "@/hooks/useResolvedCities";
 import { supabase as supabaseClient } from "@/integrations/supabase/client";
 import { TripTimeline } from "@/components/TripTimeline";
 import { AiProgressBanner } from "@/components/AiProgressBanner";
+import { toast } from "sonner";
 
 import { PhotoImport } from "@/components/PhotoImport";
 import { ItineraryImport } from "@/components/ItineraryImport";
@@ -212,6 +213,32 @@ const TripDetail = () => {
     }
   }, [steps]);
 
+  const handleClearAllSteps = useCallback(async () => {
+    if (!id || !user) return;
+    if (!confirm(`Delete all ${steps.length} steps and their photos from this trip? This cannot be undone.`)) return;
+
+    const stepIds = steps.map((s) => s.id);
+    if (stepIds.length === 0) return;
+
+    try {
+      // Delete photos first, then steps
+      await supabase.from("step_photos").delete().in("step_id", stepIds);
+      await supabase.from("trip_steps").delete().in("id", stepIds);
+      // Cancel any pending video jobs
+      await supabase
+        .from("video_analysis_jobs")
+        .update({ status: "failed", error: "Cleared by user" })
+        .eq("trip_id", id)
+        .in("status", ["pending", "processing"]);
+
+      toast.success("All steps cleared");
+      void fetchData();
+    } catch (err) {
+      console.error("Clear all steps failed:", err);
+      toast.error("Failed to clear steps");
+    }
+  }, [id, user, steps, fetchData]);
+
   if (authLoading || loading) return <div className="py-20 text-center text-muted-foreground">Loading...</div>;
 
   if (!trip) {
@@ -313,6 +340,15 @@ const TripDetail = () => {
           <FileText className="h-4 w-4" />
           Add from Itinerary
         </button>
+        {steps.length > 0 && (
+          <button
+            onClick={handleClearAllSteps}
+            className="flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium text-destructive bg-destructive/10 hover:bg-destructive/20 transition-colors"
+          >
+            <XCircle className="h-4 w-4" />
+            Clear All Steps
+          </button>
+        )}
       </div>
 
       {/* Progress is now shown inside the StagingInbox component */}

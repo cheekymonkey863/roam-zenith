@@ -38,10 +38,10 @@ interface StagingInboxProps {
   }>;
 }
 
-// GPS-first grouping: 500m radius regardless of time
-const LOCATION_GROUP_RADIUS_METERS = 500;
-// Fallback for no-GPS files: 4-hour time gap
-const TIME_GAP_MS = 4 * 60 * 60 * 1000;
+// GPS grouping: 60m radius (building-sized)
+const LOCATION_GROUP_RADIUS_METERS = 60;
+// Only split into a new group if GPS > 60m AND time gap > 2 hours
+const TIME_GAP_MS = 2 * 60 * 60 * 1000;
 
 function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const R = 6371000;
@@ -57,17 +57,34 @@ function groupLocalFiles(files: LocalStagedFile[]): StagingGroup[] {
   const groups: StagingGroup[] = [];
   const noGpsFiles: LocalStagedFile[] = [];
 
-  // First pass: group files WITH GPS by 500m radius
-  for (const file of files) {
+  // Sort all files by time first so groups are chronological
+  const sorted = [...files].sort(
+    (a, b) => (a.takenAt?.getTime() ?? Infinity) - (b.takenAt?.getTime() ?? Infinity),
+  );
+
+  for (const file of sorted) {
     if (file.latitude == null || file.longitude == null) {
       noGpsFiles.push(file);
       continue;
     }
 
+    // Try to match an existing group: must be within 60m AND within 2h time gap
     let matched = false;
     for (const group of groups) {
       if (group.latitude != null && group.longitude != null) {
-        if (haversineDistance(file.latitude, file.longitude, group.latitude, group.longitude) <= LOCATION_GROUP_RADIUS_METERS) {
+        const dist = haversineDistance(file.latitude, file.longitude, group.latitude, group.longitude);
+        if (dist <= LOCATION_GROUP_RADIUS_METERS) {
+          // Within 60m — check time gap against closest file in group
+          const fileTime = file.takenAt?.getTime();
+          if (fileTime) {
+            const groupTimes = group.files
+              .map((f) => f.takenAt?.getTime())
+              .filter((t): t is number => t != null);
+            const closestGap = groupTimes.length > 0
+              ? Math.min(...groupTimes.map((t) => Math.abs(fileTime - t)))
+              : 0;
+            if (closestGap > TIME_GAP_MS) continue; // too far apart in time, try next group
+          }
           group.files.push(file);
           matched = true;
           break;
@@ -87,18 +104,18 @@ function groupLocalFiles(files: LocalStagedFile[]): StagingGroup[] {
     }
   }
 
-  // Second pass: group no-GPS files by 4-hour time gap
+  // Second pass: group no-GPS files by 2-hour time gap
   if (noGpsFiles.length > 0) {
-    const sorted = [...noGpsFiles].sort(
+    const sortedNoGps = [...noGpsFiles].sort(
       (a, b) => (a.takenAt?.getTime() ?? Infinity) - (b.takenAt?.getTime() ?? Infinity),
     );
 
-    let currentGroup: LocalStagedFile[] = [sorted[0]];
-    for (let i = 1; i < sorted.length; i++) {
-      const prevTime = sorted[i - 1].takenAt?.getTime();
-      const currTime = sorted[i].takenAt?.getTime();
+    let currentGroup: LocalStagedFile[] = [sortedNoGps[0]];
+    for (let i = 1; i < sortedNoGps.length; i++) {
+      const prevTime = sortedNoGps[i - 1].takenAt?.getTime();
+      const currTime = sortedNoGps[i].takenAt?.getTime();
       if (prevTime && currTime && currTime - prevTime <= TIME_GAP_MS) {
-        currentGroup.push(sorted[i]);
+        currentGroup.push(sortedNoGps[i]);
       } else {
         groups.push({
           key: `nogps-${groups.length}`,
@@ -354,10 +371,10 @@ export function StagingInbox({
         if (!uploads || uploads.length === 0) continue;
         if (group.latitude == null || group.longitude == null) continue;
 
-        // Check if we match an existing step (using same 500m radius)
+        // Check if we match an existing step (using same 60m radius)
         let existingStepId: string | null = null;
         for (const existing of existingSteps) {
-          if (haversineDistance(existing.latitude, existing.longitude, group.latitude, group.longitude) < 500) {
+          if (haversineDistance(existing.latitude, existing.longitude, group.latitude, group.longitude) < LOCATION_GROUP_RADIUS_METERS) {
             existingStepId = existing.id;
             break;
           }
