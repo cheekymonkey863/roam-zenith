@@ -226,10 +226,12 @@ export function AddEventForm({ tripId, onEventAdded, isOpen, onClose }: AddEvent
   };
 
   if (!open) {
+    // If externally controlled, don't render anything when closed
+    if (isOpen !== undefined) return null;
     return (
       <button
-        onClick={() => setOpen(true)}
-        className="flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
+        onClick={() => setInternalOpen(true)}
+        className="flex items-center gap-2 rounded-xl bg-secondary px-4 py-2.5 text-sm font-medium text-secondary-foreground hover:bg-secondary/80 transition-colors"
       >
         <Plus className="h-4 w-4" /> Add Trip Stop
       </button>
