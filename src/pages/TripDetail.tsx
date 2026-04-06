@@ -42,7 +42,7 @@ const TripDetail = () => {
   const [showItineraryImport, setShowItineraryImport] = useState(false);
   const [activeStepId, setActiveStepId] = useState<string | null>(null);
   const [pendingVideoJobs, setPendingVideoJobs] = useState(0);
-  const [importProgress, setImportProgress] = useState({ importing: false, current: 0, total: 0 });
+  const [importProgress, setImportProgress] = useState({ importing: false, current: 0, total: 0, phase: "upload" as "upload" | "sorting" });
   const [hasStagedFiles, setHasStagedFiles] = useState(false);
   const visualTypes = useStepVisualTypes(steps);
   const { cityCount, isResolvingCities } = useResolvedCities(steps);
