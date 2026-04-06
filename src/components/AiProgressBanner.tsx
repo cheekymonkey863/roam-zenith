@@ -51,18 +51,22 @@ export function AiProgressBanner({ steps, tripId, onCancelled }: AiProgressBanne
         .eq("trip_id", tripId)
         .in("status", ["pending", "processing"]);
 
-      // For steps missing location_name, set a fallback so they stop showing as pending
+      // Delete orphaned steps stuck with empty location_name
       const pendingStepIds = steps
         .filter((s) => !s.location_name || s.location_name.trim() === "")
         .map((s) => s.id);
 
       if (pendingStepIds.length > 0) {
-        for (const stepId of pendingStepIds) {
-          await supabase
-            .from("trip_steps")
-            .update({ location_name: "Unresolved location" })
-            .eq("id", stepId);
-        }
+        // Delete associated photos first, then the orphaned steps
+        await supabase
+          .from("step_photos")
+          .delete()
+          .in("step_id", pendingStepIds);
+
+        await supabase
+          .from("trip_steps")
+          .delete()
+          .in("id", pendingStepIds);
       }
 
       toast.success("Stuck jobs cancelled. You can re-import files.");
