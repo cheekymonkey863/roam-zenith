@@ -354,7 +354,7 @@ export function TripTimeline({
                 )}
               </div>
 
-              <div className={`flex flex-1 flex-col gap-2 rounded-2xl bg-card p-5 shadow-card transition-all ${
+              <div className={`relative z-10 flex flex-1 min-w-0 flex-col gap-2 rounded-2xl bg-card p-5 shadow-card transition-all break-words ${
                 isSelected ? "ring-2 ring-primary" : ""
               } ${selectMode ? "cursor-pointer" : ""}`}
                 onClick={selectMode ? () => toggleSelect(step.id) : undefined}
