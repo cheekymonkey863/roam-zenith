@@ -242,6 +242,16 @@ export function StagingInbox({
           ? { latitude: existingSteps[0].latitude, longitude: existingSteps[0].longitude }
           : { latitude: 0, longitude: 0 });
 
+      const batchEarliestDate = selectedGroups
+        .map((group) => group.earliestDate?.getTime())
+        .filter((value): value is number => value != null);
+      const primaryGroup = selectedGroups[0];
+      const importedStepId = crypto.randomUUID();
+      const stepDetails = buildImportedStepDetails({
+        locationName: primaryGroup?.locationName ?? "",
+        country: "",
+      });
+
       const stepRows: Array<{
         id: string;
         trip_id: string;
@@ -254,36 +264,21 @@ export function StagingInbox({
         is_confirmed: boolean;
         location_name: null;
         country: null;
-      }> = [];
-
-      const stepIdByGroupKey = new Map<string, string>();
-
-      for (const group of selectedGroups) {
-        const uploads = groupToUploads.get(group.key);
-        if (!uploads || uploads.length === 0) continue;
-
-        const newId = crypto.randomUUID();
-        const representativeCoordinates = getGroupRepresentativeCoordinates(group) ?? batchCoordinates;
-        const stepDetails = buildImportedStepDetails({
-          locationName: group.locationName,
-          country: "",
-        });
-
-        stepIdByGroupKey.set(group.key, newId);
-        stepRows.push({
-          id: newId,
-          trip_id: tripId,
-          user_id: user.id,
-          latitude: representativeCoordinates.latitude,
-          longitude: representativeCoordinates.longitude,
-          recorded_at: group.earliestDate?.toISOString() || new Date().toISOString(),
-          source: "photo_import",
-          event_type: stepDetails.eventType,
-          is_confirmed: true,
-          location_name: null,
-          country: null,
-        });
-      }
+      }> = [{
+        id: importedStepId,
+        trip_id: tripId,
+        user_id: user.id,
+        latitude: batchCoordinates.latitude,
+        longitude: batchCoordinates.longitude,
+        recorded_at: batchEarliestDate.length > 0
+          ? new Date(Math.min(...batchEarliestDate)).toISOString()
+          : new Date().toISOString(),
+        source: "photo_import",
+        event_type: stepDetails.eventType,
+        is_confirmed: true,
+        location_name: null,
+        country: null,
+      }];
 
       // Bulk insert all new steps at once
       if (stepRows.length > 0) {
@@ -310,11 +305,8 @@ export function StagingInbox({
       const videoUploads: UploadResult[] = [];
 
       for (const ur of uploadResults) {
-        const stepId = stepIdByGroupKey.get(ur.groupKey);
-        if (!stepId) continue;
-
         photoRows.push({
-          step_id: stepId,
+          step_id: importedStepId,
           user_id: user.id,
           storage_path: ur.storagePath,
           file_name: ur.file.fileName,
