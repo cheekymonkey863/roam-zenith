@@ -550,7 +550,12 @@ export function StagingInbox({
                 <div className="flex flex-1 flex-col gap-3">
                   <div className="flex flex-wrap items-center gap-2">
                     <MapPin className="h-4 w-4 text-primary" />
-                    <span className="text-lg font-medium text-foreground">{group.locationName}</span>
+                    <span className="text-lg font-medium text-foreground">{getGroupDisplayName(group)}</span>
+                    {!group.locationName && group.latitude != null && (
+                      <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                        <Loader2 className="h-3 w-3 animate-spin" /> Locating via Visual AI…
+                      </span>
+                    )}
                   </div>
 
                   {group.earliestDate && (
