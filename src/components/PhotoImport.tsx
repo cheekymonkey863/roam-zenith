@@ -147,7 +147,7 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, onProgressChan
       if (newFiles.length === 0) return prev;
 
       // Kick off batched EXIF extraction in background
-      extractExifBatched(newFiles.map((f) => f.id), filtered.filter((_, i) => {
+      extractExifSequential(newFiles.map((f) => f.id), filtered.filter((_, i) => {
         const key = `${filtered[i].name}::${filtered[i].size}`;
         return newFiles.some((nf) => `${nf.fileName}::${nf.file.size}` === key);
       }));
