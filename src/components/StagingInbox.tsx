@@ -496,7 +496,7 @@ export function StagingInbox({
           )}
           <button
             onClick={importSelected}
-            disabled={importing || selectedGroupCount === 0 || exifPending}
+            disabled={importing || selectedGroupCount === 0 || exifPending || geocodingPending}
             className="flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
           >
             {importing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
@@ -504,7 +504,9 @@ export function StagingInbox({
               ? `Importing… (${uploadPercent}%)`
               : exifPending
                 ? "Analyzing media…"
-                : "Import Selected"}
+                : geocodingPending
+                  ? "Fetching locations…"
+                  : "Import Selected"}
           </button>
         </div>
       </div>
