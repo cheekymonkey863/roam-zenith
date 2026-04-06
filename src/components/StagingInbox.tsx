@@ -602,7 +602,7 @@ export function StagingInbox({
             </div>
           );
         })}
-      </div>
+      </div>}
 
       {localFiles.length === 0 && (
         <div className="flex flex-col items-center gap-4 rounded-2xl border-2 border-dashed border-border p-12 text-center">
