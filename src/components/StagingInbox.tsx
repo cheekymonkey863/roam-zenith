@@ -266,12 +266,13 @@ export function StagingInbox({
         }
 
         if (!stepId) {
+          // Optimistic insert: use raw coordinates, no location_name yet
           const { data: stepData, error: stepError } = await supabase
             .from("trip_steps")
             .insert({
               trip_id: tripId,
               user_id: user.id,
-              location_name: group.locationName || null,
+              location_name: null,
               country: null,
               latitude: group.latitude,
               longitude: group.longitude,

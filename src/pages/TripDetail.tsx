@@ -105,9 +105,34 @@ const TripDetail = () => {
           if (newStatus === "complete" || newStatus === "failed") {
             fetchPendingJobs();
             if (newStatus === "complete") {
-              fetchData(); // Refresh timeline with new AI metadata
+              fetchData();
             }
           }
+        },
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user, id]);
+
+  // Subscribe to trip_steps updates for real-time enrichment
+  useEffect(() => {
+    if (!user || !id) return;
+
+    const channel = supabase
+      .channel(`trip-steps-${id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "trip_steps",
+          filter: `trip_id=eq.${id}`,
+        },
+        () => {
+          fetchData();
         },
       )
       .subscribe();
