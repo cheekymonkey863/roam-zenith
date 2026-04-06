@@ -96,6 +96,27 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
       const file = rawFiles[i];
       const id = ids[i];
       try {
+        // Convert HEIC to JPEG for browser preview
+        const isHeic = file.name.toLowerCase().endsWith(".heic") || file.name.toLowerCase().endsWith(".heif") || file.type === "image/heic";
+        if (isHeic) {
+          try {
+            const convertedBlob = await heic2any({ blob: file, toType: "image/jpeg", quality: 0.8 });
+            const blob = Array.isArray(convertedBlob) ? convertedBlob[0] : convertedBlob;
+            const newPreviewUrl = URL.createObjectURL(blob);
+            setFiles((prev) =>
+              prev.map((f) => {
+                if (f.id === id) {
+                  URL.revokeObjectURL(f.previewUrl);
+                  return { ...f, previewUrl: newPreviewUrl };
+                }
+                return f;
+              }),
+            );
+          } catch (heicErr) {
+            console.warn("HEIC conversion failed, keeping original:", heicErr);
+          }
+        }
+
         const exif = await extractExifFromFile(file);
         setFiles((prev) =>
           prev.map((f) =>
