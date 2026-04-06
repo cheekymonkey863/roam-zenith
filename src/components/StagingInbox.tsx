@@ -297,7 +297,8 @@ export function StagingInbox({
         return;
       }
 
-      // ── STEP B: Bulk INSERT all trip_steps, then all step_photos ──
+      // ── STEP B: Sort into trip stops ──
+      setImportProgress({ current: completed, total, phase: "sorting" });
       // Build step rows from groups (skip groups with no GPS or no successful uploads)
       const groupToUploads = new Map<string, UploadResult[]>();
       for (const ur of uploadResults) {
