@@ -512,9 +512,14 @@ export function StagingInbox({
                     ) : (
                       <MapPin className="h-4 w-4 text-primary" />
                     )}
-                    <span className="text-lg font-medium text-foreground">
-                      {getGroupDisplayName(group)}
+                    <span className="text-lg font-semibold text-foreground">
+                      {resolvedNames.get(group.key) || (group.latitude != null ? `📍 ${group.latitude!.toFixed(4)}, ${group.longitude!.toFixed(4)}` : `${group.files.length} file${group.files.length !== 1 ? "s" : ""}`)}
                     </span>
+                    {group.earliestDate && (
+                      <span className="text-sm text-muted-foreground">
+                        {group.earliestDate.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
+                      </span>
+                    )}
                     <span className="text-sm text-muted-foreground">
                       ({group.files.length} file{group.files.length !== 1 ? "s" : ""})
                     </span>
