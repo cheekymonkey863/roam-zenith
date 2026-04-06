@@ -170,53 +170,12 @@ export function StagingInbox({
     setImportProgress({ current: 0, total, phase: "upload" });
 
     try {
-      // Process each group sequentially so we can show per-group completion
       const allNewStepIds: string[] = [];
 
       for (const group of selectedGroups) {
         const groupFiles = group.files;
 
-        // ── Upload all files in this group (concurrency 5) ──
-        interface UploadResult {
-          file: LocalStagedFile;
-          storagePath: string;
-        }
-        const uploadResults: UploadResult[] = [];
-        const CONCURRENCY = 5;
-        let nextIdx = 0;
-        const queue = [...groupFiles];
-
-        async function uploadWorker() {
-          while (nextIdx < queue.length) {
-            const idx = nextIdx++;
-            const file = queue[idx];
-            try {
-              const ext = file.fileName.split(".").pop() || "jpg";
-              const objectName = `${user!.id}/${tripId}/staging/${crypto.randomUUID()}.${ext}`;
-
-              await resumableUpload({
-                bucketName: "trip-photos",
-                objectName,
-                file: file.file,
-                contentType: file.mimeType || undefined,
-              });
-
-              uploadResults.push({ file, storagePath: objectName });
-            } catch (err) {
-              console.error("Upload failed for", file.fileName, err);
-            }
-            completed++;
-            setImportProgress({ current: completed, total, phase: "upload" });
-          }
-        }
-
-        await Promise.all(
-          Array.from({ length: Math.min(CONCURRENCY, queue.length) }, () => uploadWorker()),
-        );
-
-        if (uploadResults.length === 0) continue;
-
-        // ── Create a trip_step for this group ──
+        // ── 1. Create the trip_step FIRST so workers can reference stepId ──
         const coords = getGroupRepresentativeCoordinates(group)
           ?? (existingSteps[0]
             ? { latitude: existingSteps[0].latitude, longitude: existingSteps[0].longitude }
@@ -250,55 +209,84 @@ export function StagingInbox({
 
         allNewStepIds.push(stepId);
 
-        // ── Insert photos for this group ──
-        const photoRows = uploadResults.map((ur) => ({
-          step_id: stepId,
-          user_id: user.id,
-          storage_path: ur.storagePath,
-          file_name: ur.file.fileName,
-          latitude: ur.file.latitude ?? null,
-          longitude: ur.file.longitude ?? null,
-          taken_at: ur.file.takenAt?.toISOString() ?? null,
-          exif_data: {
-            latitude: ur.file.latitude,
-            longitude: ur.file.longitude,
-            cameraMake: ur.file.cameraMake,
-            cameraModel: ur.file.cameraModel,
-          },
-        }));
+        // ── 2. Upload workers — each inserts step_photos immediately on success ──
+        const CONCURRENCY = 5;
+        let nextIdx = 0;
+        const queue = [...groupFiles];
 
-        const { error: photosError } = await supabase.from("step_photos").insert(photoRows);
-        if (photosError) {
-          console.error("Photo insert failed:", photosError);
+        async function uploadWorker() {
+          while (nextIdx < queue.length) {
+            const idx = nextIdx++;
+            const file = queue[idx];
+            try {
+              const ext = file.fileName.split(".").pop() || "jpg";
+              const objectName = `${user!.id}/${tripId}/staging/${crypto.randomUUID()}.${ext}`;
+
+              await resumableUpload({
+                bucketName: "trip-photos",
+                objectName,
+                file: file.file,
+                contentType: file.mimeType || undefined,
+              });
+
+              // Insert step_photos row immediately
+              const { error: photoError } = await supabase.from("step_photos").insert({
+                step_id: stepId,
+                user_id: user!.id,
+                storage_path: objectName,
+                file_name: file.fileName,
+                latitude: file.latitude ?? null,
+                longitude: file.longitude ?? null,
+                taken_at: file.takenAt?.toISOString() ?? null,
+                exif_data: {
+                  latitude: file.latitude,
+                  longitude: file.longitude,
+                  cameraMake: file.cameraMake,
+                  cameraModel: file.cameraModel,
+                },
+              });
+
+              if (photoError) {
+                console.error("Photo insert failed for", file.fileName, photoError);
+              }
+
+              // Queue video analysis immediately for videos
+              if (file.mimeType.startsWith("video/")) {
+                queueVideoAnalysisJob({
+                  captionId: file.id,
+                  userId: user!.id,
+                  tripId,
+                  storagePath: objectName,
+                  fileName: file.fileName,
+                  mimeType: file.mimeType,
+                  takenAt: file.takenAt?.toISOString() ?? null,
+                  latitude: group.latitude ?? null,
+                  longitude: group.longitude ?? null,
+                  locationName: group.locationName ?? "",
+                  country: "",
+                  nearbyPlaces: [],
+                  itinerarySteps: existingSteps?.map((s) => ({
+                    location_name: s.location_name,
+                    country: s.country,
+                    latitude: s.latitude,
+                    longitude: s.longitude,
+                    recorded_at: s.recorded_at,
+                    event_type: s.event_type,
+                    description: s.description,
+                  })),
+                }).catch((err) => console.error("Video queue failed:", err));
+              }
+            } catch (err) {
+              console.error("Upload failed for", file.fileName, err);
+            }
+            completed++;
+            setImportProgress({ current: completed, total, phase: "upload" });
+          }
         }
 
-        // Queue video analysis jobs
-        const videoUploads = uploadResults.filter((ur) => ur.file.mimeType.startsWith("video/"));
-        for (const vu of videoUploads) {
-          await queueVideoAnalysisJob({
-            captionId: vu.file.id,
-            userId: user.id,
-            tripId,
-            storagePath: vu.storagePath,
-            fileName: vu.file.fileName,
-            mimeType: vu.file.mimeType,
-            takenAt: vu.file.takenAt?.toISOString() ?? null,
-            latitude: group.latitude ?? null,
-            longitude: group.longitude ?? null,
-            locationName: group.locationName ?? "",
-            country: "",
-            nearbyPlaces: [],
-            itinerarySteps: existingSteps?.map((s) => ({
-              location_name: s.location_name,
-              country: s.country,
-              latitude: s.latitude,
-              longitude: s.longitude,
-              recorded_at: s.recorded_at,
-              event_type: s.event_type,
-              description: s.description,
-            })),
-          });
-        }
+        await Promise.all(
+          Array.from({ length: Math.min(CONCURRENCY, queue.length) }, () => uploadWorker()),
+        );
 
         // ✅ Mark this group as completed — green checkmark appears
         setCompletedGroups((prev) => new Set(prev).add(group.key));
@@ -313,7 +301,6 @@ export function StagingInbox({
           .catch((err) => console.error("Background processing trigger failed:", err));
       }
 
-      // 🎉 Completion toast & hand-off
       toast.success("All media secured! Trip details are being populated in the background.", {
         duration: 5000,
       });
