@@ -84,8 +84,8 @@ function groupStagedFiles(files: StagedMediaFile[]): StagingGroup[] {
       const venueName = file.ai_result?.suggestedVenueName;
       const cityName = file.ai_result?.suggestedCityName;
       const locationName = venueName && cityName
-87:         ? `${venueName}, ${cityName}`
-88:         : venueName || null; // null = pending resolution
+        ? `${venueName}, ${cityName}`
+        : venueName || null;
 
       groups.push({
         key: `group-${groups.length}`,
