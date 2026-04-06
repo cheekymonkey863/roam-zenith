@@ -356,8 +356,8 @@ const TripDetail = () => {
       {showPhotoImport && (
         <PhotoImport
           tripId={trip.id}
-          onImportComplete={() => {
-            fetchData();
+          onImportComplete={async () => {
+            await fetchData();
             // Auto-hide the inbox after successful import (Phase 3 hand-off)
             setShowPhotoImport(false);
           }}
