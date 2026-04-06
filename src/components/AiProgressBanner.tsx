@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { CheckCircle, Sparkles, X } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -17,6 +17,8 @@ export function AiProgressBanner({ steps, tripId, onCancelled }: AiProgressBanne
   const [hidden, setHidden] = useState(false);
   const [hadPending, setHadPending] = useState(false);
   const [cancelling, setCancelling] = useState(false);
+  /** Snapshot of total batch size when pending first appeared */
+  const totalBatchRef = useRef(0);
 
   const pendingCount = steps.filter(
     (s) => !s.location_name || s.location_name.trim() === ""
@@ -24,11 +26,18 @@ export function AiProgressBanner({ steps, tripId, onCancelled }: AiProgressBanne
 
   useEffect(() => {
     if (pendingCount > 0) {
+      if (!hadPending) {
+        // First time we see pending — snapshot the total
+        totalBatchRef.current = pendingCount;
+      } else if (pendingCount > totalBatchRef.current) {
+        // More items arrived (new import while processing)
+        totalBatchRef.current = pendingCount;
+      }
       setHadPending(true);
       setShowComplete(false);
       setHidden(false);
     }
-  }, [pendingCount]);
+  }, [pendingCount, hadPending]);
 
   useEffect(() => {
     if (hadPending && pendingCount === 0) {
@@ -36,6 +45,7 @@ export function AiProgressBanner({ steps, tripId, onCancelled }: AiProgressBanne
       const timer = setTimeout(() => {
         setShowComplete(false);
         setHidden(true);
+        totalBatchRef.current = 0;
       }, 3000);
       return () => clearTimeout(timer);
     }
@@ -44,20 +54,17 @@ export function AiProgressBanner({ steps, tripId, onCancelled }: AiProgressBanne
   const handleCancel = async () => {
     setCancelling(true);
     try {
-      // Cancel stuck video analysis jobs
       await supabase
         .from("video_analysis_jobs")
         .update({ status: "failed", error: "Cancelled by user" })
         .eq("trip_id", tripId)
         .in("status", ["pending", "processing"]);
 
-      // Delete orphaned steps stuck with empty location_name
       const pendingStepIds = steps
         .filter((s) => !s.location_name || s.location_name.trim() === "")
         .map((s) => s.id);
 
       if (pendingStepIds.length > 0) {
-        // Delete associated photos first, then the orphaned steps
         await supabase
           .from("step_photos")
           .delete()
@@ -92,6 +99,9 @@ export function AiProgressBanner({ steps, tripId, onCancelled }: AiProgressBanne
     );
   }
 
+  const totalBatch = totalBatchRef.current;
+  const doneCount = totalBatch - pendingCount;
+
   if (pendingCount > 0) {
     return (
       <div className="sticky top-[35vh] lg:top-[40vh] z-45 mx-auto max-w-3xl w-full px-4 pt-3">
@@ -100,7 +110,7 @@ export function AiProgressBanner({ steps, tripId, onCancelled }: AiProgressBanne
           <span className="text-foreground flex-1">
             Populating trip details...{" "}
             <strong>
-              ({pendingCount} {pendingCount === 1 ? "stop" : "stops"} remaining)
+              ({doneCount} of {totalBatch} {totalBatch === 1 ? "stop" : "stops"} done)
             </strong>
           </span>
           <button

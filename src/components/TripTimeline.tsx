@@ -6,7 +6,7 @@ import { StepMediaGallery } from "@/components/StepMediaGallery";
 import { toast } from "sonner";
 import { inferStepVisualType, type StepVisualType } from "@/lib/stepVisuals";
 import { getEventType } from "@/lib/eventTypes";
-import { getStoredEssence } from "@/lib/mediaMetadata";
+
 import {
   Plane, TrainFront, Bus, Ship, Car, Footprints, Bike, Sailboat, Anchor,
   Hotel, Building, Home, Castle, Trees, Mountain, Tent, Palmtree, Snowflake,
@@ -362,9 +362,9 @@ export function TripTimeline({
                 <div className="flex items-center justify-between gap-4">
                   <div>
                     <h4 className="font-display text-lg font-semibold text-foreground">
-                      {step.location_name && !step.location_name.toLowerCase().includes("unknown")
+                    {step.location_name && !step.location_name.toLowerCase().includes("unknown")
                         ? step.location_name
-                        : step.latitude && step.longitude
+                        : step.latitude !== 0 && step.longitude !== 0
                           ? (
                             <span className="flex items-center gap-2">
                               <span className="text-muted-foreground">{step.latitude.toFixed(4)}°, {step.longitude.toFixed(4)}°</span>
@@ -400,19 +400,10 @@ export function TripTimeline({
                   )}
                 </div>
 
-                {step.description && <p className="text-sm leading-relaxed text-foreground">{step.description}</p>}
+                {step.description && (
+                  <p className="text-sm leading-relaxed text-foreground/80">{step.description}</p>
+                )}
                 {step.notes && <p className="text-sm leading-relaxed text-muted-foreground">{step.notes}</p>}
-
-                {/* Essence description from media analysis */}
-                {(() => {
-                  const essences = photos
-                    .map((p) => getStoredEssence(p.exif_data))
-                    .filter((e): e is string => e !== null);
-                  const essence = essences[0];
-                  return essence && !step.description ? (
-                    <p className="text-sm leading-relaxed text-foreground/80 italic">{essence}</p>
-                  ) : null;
-                })()}
 
                 {photos.length > 0 && (
                   <div className="mt-2">
@@ -426,9 +417,11 @@ export function TripTimeline({
                 )}
 
                 <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground/60">
-                  <span>Step {index + 1}</span>
+                  <span>Stop {index + 1}</span>
                   <span>·</span>
-                  <span>{step.latitude.toFixed(2)}°, {step.longitude.toFixed(2)}°</span>
+                  {step.latitude !== 0 && step.longitude !== 0 && (
+                    <span>{step.latitude.toFixed(2)}°, {step.longitude.toFixed(2)}°</span>
+                  )}
                   <span>·</span>
                   <span className="rounded bg-secondary px-1.5 py-0.5 text-[10px]">{step.event_type}</span>
                   {photos.length > 0 && (
