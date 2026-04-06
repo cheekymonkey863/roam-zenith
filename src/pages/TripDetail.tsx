@@ -315,11 +315,36 @@ const TripDetail = () => {
         </button>
       </div>
 
+      {/* Prominent import progress bar — between buttons and inbox */}
+      {importProgress.importing && importProgress.total > 0 && (
+        <div className="flex flex-col gap-2 rounded-xl border border-primary/20 bg-primary/5 p-4">
+          <div className="flex items-center justify-between text-sm font-medium">
+            <span className="flex items-center gap-2 text-foreground">
+              <Loader2 className="h-4 w-4 animate-spin text-primary" />
+              Uploading & creating timeline…
+            </span>
+            <span className="text-primary font-semibold">
+              {Math.round((importProgress.current / importProgress.total) * 100)}%
+            </span>
+          </div>
+          <div className="h-3 w-full overflow-hidden rounded-full bg-secondary">
+            <div
+              className="h-full rounded-full bg-primary transition-all duration-300"
+              style={{ width: `${(importProgress.current / importProgress.total) * 100}%` }}
+            />
+          </div>
+          <p className="text-xs text-muted-foreground">
+            {importProgress.current} of {importProgress.total} files · Do not close this page
+          </p>
+        </div>
+      )}
+
       {showPhotoImport && (
         <PhotoImport
           tripId={trip.id}
           onImportComplete={fetchData}
           onCancel={() => setShowPhotoImport(false)}
+          onProgressChange={setImportProgress}
           existingSteps={steps.map(s => ({ id: s.id, latitude: s.latitude, longitude: s.longitude, location_name: s.location_name, country: s.country, recorded_at: s.recorded_at, event_type: s.event_type, description: s.description }))}
         />
       )}
