@@ -280,7 +280,7 @@ const TripDetail = () => {
       {steps.length > 0 ? (
         <div className="flex flex-col">
           {/* Sticky Top Map */}
-          <div className="sticky top-0 z-40 w-full h-[35vh] lg:h-[40vh] shadow-md">
+          <div className="sticky top-0 z-50 w-full h-[35vh] lg:h-[40vh] shadow-md bg-background">
             <WorldMap
               ref={mapRef}
               steps={steps}
