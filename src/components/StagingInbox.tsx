@@ -196,7 +196,6 @@ function UploadIndicator({ file }: { file: StagedMediaFile }) {
     </span>
   );
 }
-}
 
 export function StagingInbox({
   tripId,
