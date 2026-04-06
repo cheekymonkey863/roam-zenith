@@ -311,6 +311,13 @@ export function TripTimeline({
           const StepIcon = config.icon;
           const isSelected = selectedIds.has(step.id);
           const isDragOver = overIndex === index && dragIndex !== null && dragIndex !== index;
+          const isPopulating = step.location_name == null || step.description == null;
+          const hasCoordinates = step.latitude !== 0 && step.longitude !== 0;
+          const displayLocation = step.location_name && !step.location_name.toLowerCase().includes("unknown")
+            ? step.location_name
+            : hasCoordinates
+              ? `${step.latitude.toFixed(4)}°, ${step.longitude.toFixed(4)}°`
+              : "Unknown Location";
 
           return (
             <div
@@ -362,27 +369,20 @@ export function TripTimeline({
                 <div className="flex items-center justify-between gap-4">
                   <div>
                     <h4 className="font-display text-lg font-semibold text-foreground">
-                    {step.location_name && !step.location_name.toLowerCase().includes("unknown")
-                        ? step.location_name
-                        : step.latitude !== 0 && step.longitude !== 0
-                          ? (
-                            <span className="flex items-center gap-2">
-                              <span className="text-muted-foreground">{step.latitude.toFixed(4)}°, {step.longitude.toFixed(4)}°</span>
-                              <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary animate-pulse">
-                                Populating trip details…
-                              </span>
-                            </span>
-                          )
-                          : "Unknown Location"
-                      }
+                      {displayLocation}
                     </h4>
                     {step.country && <p className="text-sm text-muted-foreground">{step.country}</p>}
                   </div>
                   {!selectMode && (
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center justify-end gap-2">
                       <span className="shrink-0 rounded-full bg-secondary px-3 py-1 text-xs font-medium text-secondary-foreground">
                         {formatStepDate(step.recorded_at)}
                       </span>
+                      {isPopulating && (
+                        <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary">
+                          ✨ Populating trip details...
+                        </span>
+                      )}
                       <EditStepDialog step={step} onUpdated={onUpdated} />
                       <button
                         onClick={() => handleDelete(step.id)}
@@ -394,9 +394,16 @@ export function TripTimeline({
                     </div>
                   )}
                   {selectMode && (
-                    <span className="shrink-0 rounded-full bg-secondary px-3 py-1 text-xs font-medium text-secondary-foreground">
-                      {formatStepDate(step.recorded_at)}
-                    </span>
+                    <div className="flex flex-wrap items-center justify-end gap-2">
+                      <span className="shrink-0 rounded-full bg-secondary px-3 py-1 text-xs font-medium text-secondary-foreground">
+                        {formatStepDate(step.recorded_at)}
+                      </span>
+                      {isPopulating && (
+                        <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary">
+                          ✨ Populating trip details...
+                        </span>
+                      )}
+                    </div>
                   )}
                 </div>
 
