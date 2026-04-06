@@ -9,7 +9,9 @@ export interface StagingGroup {
   earliestDate: Date | null;
 }
 
-export const UNIFIED_IMPORT_SPLIT_DISTANCE_METERS = 1000;
+/** Only split when BOTH distance > 60m AND time gap > 2 hours */
+export const GROUP_SPLIT_DISTANCE_METERS = 60;
+export const GROUP_SPLIT_TIME_MS = 2 * 60 * 60 * 1000; // 2 hours
 
 function hasCoordinates(
   file: LocalStagedFile,
@@ -31,6 +33,12 @@ function getEarliestDate(files: LocalStagedFile[]) {
   const dates = files.map((file) => file.takenAt).filter((value): value is Date => value instanceof Date);
   if (dates.length === 0) return null;
   return new Date(Math.min(...dates.map((date) => date.getTime())));
+}
+
+function getLatestDate(files: LocalStagedFile[]) {
+  const dates = files.map((file) => file.takenAt).filter((value): value is Date => value instanceof Date);
+  if (dates.length === 0) return null;
+  return new Date(Math.max(...dates.map((date) => date.getTime())));
 }
 
 function createGroup(file: LocalStagedFile, index: number): StagingGroup {
@@ -72,6 +80,14 @@ function sortFilesByTime(files: LocalStagedFile[]) {
   });
 }
 
+/**
+ * Groups files using a dual-threshold approach:
+ * A new group is created ONLY when BOTH conditions are met:
+ * 1. GPS distance from group anchor > 60m
+ * 2. Time gap from the latest file in the group > 2 hours
+ * 
+ * If either condition is NOT met, the file stays in the current group.
+ */
 export function groupLocalFiles(files: LocalStagedFile[]): StagingGroup[] {
   const sortedFiles = sortFilesByTime(files);
   if (sortedFiles.length === 0) return [];
@@ -86,8 +102,9 @@ export function groupLocalFiles(files: LocalStagedFile[]): StagingGroup[] {
       continue;
     }
 
+    // Check distance condition
     const anchorCoordinates = getGroupRepresentativeCoordinates(currentGroup);
-
+    let distanceExceeded = false;
     if (anchorCoordinates && hasCoordinates(file)) {
       const distance = haversineDistance(
         anchorCoordinates.latitude,
@@ -95,14 +112,25 @@ export function groupLocalFiles(files: LocalStagedFile[]): StagingGroup[] {
         file.latitude,
         file.longitude,
       );
-
-      if (distance > UNIFIED_IMPORT_SPLIT_DISTANCE_METERS) {
-        currentGroup = createGroup(file, groups.length);
-        groups.push(currentGroup);
-        continue;
-      }
+      distanceExceeded = distance > GROUP_SPLIT_DISTANCE_METERS;
     }
 
+    // Check time condition
+    let timeExceeded = false;
+    const latestInGroup = getLatestDate(currentGroup.files);
+    if (latestInGroup && file.takenAt) {
+      const gap = file.takenAt.getTime() - latestInGroup.getTime();
+      timeExceeded = gap > GROUP_SPLIT_TIME_MS;
+    }
+
+    // Only split when BOTH thresholds are exceeded
+    if (distanceExceeded && timeExceeded) {
+      currentGroup = createGroup(file, groups.length);
+      groups.push(currentGroup);
+      continue;
+    }
+
+    // Otherwise keep in current group
     currentGroup.files.push(file);
 
     if (!anchorCoordinates && hasCoordinates(file)) {
