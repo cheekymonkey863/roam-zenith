@@ -1,6 +1,19 @@
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { useEffect, useState, useRef, useCallback } from "react";
-import { ArrowLeft, Calendar, MapPin, Route, Navigation, Image as ImageIcon, FileText, Trash2, Loader2, Video, XCircle, Plus } from "lucide-react";
+import {
+  ArrowLeft,
+  Calendar,
+  MapPin,
+  Route,
+  Navigation,
+  Image as ImageIcon,
+  FileText,
+  Trash2,
+  Loader2,
+  Video,
+  XCircle,
+  Plus,
+} from "lucide-react";
 import { getTripStatus, getTripStatusLabel, getTripStatusStyle, formatTripDateRange } from "@/lib/tripStatus";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -44,7 +57,12 @@ const TripDetail = () => {
   const [showAddEvent, setShowAddEvent] = useState(false);
   const [activeStepId, setActiveStepId] = useState<string | null>(null);
   const [pendingVideoJobs, setPendingVideoJobs] = useState(0);
-  const [importProgress, setImportProgress] = useState({ importing: false, current: 0, total: 0, phase: "upload" as "upload" | "sorting" });
+  const [importProgress, setImportProgress] = useState({
+    importing: false,
+    current: 0,
+    total: 0,
+    phase: "upload" as "upload" | "sorting",
+  });
   const [hasStagedFiles, setHasStagedFiles] = useState(false);
   const visualTypes = useStepVisualTypes(steps);
   const { cityCount, isResolvingCities } = useResolvedCities(steps);
@@ -113,7 +131,6 @@ const TripDetail = () => {
     setLoading(false);
   }, [authLoading, id, user]);
 
-  // Fetch pending video analysis jobs count
   const fetchPendingJobs = useCallback(async () => {
     if (authLoading || !user || !id) return;
 
@@ -134,7 +151,6 @@ const TripDetail = () => {
     void fetchData();
     void fetchPendingJobs();
 
-    // Check for staged files to auto-show import panel
     if (user && id) {
       supabaseClient
         .from("pending_media_imports")
@@ -150,7 +166,6 @@ const TripDetail = () => {
     }
   }, [authLoading, fetchData, fetchPendingJobs, user, id]);
 
-  // Subscribe to video analysis job updates via Realtime
   useEffect(() => {
     if (authLoading || !user || !id) return;
 
@@ -180,7 +195,6 @@ const TripDetail = () => {
     };
   }, [authLoading, fetchData, fetchPendingJobs, id, user]);
 
-  // Subscribe to trip_steps updates for real-time enrichment
   useEffect(() => {
     if (authLoading || !user || !id) return;
 
@@ -205,14 +219,17 @@ const TripDetail = () => {
     };
   }, [authLoading, fetchData, id, user]);
 
-  const handleStepInView = useCallback((stepId: string) => {
-    setActiveStepId(stepId);
-    const step = steps.find((s) => s.id === stepId);
-    if (step && mapRef.current) {
-      mapRef.current.flyToStep(step);
-      mapRef.current.highlightStep(stepId);
-    }
-  }, [steps]);
+  const handleStepInView = useCallback(
+    (stepId: string) => {
+      setActiveStepId(stepId);
+      const step = steps.find((s) => s.id === stepId);
+      if (step && mapRef.current) {
+        mapRef.current.flyToStep(step);
+        mapRef.current.highlightStep(stepId);
+      }
+    },
+    [steps],
+  );
 
   const handleCancelVideoJobs = useCallback(async () => {
     if (!id || !user) return;
@@ -233,13 +250,11 @@ const TripDetail = () => {
     if (stepIds.length === 0) return;
 
     try {
-      // Cancel video jobs FIRST
       await supabase
         .from("video_analysis_jobs")
         .update({ status: "failed", error: "Cleared by user" })
         .eq("trip_id", id)
         .in("status", ["pending", "processing"]);
-      // Delete photos, then steps
       await supabase.from("step_photos").delete().in("step_id", stepIds);
       await supabase.from("trip_steps").delete().in("id", stepIds);
 
@@ -258,17 +273,22 @@ const TripDetail = () => {
     return (
       <div className="flex flex-col items-center gap-4 py-20 text-center">
         <h2 className="font-display text-2xl font-semibold text-foreground">Trip not found</h2>
-        <Link to="/" className="text-primary hover:underline">Back to dashboard</Link>
+        <Link to="/" className="text-primary hover:underline">
+          Back to dashboard
+        </Link>
       </div>
     );
   }
 
   const countries = [...new Set(steps.map((s) => s.country).filter(Boolean))];
 
-  const headerContent = (
-    <>
+  return (
+    <div className="flex flex-col gap-8 py-8">
       <div className="flex flex-col gap-4">
-        <Link to="/" className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors">
+        <Link
+          to="/"
+          className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
+        >
           <ArrowLeft className="h-4 w-4" />
           Back to dashboard
         </Link>
@@ -277,7 +297,9 @@ const TripDetail = () => {
           <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
             <h1 className="font-display text-3xl font-semibold text-foreground md:text-4xl">{trip.title}</h1>
             <div className="flex shrink-0 items-center gap-2 self-start">
-              <span className={`rounded-full px-3 py-1 text-xs font-medium ${getTripStatusStyle(getTripStatus(trip.start_date, trip.end_date))}`}>
+              <span
+                className={`rounded-full px-3 py-1 text-xs font-medium ${getTripStatusStyle(getTripStatus(trip.start_date, trip.end_date))}`}
+              >
                 {getTripStatusLabel(getTripStatus(trip.start_date, trip.end_date))}
               </span>
               {isOwner && <ShareTripDialog tripId={trip.id} tripTitle={trip.title} />}
@@ -323,7 +345,8 @@ const TripDetail = () => {
           <Loader2 className="h-4 w-4 animate-spin text-primary" />
           <Video className="h-4 w-4 text-primary" />
           <span className="text-foreground flex-1">
-            <strong>{pendingVideoJobs}</strong> video{pendingVideoJobs === 1 ? "" : "s"} being analyzed in the background.
+            <strong>{pendingVideoJobs}</strong> video{pendingVideoJobs === 1 ? "" : "s"} being analyzed in the
+            background.
           </span>
           <button
             onClick={handleCancelVideoJobs}
@@ -338,7 +361,13 @@ const TripDetail = () => {
       {/* Button row — fixed height, never deforms */}
       <div className="flex flex-wrap gap-3">
         <button
-          onClick={() => { setShowAddEvent(!showAddEvent); if (!showAddEvent) { setShowPhotoImport(false); setShowItineraryImport(false); } }}
+          onClick={() => {
+            setShowAddEvent(!showAddEvent);
+            if (!showAddEvent) {
+              setShowPhotoImport(false);
+              setShowItineraryImport(false);
+            }
+          }}
           className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition-colors ${
             showAddEvent
               ? "bg-secondary/80 text-secondary-foreground ring-2 ring-primary/20"
@@ -349,7 +378,13 @@ const TripDetail = () => {
           Add Trip Stop
         </button>
         <button
-          onClick={() => { setShowPhotoImport(!showPhotoImport); if (!showPhotoImport) { setShowItineraryImport(false); setShowAddEvent(false); } }}
+          onClick={() => {
+            setShowPhotoImport(!showPhotoImport);
+            if (!showPhotoImport) {
+              setShowItineraryImport(false);
+              setShowAddEvent(false);
+            }
+          }}
           className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition-colors ${
             showPhotoImport
               ? "bg-secondary/80 text-secondary-foreground ring-2 ring-primary/20"
@@ -360,7 +395,13 @@ const TripDetail = () => {
           Add from Photo / Video
         </button>
         <button
-          onClick={() => { setShowItineraryImport(!showItineraryImport); if (!showItineraryImport) { setShowPhotoImport(false); setShowAddEvent(false); } }}
+          onClick={() => {
+            setShowItineraryImport(!showItineraryImport);
+            if (!showItineraryImport) {
+              setShowPhotoImport(false);
+              setShowAddEvent(false);
+            }
+          }}
           className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition-colors ${
             showItineraryImport
               ? "bg-secondary/80 text-secondary-foreground ring-2 ring-primary/20"
@@ -383,7 +424,15 @@ const TripDetail = () => {
 
       {/* Forms render BELOW the button row */}
       {showAddEvent && (
-        <AddEventForm tripId={trip.id} onEventAdded={() => { fetchData(); setShowAddEvent(false); }} isOpen onClose={() => setShowAddEvent(false)} />
+        <AddEventForm
+          tripId={trip.id}
+          onEventAdded={() => {
+            fetchData();
+            setShowAddEvent(false);
+          }}
+          isOpen
+          onClose={() => setShowAddEvent(false)}
+        />
       )}
 
       {showPhotoImport && (
@@ -391,35 +440,33 @@ const TripDetail = () => {
           tripId={trip.id}
           onImportComplete={() => {
             void fetchData();
-            window.setTimeout(() => {
-              setShowPhotoImport(false);
-              setHasStagedFiles(false);
-            }, 3000);
+            // Force the upload box to close immediately after import succeeds
+            setShowPhotoImport(false);
+            setHasStagedFiles(false);
           }}
           onCancel={() => setShowPhotoImport(false)}
           onProgressChange={setImportProgress}
-          existingSteps={steps.map(s => ({ id: s.id, latitude: s.latitude, longitude: s.longitude, location_name: s.location_name, country: s.country, recorded_at: s.recorded_at, event_type: s.event_type, description: s.description }))}
+          existingSteps={steps.map((s) => ({
+            id: s.id,
+            latitude: s.latitude,
+            longitude: s.longitude,
+            location_name: s.location_name,
+            country: s.country,
+            recorded_at: s.recorded_at,
+            event_type: s.event_type,
+            description: s.description,
+          }))}
         />
       )}
 
       {showItineraryImport && (
-        <ItineraryImport
-          tripId={trip.id}
-          onImportComplete={fetchData}
-          onCancel={() => setShowItineraryImport(false)}
-        />
+        <ItineraryImport tripId={trip.id} onImportComplete={fetchData} onCancel={() => setShowItineraryImport(false)} />
       )}
-    </>
-  );
-
-  return (
-    <div className="flex flex-col gap-8 py-8">
-      {headerContent}
 
       {steps.length > 0 ? (
         <div className="flex flex-col">
-          {/* Sticky Top Map */}
-          <div className="sticky top-0 relative z-0 max-h-[40vh] mb-8 h-[35vh] w-full bg-background lg:h-[40vh]">
+          {/* Map Layout fixed - z-0 and relative so it stays behind popups */}
+          <div className="relative z-0 max-h-[40vh] mb-4 h-[35vh] w-full bg-background lg:h-[40vh]">
             <WorldMap
               ref={mapRef}
               steps={steps}
@@ -430,14 +477,19 @@ const TripDetail = () => {
             />
           </div>
 
-          {/* Progress Banner */}
           <AiProgressBanner steps={steps} tripId={trip.id} onCancelled={fetchData} />
 
-          {/* Timeline below map */}
           <div className="relative z-10 flex flex-col gap-4 px-4 py-8">
-            <h2 className="max-w-3xl mx-auto w-full font-display text-2xl font-semibold text-foreground">Journey Timeline</h2>
+            <h2 className="max-w-3xl mx-auto w-full font-display text-2xl font-semibold text-foreground">
+              Journey Timeline
+            </h2>
             <div className="max-w-3xl mx-auto w-full">
-              <TripTimeline steps={steps} onUpdated={fetchData} visualTypes={visualTypes} onStepInView={handleStepInView} />
+              <TripTimeline
+                steps={steps}
+                onUpdated={fetchData}
+                visualTypes={visualTypes}
+                onStepInView={handleStepInView}
+              />
             </div>
           </div>
         </div>
@@ -446,7 +498,9 @@ const TripDetail = () => {
           <h2 className="font-display text-2xl font-semibold text-foreground">Journey Timeline</h2>
           <div className="flex flex-col items-center gap-3 rounded-2xl bg-card p-12 shadow-card text-center">
             <Navigation className="h-8 w-8 text-muted-foreground/50" />
-            <p className="text-muted-foreground">No stops yet. Start tracking or import photos to auto-detect locations.</p>
+            <p className="text-muted-foreground">
+              No stops yet. Start tracking or import photos to auto-detect locations.
+            </p>
           </div>
         </div>
       )}
