@@ -6,7 +6,7 @@ import { StepMediaGallery } from "@/components/StepMediaGallery";
 import { toast } from "sonner";
 import { inferStepVisualType, type StepVisualType } from "@/lib/stepVisuals";
 import { getEventType } from "@/lib/eventTypes";
-import { getStoredEssence } from "@/lib/mediaMetadata";
+
 import {
   Plane, TrainFront, Bus, Ship, Car, Footprints, Bike, Sailboat, Anchor,
   Hotel, Building, Home, Castle, Trees, Mountain, Tent, Palmtree, Snowflake,
