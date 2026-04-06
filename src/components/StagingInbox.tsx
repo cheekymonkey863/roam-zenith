@@ -194,18 +194,8 @@ function UploadIndicator({ file }: { file: StagedMediaFile }) {
       <Loader2 className="h-3 w-3 animate-spin" />
       Uploading…
     </span>
-      </span>
-    );
-  }
-  if (status === "pending") {
-    return (
-      <span className="rounded-full bg-black/40 px-2 py-0.5 text-[10px] font-medium text-white/70 backdrop-blur-sm">
-        Queued
-      </span>
-    );
-  }
-  // failed — subtle indicator
-  return null;
+  );
+}
 }
 
 export function StagingInbox({
