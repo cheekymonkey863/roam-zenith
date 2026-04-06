@@ -37,31 +37,21 @@ interface StagingInboxProps {
 function FileThumbnail({ file }: { file: LocalStagedFile }) {
   const isVideo = file.mimeType.startsWith("video/");
 
-  if (isVideo) {
-    return (
-      <div className="relative aspect-square w-full overflow-hidden rounded-lg bg-slate-900">
-        <video
-          preload="none"
-          poster={file.previewUrl}
-          muted
-          playsInline
-          className="h-full w-full object-cover"
-        />
-        <div className="absolute inset-0 flex items-center justify-center bg-black/30">
-          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white/20 backdrop-blur-sm">
-            <Film className="h-5 w-5 text-white" />
-          </div>
-        </div>
-        <div className="absolute bottom-1 right-1 rounded bg-black/60 px-1.5 py-0.5 text-[10px] font-medium text-white">
-          VIDEO
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="relative aspect-square w-full overflow-hidden rounded-lg bg-muted">
       <img src={file.previewUrl} alt={file.fileName} className="h-full w-full object-cover" loading="lazy" />
+      {isVideo && (
+        <>
+          <div className="absolute inset-0 flex items-center justify-center bg-black/30">
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white/20 backdrop-blur-sm">
+              <Film className="h-5 w-5 text-white" />
+            </div>
+          </div>
+          <div className="absolute bottom-1 right-1 rounded bg-black/60 px-1.5 py-0.5 text-[10px] font-medium text-white">
+            VIDEO
+          </div>
+        </>
+      )}
     </div>
   );
 }

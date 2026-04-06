@@ -158,6 +158,40 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, onProgressChan
     });
   }, []);
 
+  // Extract a lightweight JPEG snapshot from a video file
+  const generateVideoThumbnail = (file: File): Promise<string | null> => {
+    return new Promise((resolve) => {
+      const video = document.createElement("video");
+      video.preload = "metadata";
+      video.muted = true;
+      video.playsInline = true;
+      const objectUrl = URL.createObjectURL(file);
+      video.src = objectUrl;
+
+      video.onloadeddata = () => {
+        video.currentTime = 0.1;
+      };
+
+      video.onseeked = () => {
+        const canvas = document.createElement("canvas");
+        canvas.width = 400;
+        canvas.height = (video.videoHeight / video.videoWidth) * 400 || 400;
+        const ctx = canvas.getContext("2d");
+        ctx?.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const dataUrl = canvas.toDataURL("image/jpeg", 0.6);
+        URL.revokeObjectURL(objectUrl);
+        video.remove();
+        resolve(dataUrl);
+      };
+
+      video.onerror = () => {
+        URL.revokeObjectURL(objectUrl);
+        video.remove();
+        resolve(null);
+      };
+    });
+  };
+
   // Sequential EXIF extraction — ONE file at a time, single bulk state update at end
   const extractExifSequential = useCallback(async (ids: string[], rawFiles: File[]) => {
     setExifProgress({ done: 0, total: rawFiles.length });
@@ -177,9 +211,14 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, onProgressChan
       const file = rawFiles[i];
       let newPreviewUrl: string | null = null;
 
-      // Convert HEIC to JPEG for browser preview
+      const isVideo = file.type.startsWith("video/");
       const isHeic = file.name.toLowerCase().endsWith(".heic") || file.name.toLowerCase().endsWith(".heif") || file.type === "image/heic";
-      if (isHeic) {
+
+      if (isVideo) {
+        // Generate a lightweight JPEG snapshot for video files
+        const snapshot = await generateVideoThumbnail(file);
+        if (snapshot) newPreviewUrl = snapshot;
+      } else if (isHeic) {
         try {
           const convertedBlob = await heic2any({ blob: file, toType: "image/jpeg", quality: 0.8 });
           const blob = Array.isArray(convertedBlob) ? convertedBlob[0] : convertedBlob;
@@ -204,11 +243,7 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, onProgressChan
       }
 
       results.push({ id, ...exifResult, newPreviewUrl });
-
-      // Update lightweight progress counter only
       setExifProgress({ done: i + 1, total: rawFiles.length });
-
-      // Yield to main thread & allow GC
       await new Promise((resolve) => setTimeout(resolve, 50));
     }
 
