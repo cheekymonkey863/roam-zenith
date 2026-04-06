@@ -464,7 +464,7 @@ export function StagingInbox({
       toast.error("Import failed");
     } finally {
       setImporting(false);
-      setImportProgress({ current: 0, total: 0 });
+      setImportProgress({ current: 0, total: 0, phase: "upload" });
     }
   };
 
