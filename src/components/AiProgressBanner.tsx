@@ -98,7 +98,7 @@ export function AiProgressBanner({ steps, tripId, onCancelled }: AiProgressBanne
         <div className="flex items-center gap-3 rounded-xl border border-primary/20 bg-primary/5 backdrop-blur-sm px-4 py-2.5 text-sm">
           <Sparkles className="h-4 w-4 text-primary shrink-0 animate-pulse" />
           <span className="text-foreground flex-1">
-            ✨ Populating trip details...{" "}
+            Populating trip details...{" "}
             <strong>
               ({pendingCount} {pendingCount === 1 ? "stop" : "stops"} remaining)
             </strong>

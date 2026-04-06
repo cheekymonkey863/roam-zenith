@@ -403,7 +403,7 @@ export function TripTimeline({
                 {step.description && <p className="text-sm leading-relaxed text-foreground">{step.description}</p>}
                 {step.notes && <p className="text-sm leading-relaxed text-muted-foreground">{step.notes}</p>}
 
-                {/* AI-generated essence description from media analysis */}
+                {/* Essence description from media analysis */}
                 {(() => {
                   const essences = photos
                     .map((p) => getStoredEssence(p.exif_data))
