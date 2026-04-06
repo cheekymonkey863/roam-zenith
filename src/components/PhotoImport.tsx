@@ -48,7 +48,8 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
 
   const handleFiles = useCallback((incoming: File[]) => {
     const mediaFiles = incoming.filter(
-      (f) => f.type.startsWith("image/") || f.type.startsWith("video/"),
+      (f) => f.type.startsWith("image/") || f.type.startsWith("video/") ||
+        f.name.toLowerCase().endsWith(".heic") || f.name.toLowerCase().endsWith(".heif"),
     );
     if (mediaFiles.length === 0) return;
 
