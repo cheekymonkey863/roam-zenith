@@ -347,14 +347,6 @@ export function StagingInbox({
       }
 
       // Trigger backend processing for reverse-geocoding + AI enrichment
-      const newStepIds = selectedGroups
-        .filter((g) => g.latitude != null && g.longitude != null)
-        .map((g) => {
-          // We need to collect step IDs created during import
-          return null; // placeholder
-        });
-
-      // Collect created step IDs from above loop - refactor: track them
       if (createdStepIds.length > 0) {
         supabase.functions.invoke("process-trip-steps", {
           body: { step_ids: createdStepIds },
