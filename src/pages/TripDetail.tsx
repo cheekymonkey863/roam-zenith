@@ -213,29 +213,41 @@ const TripDetail = () => {
     }
   }, [steps]);
 
+  const handleCancelVideoJobs = useCallback(async () => {
+    if (!id || !user) return;
+    await supabase
+      .from("video_analysis_jobs")
+      .update({ status: "failed", error: "Cancelled by user" })
+      .eq("trip_id", id)
+      .in("status", ["pending", "processing"]);
+    setPendingVideoJobs(0);
+    toast.success("Video analysis stopped");
+  }, [id, user]);
+
   const handleClearAllSteps = useCallback(async () => {
     if (!id || !user) return;
-    if (!confirm(`Delete all ${steps.length} steps and their photos from this trip? This cannot be undone.`)) return;
+    if (!confirm(`Delete all ${steps.length} stops and their photos from this trip? This cannot be undone.`)) return;
 
     const stepIds = steps.map((s) => s.id);
     if (stepIds.length === 0) return;
 
     try {
-      // Delete photos first, then steps
-      await supabase.from("step_photos").delete().in("step_id", stepIds);
-      await supabase.from("trip_steps").delete().in("id", stepIds);
-      // Cancel any pending video jobs
+      // Cancel video jobs FIRST
       await supabase
         .from("video_analysis_jobs")
         .update({ status: "failed", error: "Cleared by user" })
         .eq("trip_id", id)
         .in("status", ["pending", "processing"]);
+      // Delete photos, then steps
+      await supabase.from("step_photos").delete().in("step_id", stepIds);
+      await supabase.from("trip_steps").delete().in("id", stepIds);
 
-      toast.success("All steps cleared");
+      setPendingVideoJobs(0);
+      toast.success("All stops cleared");
       void fetchData();
     } catch (err) {
-      console.error("Clear all steps failed:", err);
-      toast.error("Failed to clear steps");
+      console.error("Clear all stops failed:", err);
+      toast.error("Failed to clear stops");
     }
   }, [id, user, steps, fetchData]);
 
