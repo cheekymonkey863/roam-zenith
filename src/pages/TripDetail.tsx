@@ -212,6 +212,32 @@ const TripDetail = () => {
     }
   }, [steps]);
 
+  const handleClearAllSteps = useCallback(async () => {
+    if (!id || !user) return;
+    if (!confirm(`Delete all ${steps.length} steps and their photos from this trip? This cannot be undone.`)) return;
+
+    const stepIds = steps.map((s) => s.id);
+    if (stepIds.length === 0) return;
+
+    try {
+      // Delete photos first, then steps
+      await supabase.from("step_photos").delete().in("step_id", stepIds);
+      await supabase.from("trip_steps").delete().in("id", stepIds);
+      // Cancel any pending video jobs
+      await supabase
+        .from("video_analysis_jobs")
+        .update({ status: "failed", error: "Cleared by user" })
+        .eq("trip_id", id)
+        .in("status", ["pending", "processing"]);
+
+      toast.success("All steps cleared");
+      void fetchData();
+    } catch (err) {
+      console.error("Clear all steps failed:", err);
+      toast.error("Failed to clear steps");
+    }
+  }, [id, user, steps, fetchData]);
+
   if (authLoading || loading) return <div className="py-20 text-center text-muted-foreground">Loading...</div>;
 
   if (!trip) {
