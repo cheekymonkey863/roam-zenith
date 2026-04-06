@@ -175,33 +175,28 @@ function StagedFileThumbnail({ file }: { file: StagedMediaFile }) {
   );
 }
 
-function AiStatusBadge({ status }: { status: string }) {
-  if (status === "complete") {
+function AiStatusIndicator({ file }: { file: StagedMediaFile }) {
+  const status = file.ai_processing_status;
+  const hasNoGps = file.exif_metadata?.latitude == null || file.exif_metadata?.longitude == null;
+
+  if (status === "complete") return null; // Clean — no badge needed
+  if (status === "processing" || (status === "pending" && hasNoGps)) {
     return (
-      <span className="rounded-full bg-green-500/20 px-2 py-0.5 text-[10px] font-medium text-green-400">
-        AI Done
+      <span className="flex items-center gap-1 rounded-full bg-black/50 px-2 py-0.5 text-[10px] font-medium text-white/80 backdrop-blur-sm">
+        <Loader2 className="h-3 w-3 animate-spin" />
+        {hasNoGps ? "Locating…" : "Enhancing…"}
       </span>
     );
   }
-  if (status === "processing") {
+  if (status === "pending") {
     return (
-      <span className="flex items-center gap-1 rounded-full bg-amber-500/20 px-2 py-0.5 text-[10px] font-medium text-amber-400">
-        <Loader2 className="h-3 w-3 animate-spin" /> Processing
+      <span className="rounded-full bg-black/40 px-2 py-0.5 text-[10px] font-medium text-white/70 backdrop-blur-sm">
+        Queued
       </span>
     );
   }
-  if (status === "failed") {
-    return (
-      <span className="rounded-full bg-red-500/20 px-2 py-0.5 text-[10px] font-medium text-red-400">
-        Failed
-      </span>
-    );
-  }
-  return (
-    <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
-      Pending
-    </span>
-  );
+  // failed — subtle indicator
+  return null;
 }
 
 export function StagingInbox({
