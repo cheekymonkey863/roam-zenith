@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useCallback } from "react";
-import { Check, Loader2, MapPin, Trash2, Upload, X, Film, Image as ImageIcon } from "lucide-react";
+import { Check, CheckCircle2, Loader2, MapPin, Trash2, Upload, X, Film, Image as ImageIcon } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { buildImportedStepDetails } from "@/lib/placeClassification";
@@ -106,6 +106,8 @@ export function StagingInbox({
   const [importing, setImporting] = useState(false);
   const [importProgress, setImportProgress] = useState({ current: 0, total: 0, phase: "upload" as "upload" | "sorting" });
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  /** Track which group keys have been fully uploaded & inserted */
+  const [completedGroups, setCompletedGroups] = useState<Set<string>>(new Set());
 
   const groups = useMemo(() => groupLocalFiles(localFiles), [localFiles]);
 
@@ -154,7 +156,7 @@ export function StagingInbox({
     if (!importing) return;
     const handler = (e: BeforeUnloadEvent) => {
       e.preventDefault();
-      e.returnValue = "Upload in progress. Leaving this page will cancel your import.";
+      e.returnValue = "Upload in progress. If you leave, your files will not be saved.";
     };
     window.addEventListener("beforeunload", handler);
     return () => window.removeEventListener("beforeunload", handler);
@@ -168,6 +170,7 @@ export function StagingInbox({
   const importSelected = async () => {
     if (!user) return;
     setImporting(true);
+    setCompletedGroups(new Set());
 
     const selectedGroups = groups.filter((g) => groupSelection.get(g.key));
     const allFiles = selectedGroups.flatMap((g) => g.files);
@@ -176,137 +179,89 @@ export function StagingInbox({
     setImportProgress({ current: 0, total, phase: "upload" });
 
     try {
-      // ── STEP A: Upload all files to storage in parallel (concurrency 5) ──
-      interface UploadResult {
-        file: LocalStagedFile;
-        storagePath: string;
-        groupKey: string;
-      }
-      const uploadQueue: Array<{ file: LocalStagedFile; groupKey: string }> = [];
+      // Process each group sequentially so we can show per-group completion
+      const allNewStepIds: string[] = [];
+
       for (const group of selectedGroups) {
-        for (const file of group.files) {
-          uploadQueue.push({ file, groupKey: group.key });
+        const groupFiles = group.files;
+
+        // ── Upload all files in this group (concurrency 5) ──
+        interface UploadResult {
+          file: LocalStagedFile;
+          storagePath: string;
         }
-      }
+        const uploadResults: UploadResult[] = [];
+        const CONCURRENCY = 5;
+        let nextIdx = 0;
+        const queue = [...groupFiles];
 
-      const uploadResults: UploadResult[] = [];
-      const CONCURRENCY = 5;
-      let nextIdx = 0;
+        async function uploadWorker() {
+          while (nextIdx < queue.length) {
+            const idx = nextIdx++;
+            const file = queue[idx];
+            try {
+              const ext = file.fileName.split(".").pop() || "jpg";
+              const objectName = `${user!.id}/${tripId}/staging/${crypto.randomUUID()}.${ext}`;
 
-      async function uploadWorker() {
-        while (nextIdx < uploadQueue.length) {
-          const idx = nextIdx++;
-          const { file, groupKey } = uploadQueue[idx];
-          try {
-            const ext = file.fileName.split(".").pop() || "jpg";
-            const objectName = `${user!.id}/${tripId}/staging/${crypto.randomUUID()}.${ext}`;
+              await resumableUpload({
+                bucketName: "trip-photos",
+                objectName,
+                file: file.file,
+                contentType: file.mimeType || undefined,
+              });
 
-            await resumableUpload({
-              bucketName: "trip-photos",
-              objectName,
-              file: file.file,
-              contentType: file.mimeType || undefined,
-            });
-
-            uploadResults.push({ file, storagePath: objectName, groupKey });
-          } catch (err) {
-            console.error("Upload failed for", file.fileName, err);
+              uploadResults.push({ file, storagePath: objectName });
+            } catch (err) {
+              console.error("Upload failed for", file.fileName, err);
+            }
+            completed++;
+            setImportProgress({ current: completed, total, phase: "upload" });
           }
-          completed++;
-          setImportProgress({ current: completed, total, phase: "upload" });
         }
-      }
 
-      await Promise.all(
-        Array.from({ length: Math.min(CONCURRENCY, uploadQueue.length) }, () => uploadWorker()),
-      );
+        await Promise.all(
+          Array.from({ length: Math.min(CONCURRENCY, queue.length) }, () => uploadWorker()),
+        );
 
-      if (uploadResults.length === 0) {
-        toast.error("No files uploaded successfully");
-        return;
-      }
+        if (uploadResults.length === 0) continue;
 
-      // ── STEP B: Sort into trip stops ──
-      setImportProgress({ current: completed, total, phase: "sorting" });
-      const groupToUploads = new Map<string, UploadResult[]>();
-      for (const ur of uploadResults) {
-        const arr = groupToUploads.get(ur.groupKey) || [];
-        arr.push(ur);
-        groupToUploads.set(ur.groupKey, arr);
-      }
+        // ── Create a trip_step for this group ──
+        const coords = getGroupRepresentativeCoordinates(group)
+          ?? (existingSteps[0]
+            ? { latitude: existingSteps[0].latitude, longitude: existingSteps[0].longitude }
+            : { latitude: 0, longitude: 0 });
 
-      const batchCoordinates = selectedGroups
-        .map((group) => getGroupRepresentativeCoordinates(group))
-        .find((coords): coords is { latitude: number; longitude: number } => coords !== null)
-        ?? (existingSteps[0]
-          ? { latitude: existingSteps[0].latitude, longitude: existingSteps[0].longitude }
-          : { latitude: 0, longitude: 0 });
+        const earliest = group.earliestDate?.toISOString() ?? new Date().toISOString();
+        const stepDetails = buildImportedStepDetails({
+          locationName: group.locationName ?? "",
+          country: "",
+        });
 
-      const batchEarliestDate = selectedGroups
-        .map((group) => group.earliestDate?.getTime())
-        .filter((value): value is number => value != null);
-      const primaryGroup = selectedGroups[0];
-      const importedStepId = crypto.randomUUID();
-      const stepDetails = buildImportedStepDetails({
-        locationName: primaryGroup?.locationName ?? "",
-        country: "",
-      });
+        const stepId = crypto.randomUUID();
+        const { error: stepError } = await supabase.from("trip_steps").insert({
+          id: stepId,
+          trip_id: tripId,
+          user_id: user.id,
+          latitude: coords.latitude,
+          longitude: coords.longitude,
+          recorded_at: earliest,
+          source: "photo_import",
+          event_type: stepDetails.eventType,
+          is_confirmed: true,
+          location_name: null,
+          country: null,
+        });
 
-      const stepRows: Array<{
-        id: string;
-        trip_id: string;
-        user_id: string;
-        latitude: number;
-        longitude: number;
-        recorded_at: string;
-        source: string;
-        event_type: string;
-        is_confirmed: boolean;
-        location_name: null;
-        country: null;
-      }> = [{
-        id: importedStepId,
-        trip_id: tripId,
-        user_id: user.id,
-        latitude: batchCoordinates.latitude,
-        longitude: batchCoordinates.longitude,
-        recorded_at: batchEarliestDate.length > 0
-          ? new Date(Math.min(...batchEarliestDate)).toISOString()
-          : new Date().toISOString(),
-        source: "photo_import",
-        event_type: stepDetails.eventType,
-        is_confirmed: true,
-        location_name: null,
-        country: null,
-      }];
-
-      // Bulk insert all new steps at once
-      if (stepRows.length > 0) {
-        const { error: stepsError } = await supabase.from("trip_steps").insert(stepRows);
-        if (stepsError) {
-          console.error("Bulk step insert failed:", stepsError);
-          toast.error("Failed to create timeline steps");
-          return;
+        if (stepError) {
+          console.error("Step insert failed:", stepError);
+          continue;
         }
-      }
 
-      // Build photo rows
-      const photoRows = [] as Array<{
-        step_id: string;
-        user_id: string;
-        storage_path: string;
-        file_name: string;
-        latitude: number | null;
-        longitude: number | null;
-        taken_at: string | null;
-        exif_data: { latitude: number | null; longitude: number | null; cameraMake: string | null; cameraModel: string | null } | null;
-      }>;
+        allNewStepIds.push(stepId);
 
-      const videoUploads: UploadResult[] = [];
-
-      for (const ur of uploadResults) {
-        photoRows.push({
-          step_id: importedStepId,
+        // ── Insert photos for this group ──
+        const photoRows = uploadResults.map((ur) => ({
+          step_id: stepId,
           user_id: user.id,
           storage_path: ur.storagePath,
           file_name: ur.file.fileName,
@@ -319,59 +274,58 @@ export function StagingInbox({
             cameraMake: ur.file.cameraMake,
             cameraModel: ur.file.cameraModel,
           },
-        });
+        }));
 
-        if (ur.file.mimeType.startsWith("video/")) {
-          videoUploads.push(ur);
-        }
-      }
-
-      // Bulk insert all photos at once
-      if (photoRows.length > 0) {
         const { error: photosError } = await supabase.from("step_photos").insert(photoRows);
         if (photosError) {
-          console.error("Bulk photo insert failed:", photosError);
-          toast.error("Failed to save photos");
+          console.error("Photo insert failed:", photosError);
         }
+
+        // Queue video analysis jobs
+        const videoUploads = uploadResults.filter((ur) => ur.file.mimeType.startsWith("video/"));
+        for (const vu of videoUploads) {
+          await queueVideoAnalysisJob({
+            captionId: vu.file.id,
+            userId: user.id,
+            tripId,
+            storagePath: vu.storagePath,
+            fileName: vu.file.fileName,
+            mimeType: vu.file.mimeType,
+            takenAt: vu.file.takenAt?.toISOString() ?? null,
+            latitude: group.latitude ?? null,
+            longitude: group.longitude ?? null,
+            locationName: group.locationName ?? "",
+            country: "",
+            nearbyPlaces: [],
+            itinerarySteps: existingSteps?.map((s) => ({
+              location_name: s.location_name,
+              country: s.country,
+              latitude: s.latitude,
+              longitude: s.longitude,
+              recorded_at: s.recorded_at,
+              event_type: s.event_type,
+              description: s.description,
+            })),
+          });
+        }
+
+        // ✅ Mark this group as completed — green checkmark appears
+        setCompletedGroups((prev) => new Set(prev).add(group.key));
       }
 
-      // Queue video analysis jobs
-      for (const vu of videoUploads) {
-        const group = selectedGroups.find((g) => g.key === vu.groupKey);
-        await queueVideoAnalysisJob({
-          captionId: vu.file.id,
-          userId: user.id,
-          tripId,
-          storagePath: vu.storagePath,
-          fileName: vu.file.fileName,
-          mimeType: vu.file.mimeType,
-          takenAt: vu.file.takenAt?.toISOString() ?? null,
-          latitude: group?.latitude ?? null,
-          longitude: group?.longitude ?? null,
-          locationName: group?.locationName ?? "",
-          country: "",
-          nearbyPlaces: [],
-          itinerarySteps: existingSteps?.map((s) => ({
-            location_name: s.location_name,
-            country: s.country,
-            latitude: s.latitude,
-            longitude: s.longitude,
-            recorded_at: s.recorded_at,
-            event_type: s.event_type,
-            description: s.description,
-          })),
-        });
-      }
+      // ── Phase 3: Trigger background enrichment ──
+      setImportProgress((prev) => ({ ...prev, phase: "sorting" }));
 
-      // ── STEP D: Trigger background enrichment (UPDATE only) ──
-      const newStepIds = stepRows.map((r) => r.id);
-      if (newStepIds.length > 0) {
+      if (allNewStepIds.length > 0) {
         supabase.functions
-          .invoke("process-trip-steps", { body: { step_ids: newStepIds } })
+          .invoke("process-trip-steps", { body: { step_ids: allNewStepIds } })
           .catch((err) => console.error("Background processing trigger failed:", err));
       }
 
-      toast.success("Import complete! Enhancing locations in the background...");
+      // 🎉 Completion toast & hand-off
+      toast.success("All media secured! AI is finishing your trip details in the background.", {
+        duration: 5000,
+      });
       onImportComplete();
     } catch (err) {
       console.error("Import error:", err);
@@ -379,6 +333,7 @@ export function StagingInbox({
     } finally {
       setImporting(false);
       setImportProgress({ current: 0, total: 0, phase: "upload" });
+      setCompletedGroups(new Set());
     }
   };
 
@@ -392,17 +347,18 @@ export function StagingInbox({
   const showProgressBar = exifPending || importing;
   let progressLabel = "";
   let progressPercent = 0;
-  let showWarning = false;
+  let progressColor = "bg-gray-400"; // grey for reading, blue for uploading
 
   if (importing) {
     progressLabel = importProgress.phase === "sorting"
       ? "Sorting media into trip stops…"
       : `Uploading & importing… (${importProgress.current} of ${importProgress.total})`;
     progressPercent = uploadPercent;
-    showWarning = true;
+    progressColor = "bg-blue-600";
   } else if (exifPending) {
     progressLabel = "Reading file data…";
     progressPercent = exifPercent;
+    progressColor = "bg-gray-400";
   }
 
   return (
@@ -412,19 +368,19 @@ export function StagingInbox({
         <div className="flex flex-col gap-2 rounded-xl border border-border bg-card p-4">
           <div className="flex items-center justify-between text-sm font-medium">
             <span className="flex items-center gap-2 text-foreground">
-              <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
+              <Loader2 className={cn("h-4 w-4 animate-spin", importing ? "text-blue-600" : "text-gray-400")} />
               {progressLabel}
             </span>
-            <span className="text-blue-600 font-semibold">{progressPercent}%</span>
+            <span className={cn("font-semibold", importing ? "text-blue-600" : "text-gray-500")}>{progressPercent}%</span>
           </div>
           <div className="h-4 w-full overflow-hidden rounded-full bg-gray-100">
             <div
-              className="h-full rounded-full bg-blue-600 transition-all duration-300"
+              className={cn("h-full rounded-full transition-all duration-300", progressColor)}
               style={{ width: `${Math.max(progressPercent, 2)}%` }}
             />
           </div>
-          {showWarning && (
-            <p className="text-xs text-muted-foreground">Do not close this page</p>
+          {importing && (
+            <p className="text-xs text-muted-foreground">⚠️ Do not close this page — upload in progress</p>
           )}
         </div>
       )}
@@ -444,14 +400,16 @@ export function StagingInbox({
               Delete ({selectedIds.size})
             </button>
           )}
-          <button
-            onClick={onAddMore}
-            className="flex items-center gap-1.5 rounded-xl bg-secondary px-3 py-2 text-sm font-medium text-secondary-foreground hover:bg-secondary/80 transition-colors"
-          >
-            <Upload className="h-4 w-4" />
-            Add More
-          </button>
-          {onCancel && (
+          {!importing && (
+            <button
+              onClick={onAddMore}
+              className="flex items-center gap-1.5 rounded-xl bg-secondary px-3 py-2 text-sm font-medium text-secondary-foreground hover:bg-secondary/80 transition-colors"
+            >
+              <Upload className="h-4 w-4" />
+              Add More
+            </button>
+          )}
+          {onCancel && !importing && (
             <button
               onClick={onCancel}
               className="flex items-center gap-1.5 rounded-xl bg-secondary px-3 py-2 text-sm font-medium text-secondary-foreground hover:bg-secondary/80 transition-colors"
@@ -462,13 +420,15 @@ export function StagingInbox({
           )}
           <button
             onClick={importSelected}
-            disabled={importing || selectedGroupCount === 0}
+            disabled={importing || selectedGroupCount === 0 || exifPending}
             className="flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
           >
             {importing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
             {importing
               ? `Importing… (${uploadPercent}%)`
-              : "Import Selected"}
+              : exifPending
+                ? "Analyzing media…"
+                : "Import Selected"}
           </button>
         </div>
       </div>
@@ -477,29 +437,56 @@ export function StagingInbox({
       <div className="flex flex-col gap-3">
         {groups.map((group) => {
           const isSelected = groupSelection.get(group.key) ?? true;
+          const isCompleted = completedGroups.has(group.key);
           return (
             <div
               key={group.key}
               className={cn(
                 "rounded-2xl border-2 p-4 transition-all",
-                isSelected ? "border-primary bg-primary/5" : "border-border bg-card opacity-60",
+                isCompleted
+                  ? "border-green-500 bg-green-50 dark:bg-green-950/20"
+                  : isSelected
+                    ? "border-primary bg-primary/5"
+                    : "border-border bg-card opacity-60",
               )}
             >
               <div className="flex items-start gap-4">
-                <div
-                  onClick={() => toggleGroup(group.key)}
-                  className={cn(
-                    "mt-0.5 flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-lg transition-colors",
-                    isSelected ? "bg-primary" : "bg-muted",
-                  )}
-                >
-                  {isSelected && <Check className="h-3.5 w-3.5 text-primary-foreground" />}
-                </div>
+                {/* Group select / completed indicator */}
+                {isCompleted ? (
+                  <div className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-green-500">
+                    <CheckCircle2 className="h-4 w-4 text-white" />
+                  </div>
+                ) : (
+                  <div
+                    onClick={() => !importing && toggleGroup(group.key)}
+                    className={cn(
+                      "mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-lg transition-colors",
+                      importing ? "cursor-default" : "cursor-pointer",
+                      isSelected ? "bg-primary" : "bg-muted",
+                    )}
+                  >
+                    {isSelected && <Check className="h-3.5 w-3.5 text-primary-foreground" />}
+                  </div>
+                )}
 
                 <div className="flex flex-1 flex-col gap-3">
                   <div className="flex flex-wrap items-center gap-2">
-                    <MapPin className="h-4 w-4 text-primary" />
-                    <span className="text-lg font-medium text-foreground">{getGroupDisplayName(group)}</span>
+                    {isCompleted ? (
+                      <CheckCircle2 className="h-4 w-4 text-green-500" />
+                    ) : (
+                      <MapPin className="h-4 w-4 text-primary" />
+                    )}
+                    <span className="text-lg font-medium text-foreground">
+                      {getGroupDisplayName(group)}
+                    </span>
+                    <span className="text-sm text-muted-foreground">
+                      ({group.files.length} file{group.files.length !== 1 ? "s" : ""})
+                    </span>
+                    {isCompleted && (
+                      <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700 dark:bg-green-900/50 dark:text-green-400">
+                        Imported ✓
+                      </span>
+                    )}
                   </div>
 
                   {group.earliestDate && (
@@ -518,13 +505,17 @@ export function StagingInbox({
                       <div
                         key={file.id}
                         className={cn(
-                          "relative cursor-pointer rounded-lg ring-2 transition-all",
-                          selectedIds.has(file.id) ? "ring-destructive" : "ring-transparent hover:ring-primary/50",
+                          "relative rounded-lg ring-2 transition-all",
+                          isCompleted
+                            ? "ring-green-300 opacity-75"
+                            : selectedIds.has(file.id)
+                              ? "ring-destructive cursor-pointer"
+                              : "ring-transparent hover:ring-primary/50 cursor-pointer",
                         )}
-                        onClick={() => toggleFileSelection(file.id)}
+                        onClick={() => !importing && !isCompleted && toggleFileSelection(file.id)}
                       >
                         <FileThumbnail file={file} />
-                        {selectedIds.has(file.id) && (
+                        {selectedIds.has(file.id) && !isCompleted && (
                           <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-destructive/20">
                             <Trash2 className="h-5 w-5 text-destructive" />
                           </div>
