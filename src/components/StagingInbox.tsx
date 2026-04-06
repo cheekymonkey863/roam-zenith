@@ -38,10 +38,10 @@ interface StagingInboxProps {
   }>;
 }
 
-// GPS-first grouping: 500m radius regardless of time
-const LOCATION_GROUP_RADIUS_METERS = 500;
-// Fallback for no-GPS files: 4-hour time gap
-const TIME_GAP_MS = 4 * 60 * 60 * 1000;
+// GPS grouping: 60m radius (building-sized)
+const LOCATION_GROUP_RADIUS_METERS = 60;
+// Only split into a new group if GPS > 60m AND time gap > 2 hours
+const TIME_GAP_MS = 2 * 60 * 60 * 1000;
 
 function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const R = 6371000;
