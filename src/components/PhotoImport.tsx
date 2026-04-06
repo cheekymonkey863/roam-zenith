@@ -22,7 +22,7 @@ interface PhotoImportProps {
   tripId: string;
   onImportComplete: () => void;
   onCancel?: () => void;
-  onProgressChange?: (progress: { importing: boolean; current: number; total: number }) => void;
+  onProgressChange?: (progress: { importing: boolean; current: number; total: number; phase: "upload" | "sorting" }) => void;
   existingSteps?: Array<{
     id: string;
     latitude: number;
