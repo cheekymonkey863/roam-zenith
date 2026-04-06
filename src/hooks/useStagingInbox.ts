@@ -100,7 +100,13 @@ export function useStagingInbox(tripId: string) {
           if (payload.eventType === "INSERT") {
             const row = payload.new as any;
             setStagedFiles((prev) => {
-              // Remove any local-only placeholder for this file_name, then add the real row
+              // Revoke object URLs from local placeholders being replaced
+              const replaced = prev.filter(
+                (f) => f.isLocalOnly && f.file_name === row.file_name,
+              );
+              replaced.forEach((f) => {
+                if (f.localPreviewUrl) URL.revokeObjectURL(f.localPreviewUrl);
+              });
               const withoutLocal = prev.filter(
                 (f) => !(f.isLocalOnly && f.file_name === row.file_name),
               );
