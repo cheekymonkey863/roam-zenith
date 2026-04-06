@@ -170,7 +170,7 @@ export function StagingInbox({
   const [completedGroups, setCompletedGroups] = useState<Set<string>>(new Set());
 
   const groups = useMemo(() => groupLocalFiles(localFiles), [localFiles]);
-  const resolvedNames = useGroupLocationNames(groups);
+  const { names: resolvedNames, geocodingDone, geocodingProgress } = useGroupLocationNames(groups);
 
   const [groupSelection, setGroupSelection] = useState<Map<string, boolean>>(() => {
     const map = new Map<string, boolean>();
