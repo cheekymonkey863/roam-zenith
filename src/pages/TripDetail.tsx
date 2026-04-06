@@ -9,6 +9,7 @@ import { useResolvedCities } from "@/hooks/useResolvedCities";
 import { supabase as supabaseClient } from "@/integrations/supabase/client";
 import { TripTimeline } from "@/components/TripTimeline";
 import { AiProgressBanner } from "@/components/AiProgressBanner";
+import { toast } from "sonner";
 
 import { PhotoImport } from "@/components/PhotoImport";
 import { ItineraryImport } from "@/components/ItineraryImport";
