@@ -321,9 +321,11 @@ const TripDetail = () => {
           <div className="flex items-center justify-between text-sm font-medium">
             <span className="flex items-center gap-2 text-foreground">
               <Loader2 className="h-4 w-4 animate-spin text-primary" />
-              {importProgress.total > 0
-                ? `Uploading & creating timeline… (${importProgress.current} of ${importProgress.total})`
-                : "Preparing import…"}
+              {importProgress.phase === "sorting"
+                ? "Sorting media into trip stops…"
+                : importProgress.total > 0
+                  ? `Uploading media… (${importProgress.current} of ${importProgress.total})`
+                  : "Preparing import…"}
             </span>
             {importProgress.total > 0 && (
               <span className="text-primary font-semibold">
