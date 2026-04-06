@@ -224,6 +224,7 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, onProgressChan
           onImportComplete={onImportComplete}
           onCancel={onCancel}
           onAddMore={() => fileInputRef.current?.click()}
+          onProgressChange={onProgressChange}
           existingSteps={existingSteps}
         />
       )}
