@@ -238,68 +238,32 @@ export function StagingInbox({
     const total = allFiles.length;
     let completed = 0;
     setImportProgress({ current: 0, total });
-    const createdStepIds: string[] = [];
 
     try {
+      // ── STEP A: Upload all files to storage in parallel (concurrency 5) ──
+      interface UploadResult {
+        file: LocalStagedFile;
+        storagePath: string;
+        groupKey: string;
+      }
+      const uploadQueue: Array<{ file: LocalStagedFile; groupKey: string }> = [];
       for (const group of selectedGroups) {
-        if (group.latitude == null || group.longitude == null) {
-          // Skip ungrouped/no-GPS files for now
-          completed += group.files.length;
-          setImportProgress({ current: completed, total });
-          continue;
-        }
-
-        const stepDetails = buildImportedStepDetails({
-          locationName: group.locationName,
-          country: "",
-        });
-
-        // Check if we match an existing step
-        let stepId: string | null = null;
-        for (const existing of existingSteps) {
-          const dlat = (existing.latitude - group.latitude) * 111320;
-          const dlng = (existing.longitude - group.longitude) * 111320 * Math.cos((group.latitude * Math.PI) / 180);
-          if (Math.sqrt(dlat * dlat + dlng * dlng) < 60) {
-            stepId = existing.id;
-            break;
-          }
-        }
-
-        if (!stepId) {
-          // Optimistic insert: use raw coordinates, no location_name yet
-          const { data: stepData, error: stepError } = await supabase
-            .from("trip_steps")
-            .insert({
-              trip_id: tripId,
-              user_id: user.id,
-              location_name: null,
-              country: null,
-              latitude: group.latitude,
-              longitude: group.longitude,
-              recorded_at: group.earliestDate?.toISOString() || new Date().toISOString(),
-              source: "photo_import",
-              event_type: stepDetails.eventType,
-              is_confirmed: true,
-            })
-            .select()
-            .single();
-
-          if (stepError || !stepData) {
-            console.error("Step insert error:", stepError);
-            toast.error("Failed to create step");
-            completed += group.files.length;
-            setImportProgress({ current: completed, total });
-            continue;
-          }
-          stepId = stepData.id;
-          createdStepIds.push(stepId);
-        }
-
-        // Upload each file and create step_photo
         for (const file of group.files) {
+          uploadQueue.push({ file, groupKey: group.key });
+        }
+      }
+
+      const uploadResults: UploadResult[] = [];
+      const CONCURRENCY = 5;
+      let nextIdx = 0;
+
+      async function uploadWorker() {
+        while (nextIdx < uploadQueue.length) {
+          const idx = nextIdx++;
+          const { file, groupKey } = uploadQueue[idx];
           try {
             const ext = file.fileName.split(".").pop() || "jpg";
-            const objectName = `${user.id}/${tripId}/${stepId}/${crypto.randomUUID()}.${ext}`;
+            const objectName = `${user!.id}/${tripId}/staging/${crypto.randomUUID()}.${ext}`;
 
             await resumableUpload({
               bucketName: "trip-photos",
@@ -308,62 +272,182 @@ export function StagingInbox({
               contentType: file.mimeType || undefined,
             });
 
-            await supabase.from("step_photos").insert({
-              step_id: stepId,
-              user_id: user.id,
-              storage_path: objectName,
-              file_name: file.fileName,
-              latitude: file.latitude ?? null,
-              longitude: file.longitude ?? null,
-              taken_at: file.takenAt?.toISOString() ?? null,
-              exif_data: {
-                latitude: file.latitude,
-                longitude: file.longitude,
-                cameraMake: file.cameraMake,
-                cameraModel: file.cameraModel,
-              },
-            });
-
-            // Queue video analysis for videos
-            if (file.mimeType.startsWith("video/")) {
-              await queueVideoAnalysisJob({
-                captionId: file.id,
-                userId: user.id,
-                tripId,
-                storagePath: objectName,
-                fileName: file.fileName,
-                mimeType: file.mimeType,
-                takenAt: file.takenAt?.toISOString() ?? null,
-                latitude: group.latitude,
-                longitude: group.longitude,
-                locationName: group.locationName,
-                country: "",
-                nearbyPlaces: [],
-                itinerarySteps: existingSteps?.map((s) => ({
-                  location_name: s.location_name,
-                  country: s.country,
-                  latitude: s.latitude,
-                  longitude: s.longitude,
-                  recorded_at: s.recorded_at,
-                  event_type: s.event_type,
-                  description: s.description,
-                })),
-              });
-            }
+            uploadResults.push({ file, storagePath: objectName, groupKey });
           } catch (err) {
             console.error("Upload failed for", file.fileName, err);
           }
-
           completed++;
           setImportProgress({ current: completed, total });
         }
       }
 
-      // Trigger backend processing for reverse-geocoding + AI enrichment
-      if (createdStepIds.length > 0) {
-        supabase.functions.invoke("process-trip-steps", {
-          body: { step_ids: createdStepIds },
-        }).catch((err) => console.error("Background processing trigger failed:", err));
+      await Promise.all(
+        Array.from({ length: Math.min(CONCURRENCY, uploadQueue.length) }, () => uploadWorker()),
+      );
+
+      if (uploadResults.length === 0) {
+        toast.error("No files uploaded successfully");
+        return;
+      }
+
+      // ── STEP B: Bulk INSERT all trip_steps, then all step_photos ──
+      // Build step rows from groups (skip groups with no GPS or no successful uploads)
+      const groupToUploads = new Map<string, UploadResult[]>();
+      for (const ur of uploadResults) {
+        const arr = groupToUploads.get(ur.groupKey) || [];
+        arr.push(ur);
+        groupToUploads.set(ur.groupKey, arr);
+      }
+
+      const stepRows: Array<{
+        id: string;
+        trip_id: string;
+        user_id: string;
+        latitude: number;
+        longitude: number;
+        recorded_at: string;
+        source: string;
+        event_type: string;
+        is_confirmed: boolean;
+        location_name: null;
+        country: null;
+      }> = [];
+
+      const stepIdByGroupKey = new Map<string, string>();
+
+      for (const group of selectedGroups) {
+        const uploads = groupToUploads.get(group.key);
+        if (!uploads || uploads.length === 0) continue;
+        if (group.latitude == null || group.longitude == null) continue;
+
+        // Check if we match an existing step
+        let existingStepId: string | null = null;
+        for (const existing of existingSteps) {
+          const dlat = (existing.latitude - group.latitude) * 111320;
+          const dlng = (existing.longitude - group.longitude) * 111320 * Math.cos((group.latitude * Math.PI) / 180);
+          if (Math.sqrt(dlat * dlat + dlng * dlng) < 60) {
+            existingStepId = existing.id;
+            break;
+          }
+        }
+
+        if (existingStepId) {
+          stepIdByGroupKey.set(group.key, existingStepId);
+        } else {
+          const newId = crypto.randomUUID();
+          stepIdByGroupKey.set(group.key, newId);
+          const stepDetails = buildImportedStepDetails({
+            locationName: group.locationName,
+            country: "",
+          });
+          stepRows.push({
+            id: newId,
+            trip_id: tripId,
+            user_id: user.id,
+            latitude: group.latitude,
+            longitude: group.longitude,
+            recorded_at: group.earliestDate?.toISOString() || new Date().toISOString(),
+            source: "photo_import",
+            event_type: stepDetails.eventType,
+            is_confirmed: true,
+            location_name: null,
+            country: null,
+          });
+        }
+      }
+
+      // Bulk insert all new steps at once
+      if (stepRows.length > 0) {
+        const { error: stepsError } = await supabase.from("trip_steps").insert(stepRows);
+        if (stepsError) {
+          console.error("Bulk step insert failed:", stepsError);
+          toast.error("Failed to create timeline steps");
+          return;
+        }
+      }
+
+      // Build photo rows
+      const photoRows: Array<{
+        step_id: string;
+        user_id: string;
+        storage_path: string;
+        file_name: string;
+        latitude: number | null;
+        longitude: number | null;
+        taken_at: string | null;
+        exif_data: Record<string, unknown>;
+      }> = [];
+
+      const videoUploads: UploadResult[] = [];
+
+      for (const ur of uploadResults) {
+        const stepId = stepIdByGroupKey.get(ur.groupKey);
+        if (!stepId) continue;
+
+        photoRows.push({
+          step_id: stepId,
+          user_id: user.id,
+          storage_path: ur.storagePath,
+          file_name: ur.file.fileName,
+          latitude: ur.file.latitude ?? null,
+          longitude: ur.file.longitude ?? null,
+          taken_at: ur.file.takenAt?.toISOString() ?? null,
+          exif_data: {
+            latitude: ur.file.latitude,
+            longitude: ur.file.longitude,
+            cameraMake: ur.file.cameraMake,
+            cameraModel: ur.file.cameraModel,
+          },
+        });
+
+        if (ur.file.mimeType.startsWith("video/")) {
+          videoUploads.push(ur);
+        }
+      }
+
+      // Bulk insert all photos at once
+      if (photoRows.length > 0) {
+        const { error: photosError } = await supabase.from("step_photos").insert(photoRows);
+        if (photosError) {
+          console.error("Bulk photo insert failed:", photosError);
+          toast.error("Failed to save photos");
+        }
+      }
+
+      // Queue video analysis jobs
+      for (const vu of videoUploads) {
+        const group = selectedGroups.find((g) => g.key === vu.groupKey);
+        await queueVideoAnalysisJob({
+          captionId: vu.file.id,
+          userId: user.id,
+          tripId,
+          storagePath: vu.storagePath,
+          fileName: vu.file.fileName,
+          mimeType: vu.file.mimeType,
+          takenAt: vu.file.takenAt?.toISOString() ?? null,
+          latitude: group?.latitude ?? null,
+          longitude: group?.longitude ?? null,
+          locationName: group?.locationName ?? "",
+          country: "",
+          nearbyPlaces: [],
+          itinerarySteps: existingSteps?.map((s) => ({
+            location_name: s.location_name,
+            country: s.country,
+            latitude: s.latitude,
+            longitude: s.longitude,
+            recorded_at: s.recorded_at,
+            event_type: s.event_type,
+            description: s.description,
+          })),
+        });
+      }
+
+      // ── STEP D: Trigger background enrichment (UPDATE only) ──
+      const newStepIds = stepRows.map((r) => r.id);
+      if (newStepIds.length > 0) {
+        supabase.functions
+          .invoke("process-trip-steps", { body: { step_ids: newStepIds } })
+          .catch((err) => console.error("Background processing trigger failed:", err));
       }
 
       toast.success("Import complete! Enhancing locations in the background...");
