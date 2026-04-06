@@ -170,6 +170,7 @@ export function StagingInbox({
   onImportComplete,
   onCancel,
   onAddMore,
+  onProgressChange,
   existingSteps = [],
 }: StagingInboxProps) {
   const { user } = useAuth();
