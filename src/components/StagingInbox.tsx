@@ -578,27 +578,41 @@ export function StagingInbox({
 
                   {/* File grid */}
                   <div className="grid grid-cols-4 gap-2 sm:grid-cols-6 md:grid-cols-8">
-                    {group.files.map((file) => (
-                      <div
-                        key={file.id}
-                        className={cn(
-                          "relative rounded-lg ring-2 transition-all",
-                          isCompleted
-                            ? "ring-green-300 opacity-75"
-                            : selectedIds.has(file.id)
-                              ? "ring-destructive cursor-pointer"
-                              : "ring-transparent hover:ring-primary/50 cursor-pointer",
-                        )}
-                        onClick={() => !importing && !isCompleted && toggleFileSelection(file.id)}
-                      >
-                        <FileThumbnail file={file} />
-                        {selectedIds.has(file.id) && !isCompleted && (
-                          <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-destructive/20">
-                            <Trash2 className="h-5 w-5 text-destructive" />
+                    {group.files.map((file) => {
+                      const isFileSelected = selectedIds.has(file.id);
+                      return (
+                        <div
+                          key={file.id}
+                          className={cn(
+                            "relative rounded-lg ring-2 transition-all group/thumb",
+                            isCompleted
+                              ? "ring-green-300 opacity-75"
+                              : isFileSelected
+                                ? "ring-destructive cursor-pointer"
+                                : "ring-transparent hover:ring-primary/50 cursor-pointer",
+                          )}
+                          draggable={!importing && !isCompleted}
+                          onDragStart={(e) => {
+                            e.dataTransfer.setData("text/plain", JSON.stringify({ fileId: file.id, sourceGroupKey: group.key }));
+                            e.dataTransfer.effectAllowed = "move";
+                          }}
+                          onClick={() => !importing && !isCompleted && toggleFileSelection(file.id)}
+                        >
+                          <FileThumbnail file={file} />
+                          {/* Hover checkbox */}
+                          <div
+                            className={cn(
+                              "absolute top-1 left-1 flex h-5 w-5 items-center justify-center rounded-sm border-2 transition-all",
+                              isFileSelected
+                                ? "bg-destructive border-destructive opacity-100"
+                                : "border-white/70 bg-black/30 opacity-0 group-hover/thumb:opacity-100",
+                            )}
+                          >
+                            {isFileSelected ? <Trash2 className="h-3 w-3 text-white" /> : <Check className="h-3 w-3 text-white" />}
                           </div>
-                        )}
-                      </div>
-                    ))}
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               </div>
