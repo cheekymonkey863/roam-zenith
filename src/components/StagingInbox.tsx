@@ -90,7 +90,6 @@ export function StagingInbox({ tripId, localFiles, onDeleteFiles, onImportComple
   const [isGeocoding, setIsGeocoding] = useState(false);
   const [geoProgress, setGeoProgress] = useState({ current: 0, total: 0 });
 
-  // 1. Group files and apply Coordinate Inheritance for videos
   const groups = useMemo(() => {
     const rawGroups = groupLocalFiles(localFiles);
     let lastValidLat = existingSteps[existingSteps.length - 1]?.latitude || 0;
@@ -107,7 +106,6 @@ export function StagingInbox({ tripId, localFiles, onDeleteFiles, onImportComple
     });
   }, [localFiles, existingSteps]);
 
-  // 2. Sequential 6m Precision Geocoding
   useEffect(() => {
     const toResolve = groups.filter(g => g.latitude !== 0 && !resolvedNames.has(g.key));
     if (toResolve.length === 0 || isGeocoding) return;
@@ -165,73 +163,4 @@ export function StagingInbox({ tripId, localFiles, onDeleteFiles, onImportComple
 
         const stepId = crypto.randomUUID();
         const locName = resolvedNames.get(group.key);
-        await supabase.from("trip_steps").insert({
-          id: stepId, trip_id: tripId, user_id: user.id,
-          latitude: group.latitude, longitude: group.longitude,
-          recorded_at: group.earliestDate?.toISOString(),
-          location_name: locName, is_confirmed: true, source: "photo_import"
-        });
-        allNewStepIds.push(stepId);
-
-        await supabase.from("step_photos").insert(group.files.map((f, i) => ({
-          step_id: stepId, user_id: user.id, storage_path: uploaded[i],
-          file_name: f.fileName, taken_at: f.takenAt?.toISOString()
-        })));
-        
-        setCompletedGroups(prev => new Set(prev).add(group.key));
-      }
-      supabase.functions.invoke("process-trip-steps", { body: { step_ids: allNewStepIds } });
-      toast.success("Import Secured!");
-      setTimeout(onImportComplete, 2000);
-    } catch (e) { setImporting(false); }
-  };
-
-  const isAnalyzing = localFiles.some(f => !f.exifDone) || isGeocoding;
-
-  if (isAnalyzing && !importing) {
-    return (
-      <div className="flex flex-col gap-4 bg-card border p-10 rounded-2xl shadow-xl items-center text-center">
-        <Loader2 className="h-10 w-10 animate-spin text-primary mb-2" />
-        <h3 className="text-xl font-semibold">Matching Media to Locations...</h3>
-        <p className="text-muted-foreground">Pinpointing exact addresses within 6m ({geoProgress.current}/{geoProgress.total})</p>
-        <div className="h-2 w-full max-w-md bg-muted rounded-full mt-4 overflow-hidden">
-          <div className="h-full bg-primary transition-all" style={{ width: `${(geoProgress.current / geoProgress.total) * 100}%` }} />
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex flex-col gap-4 relative bg-background border rounded-2xl shadow-2xl p-6">
-      <div className="sticky top-0 z-50 bg-background/95 backdrop-blur pb-4 border-b flex flex-col gap-4">
-        {importing && (
-          <div className="p-4 bg-primary/5 rounded-xl border border-primary/20">
-            <div className="flex justify-between text-sm font-medium mb-2">
-              <span>Securing Media...</span>
-              <span>{Math.round((importProgress.current / importProgress.total) * 100)}%</span>
-            </div>
-            <div className="h-2 w-full bg-gray-200 rounded-full overflow-hidden">
-              <div className="h-full bg-blue-600 transition-all" style={{ width: `${(importProgress.current / importProgress.total) * 100}%` }} />
-            </div>
-          </div>
-        )}
-        <div className="flex justify-between items-center">
-          <h3 className="text-xl font-bold">Trip Inbox ({localFiles.length})</h3>
-          <div className="flex gap-2">
-            <button onClick={() => fileInputRef.current?.click()} className="px-4 py-2 bg-secondary rounded-xl text-sm font-medium">Add More</button>
-            <button onClick={importSelected} disabled={importing} className="px-6 py-2 bg-primary text-white rounded-xl font-bold shadow-lg disabled:opacity-50">
-              {importing ? "Importing..." : "Import Selected"}
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <div className="flex flex-col gap-4 mt-4">
-        {groups.map((group) => (
-          <div key={group.key} className={cn("rounded-2xl border-2 p-4 transition-all", completedGroups.has(group.key) ? "border-green-500 bg-green-50" : "border-border bg-card")}>
-            <div className="flex items-start gap-4">
-              {completedGroups.has(group.key) ? <CheckCircle2 className="h-6 w-6 text-green-500" /> : <MapPin className="h-6 w-6 text-primary" />}
-              <div className="flex-1">
-                <div className="flex justify-between items-center mb-3">
-                  <span className="text-lg font-bold">{resolvedNames.get(group.key) || `${group.latitude.toFixed(4)}, ${group.longitude.toFixed(4)}`}</span>
-                  <span className="text-xs text-muted-foreground">{group.earliestDate?.toLocaleTimeString
+        await
