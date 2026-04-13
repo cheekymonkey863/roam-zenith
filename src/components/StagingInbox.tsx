@@ -561,4 +561,77 @@ export function StagingInbox({
               )}
               <button
                 onClick={importSelected}
-                disabled={
+                disabled={importing || selectedGroupCount === 0}
+                className="flex items-center gap-1.5 rounded-xl bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
+              >
+                <CheckCircle2 className="h-4 w-4" />
+                Import {selectedGroupCount > 0 ? `(${selectedGroupCount})` : ""}
+              </button>
+            </div>
+          </div>
+          <p className="text-xs text-muted-foreground">Locations are preliminary. The importing process will populate accurate AI details.</p>
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-6">
+        {groups.map((group) => {
+          const isSelected = groupSelection.get(group.key) ?? true;
+          const locationLabel = resolvedNames.get(group.key) || "Unknown location";
+          const isCompleted = completedGroups.has(group.key);
+
+          return (
+            <div
+              key={group.key}
+              className={cn(
+                "rounded-xl border p-4 transition-all",
+                isCompleted ? "border-green-300 bg-green-50/50" : isSelected ? "border-border bg-card" : "border-border/50 bg-muted/30 opacity-60"
+              )}
+              onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; }}
+              onDrop={(e) => {
+                e.preventDefault();
+                // drag-and-drop placeholder for moving files between groups
+              }}
+            >
+              <div className="flex items-center justify-between mb-3">
+                <button onClick={() => toggleGroup(group.key)} className="flex items-center gap-2 text-left">
+                  {isSelected ? <CheckSquare className="h-5 w-5 text-primary" /> : <Square className="h-5 w-5 text-muted-foreground" />}
+                  <div>
+                    <span className="font-medium text-sm text-foreground flex items-center gap-1.5">
+                      <MapPin className="h-3.5 w-3.5 text-muted-foreground" />
+                      {locationLabel}
+                    </span>
+                    <span className="text-xs text-muted-foreground">{group.files.length} file{group.files.length !== 1 ? "s" : ""}</span>
+                  </div>
+                </button>
+                {isCompleted && <Check className="h-5 w-5 text-green-600" />}
+              </div>
+
+              <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-2">
+                {group.files.map((file) => {
+                  const isFileSelected = selectedIds.has(file.id);
+                  return (
+                    <div
+                      key={file.id}
+                      className="relative group cursor-pointer"
+                      draggable
+                      onDragStart={(e) => e.dataTransfer.setData("text/plain", JSON.stringify({ fileId: file.id, sourceGroupKey: group.key }))}
+                      onClick={() => toggleFileSelection(file.id)}
+                    >
+                      <FileThumbnail file={file} />
+                      <div className={cn(
+                        "absolute top-1 left-1 h-5 w-5 rounded border-2 flex items-center justify-center transition-all",
+                        isFileSelected ? "bg-primary border-primary" : "border-white/70 bg-black/20 opacity-0 group-hover:opacity-100"
+                      )}>
+                        {isFileSelected && <Check className="h-3 w-3 text-primary-foreground" />}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
