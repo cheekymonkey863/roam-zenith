@@ -18,7 +18,6 @@ import { getTripStatus, getTripStatusLabel, getTripStatusStyle, formatTripDateRa
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useStepVisualTypes } from "@/hooks/useStepVisualTypes";
-import { useResolvedCities } from "@/hooks/useResolvedCities";
 import { supabase as supabaseClient } from "@/integrations/supabase/client";
 import { TripTimeline } from "@/components/TripTimeline";
 import { AiProgressBanner } from "@/components/AiProgressBanner";
@@ -38,11 +37,6 @@ import type { Tables } from "@/integrations/supabase/types";
 type Trip = Tables<"trips">;
 type TripStep = Tables<"trip_steps">;
 
-function formatDate(dateStr: string | null) {
-  if (!dateStr) return "—";
-  return new Date(dateStr).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
-}
-
 const TripDetail = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -50,8 +44,6 @@ const TripDetail = () => {
   const isMobile = useIsMobile();
   const [trip, setTrip] = useState<Trip | null>(null);
   const [steps, setSteps] = useState<TripStep[]>([]);
-
-  // Starts as true, but will NEVER be set to true again on background refreshes
   const [loading, setLoading] = useState(true);
 
   const [isOwner, setIsOwner] = useState(false);
@@ -68,7 +60,6 @@ const TripDetail = () => {
   });
   const [hasStagedFiles, setHasStagedFiles] = useState(false);
   const visualTypes = useStepVisualTypes(steps);
-  const { cityCount, isResolvingCities } = useResolvedCities(steps);
   const mapRef = useRef<WorldMapHandle>(null);
 
   const fetchData = useCallback(async () => {
@@ -80,8 +71,6 @@ const TripDetail = () => {
       return;
     }
 
-    // FIX: We do NOT set loading to true here.
-    // This allows real-time updates to pull data silently without unmounting the Uploader component.
     const [tripRes, stepsRes] = await Promise.all([
       supabase.from("trips").select("*").eq("id", id).single(),
       supabase
@@ -100,12 +89,7 @@ const TripDetail = () => {
       return;
     }
 
-    if (stepsRes.error) {
-      console.error("Failed to fetch trip steps", stepsRes.error);
-      setSteps([]);
-    } else {
-      setSteps(stepsRes.data || []);
-    }
+    if (!stepsRes.error) setSteps(stepsRes.data || []);
 
     setTrip(tripRes.data);
     setIsOwner(tripRes.data.user_id === user.id);
@@ -114,7 +98,6 @@ const TripDetail = () => {
 
   const fetchPendingJobs = useCallback(async () => {
     if (authLoading || !user || !id) return;
-
     const { count } = await supabase
       .from("video_analysis_jobs")
       .select("id", { count: "exact", head: true })
@@ -145,26 +128,16 @@ const TripDetail = () => {
 
   useEffect(() => {
     if (authLoading || !user || !id) return;
-
     const channel = supabase
       .channel(`video-jobs-${id}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "UPDATE",
-          schema: "public",
-          table: "video_analysis_jobs",
-        },
-        (payload) => {
-          const newStatus = (payload.new as { status: string }).status;
-          if (newStatus === "complete" || newStatus === "failed") {
-            void fetchPendingJobs();
-            if (newStatus === "complete") void fetchData();
-          }
-        },
-      )
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "video_analysis_jobs" }, (payload) => {
+        const newStatus = (payload.new as { status: string }).status;
+        if (newStatus === "complete" || newStatus === "failed") {
+          void fetchPendingJobs();
+          if (newStatus === "complete") void fetchData();
+        }
+      })
       .subscribe();
-
     return () => {
       supabase.removeChannel(channel);
     };
@@ -172,23 +145,12 @@ const TripDetail = () => {
 
   useEffect(() => {
     if (authLoading || !user || !id) return;
-
     const channel = supabase
       .channel(`trip-steps-${id}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "trip_steps",
-          filter: `trip_id=eq.${id}`,
-        },
-        () => {
-          void fetchData(); // This will pull the new stops instantly to create the waterfall effect
-        },
-      )
+      .on("postgres_changes", { event: "*", schema: "public", table: "trip_steps", filter: `trip_id=eq.${id}` }, () => {
+        void fetchData();
+      })
       .subscribe();
-
     return () => {
       supabase.removeChannel(channel);
     };
@@ -237,7 +199,6 @@ const TripDetail = () => {
       toast.success("All stops cleared");
       void fetchData();
     } catch (err) {
-      console.error("Clear all stops failed:", err);
       toast.error("Failed to clear stops");
     }
   }, [id, user, steps, fetchData]);
@@ -261,6 +222,19 @@ const TripDetail = () => {
   }
 
   const countries = [...new Set(steps.map((s) => s.country).filter(Boolean))];
+
+  // FIX: Normalize the city names so "City of Edinburgh, GB" and "Edinburgh" don't inflate the city counter
+  const normalizedCities = new Set(
+    steps
+      .map((s) => {
+        if (!s.location_name) return null;
+        let city = s.location_name.split(",")[0];
+        city = city.replace("City of ", "").trim();
+        return city;
+      })
+      .filter(Boolean),
+  );
+  const displayCityCount = normalizedCities.size;
 
   return (
     <div className="flex flex-col gap-8 py-8">
@@ -310,10 +284,10 @@ const TripDetail = () => {
                 {countries.join(", ")}
               </span>
             )}
-            {!isResolvingCities && cityCount > 0 && (
+            {displayCityCount > 0 && (
               <span className="flex items-center gap-1.5">
                 <Route className="h-4 w-4" />
-                {cityCount} {cityCount === 1 ? "city" : "cities"}
+                {displayCityCount} {displayCityCount === 1 ? "city" : "cities"}
               </span>
             )}
           </div>
@@ -338,7 +312,7 @@ const TripDetail = () => {
         </div>
       )}
 
-      {/* Button row */}
+      {/* Button row - Cleaned up and removed the misplaced Clear All button */}
       <div className="flex flex-wrap gap-3">
         <button
           onClick={() => {
@@ -391,15 +365,6 @@ const TripDetail = () => {
           <FileText className="h-4 w-4" />
           Add from Itinerary
         </button>
-        {steps.length > 0 && (
-          <button
-            onClick={handleClearAllSteps}
-            className="flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium text-destructive bg-destructive/10 hover:bg-destructive/20 transition-colors"
-          >
-            <XCircle className="h-4 w-4" />
-            Clear All Stops
-          </button>
-        )}
       </div>
 
       {showAddEvent && (
@@ -443,7 +408,6 @@ const TripDetail = () => {
 
       {steps.length > 0 ? (
         <div className="flex flex-col">
-          {/* FIX: Strict min-height applied here so the map physically cannot overlap the timeline text */}
           <div className="relative z-0 min-h-[420px] w-full bg-background mb-4 rounded-xl overflow-hidden shadow-sm border border-border">
             <WorldMap
               ref={mapRef}
@@ -459,9 +423,20 @@ const TripDetail = () => {
           <AiProgressBanner steps={steps} tripId={trip.id} onCancelled={fetchData} />
 
           <div className="relative z-10 flex flex-col gap-4 px-4 py-8">
-            <h2 className="max-w-3xl mx-auto w-full font-display text-2xl font-semibold text-foreground">
-              Journey Timeline
-            </h2>
+            {/* FIX: The timeline header now includes the Clear All button directly above the timeline */}
+            <div className="max-w-3xl mx-auto w-full flex justify-between items-center">
+              <h2 className="font-display text-2xl font-semibold text-foreground">Journey Timeline</h2>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleClearAllSteps}
+                  className="flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-medium text-destructive bg-destructive/10 hover:bg-destructive/20 transition-colors"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  Clear All Stops
+                </button>
+              </div>
+            </div>
+
             <div className="max-w-3xl mx-auto w-full">
               <TripTimeline
                 steps={steps}
@@ -473,7 +448,7 @@ const TripDetail = () => {
           </div>
         </div>
       ) : (
-        <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-4 mt-8">
           <h2 className="font-display text-2xl font-semibold text-foreground">Journey Timeline</h2>
           <div className="flex flex-col items-center gap-3 rounded-2xl bg-card p-12 shadow-card text-center">
             <Navigation className="h-8 w-8 text-muted-foreground/50" />
