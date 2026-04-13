@@ -5,7 +5,6 @@ import { StagingInbox } from "@/components/StagingInbox";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import heic2any from "heic2any";
-import { cn } from "@/lib/utils";
 
 export interface LocalStagedFile {
   id: string;
@@ -149,11 +148,9 @@ export function PhotoImport({
 
     if (filtered.length === 0) return;
 
-    // FIX: Lock the UI immediately. Do not mount the inbox yet.
     setIsAnalyzing(true);
     setAnalysisProgress({ done: 0, total: filtered.length });
 
-    // Process files purely in memory to prevent React from re-rendering 43 times.
     const processedFiles: LocalStagedFile[] = [];
 
     for (let i = 0; i < filtered.length; i++) {
@@ -197,7 +194,7 @@ export function PhotoImport({
           cameraModel: exif.cameraModel ?? null,
         };
       } catch {
-        // Silently fallback on failure
+        // Fallback silently
       }
 
       processedFiles.push({
@@ -211,12 +208,9 @@ export function PhotoImport({
       });
 
       setAnalysisProgress({ done: i + 1, total: filtered.length });
-
-      // Brief yield to keep the browser from freezing during heavy processing
       await new Promise((r) => setTimeout(r, 10));
     }
 
-    // FIX: Update React state exactly ONCE. This mounts the Inbox perfectly.
     setFiles((prev) => {
       const existingKeys = new Set(prev.map((f) => `${f.fileName}::${f.file.size}`));
       const uniqueNew = processedFiles.filter((f) => !existingKeys.has(`${f.fileName}::${f.file.size}`));
@@ -256,15 +250,15 @@ export function PhotoImport({
     analysisProgress.total > 0 ? Math.round((analysisProgress.done / analysisProgress.total) * 100) : 0;
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="relative z-20 w-full bg-background border border-border shadow-xl rounded-2xl p-6 mb-8">
       {isAnalyzing ? (
-        <div className="flex flex-col gap-2 rounded-xl border border-border bg-card p-10 shadow-sm text-center items-center justify-center">
+        <div className="flex flex-col gap-2 rounded-xl p-8 text-center items-center justify-center">
           <Loader2 className="h-8 w-8 animate-spin text-primary mb-4" />
           <h3 className="font-display text-lg font-semibold text-foreground">Reading image data...</h3>
           <p className="text-sm text-muted-foreground max-w-sm mt-1">
             Processing {analysisProgress.done} of {analysisProgress.total} files.
           </p>
-          <div className="h-3 w-full max-w-md overflow-hidden rounded-full bg-gray-100 mt-6 border border-border">
+          <div className="h-3 w-full max-w-md overflow-hidden rounded-full bg-muted mt-6 border border-border">
             <div
               className="h-full rounded-full transition-all duration-300 bg-primary"
               style={{ width: `${Math.max(analysisPercent, 2)}%` }}
