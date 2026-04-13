@@ -560,7 +560,7 @@ export function StagingInbox({
                   <div className="flex flex-wrap items-center gap-2">
                     <MapPin className={cn("h-4 w-4", isCompleted ? "text-green-500" : "text-primary")} />
                     <span className="text-lg font-semibold text-foreground">
-                      {resolvedNames.get(group.key) || `${group.latitude!.toFixed(4)}, ${group.longitude!.toFixed(4)}`}
+                      {resolvedNames.get(group.key) || (group.latitude != null && group.longitude != null ? `${group.latitude.toFixed(4)}, ${group.longitude.toFixed(4)}` : "Unknown location")}
                     </span>
                     {group.earliestDate && (
                       <span className="text-sm text-muted-foreground">
