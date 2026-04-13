@@ -87,7 +87,6 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
     map.addControl(new mapboxgl.NavigationControl({ showCompass: false }), "bottom-right");
     mapRef.current = map;
 
-    // FIX: Force map to redraw if its container changes size, preventing the blank white box
     const resizeObserver = new ResizeObserver(() => {
       map.resize();
     });
@@ -163,12 +162,9 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
   return (
     <div
       ref={containerRef}
-      className={
-        className
-          ? `relative z-0 max-h-[40vh] mb-8 w-full overflow-hidden ${className}`
-          : "relative z-0 max-h-[40vh] mb-8 w-full overflow-hidden rounded-2xl shadow-card"
-      }
-      style={style ?? { minHeight: singleTrip ? 420 : 340 }}
+      // FIX: Either use the precise injected className or default to the standard card look
+      className={className || "relative z-0 max-h-[40vh] mb-8 w-full overflow-hidden rounded-2xl shadow-card"}
+      style={style || { minHeight: singleTrip ? 420 : 340 }}
     />
   );
 });
