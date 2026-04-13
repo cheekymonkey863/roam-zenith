@@ -1,10 +1,11 @@
 import { useState, useCallback, useRef, useEffect } from "react";
-import { Upload, X } from "lucide-react";
+import { Upload, X, Loader2 } from "lucide-react";
 import { extractExifFromFile } from "@/lib/exif";
 import { StagingInbox } from "@/components/StagingInbox";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import heic2any from "heic2any";
+import { cn } from "@/lib/utils";
 
 export interface LocalStagedFile {
   id: string;
@@ -51,6 +52,8 @@ export function PhotoImport({
 }: PhotoImportProps) {
   const [dragOver, setDragOver] = useState(false);
   const [files, setFiles] = useState<LocalStagedFile[]>([]);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analysisProgress, setAnalysisProgress] = useState({ done: 0, total: 0 });
   const fileInputRef = useRef<HTMLInputElement>(null);
   const existingFingerprints = useRef<Set<string> | null>(null);
 
@@ -62,7 +65,6 @@ export function PhotoImport({
         .eq("user_id", (await supabase.auth.getUser()).data.user?.id ?? "");
 
       const { data: stepData } = await supabase.from("trip_steps").select("id").eq("trip_id", tripId);
-
       const stepIds = new Set((stepData || []).map((s) => s.id));
       const fps = new Set<string>();
 
@@ -87,70 +89,7 @@ export function PhotoImport({
     return () => {
       files.forEach((f) => URL.revokeObjectURL(f.previewUrl));
     };
-  }, []);
-
-  const handleFiles = useCallback((incoming: File[]) => {
-    const mediaFiles = incoming.filter(
-      (f) =>
-        f.type.startsWith("image/") ||
-        f.type.startsWith("video/") ||
-        f.name.toLowerCase().endsWith(".heic") ||
-        f.name.toLowerCase().endsWith(".heif"),
-    );
-    if (mediaFiles.length === 0) return;
-
-    let skippedCount = 0;
-    const filtered = mediaFiles.filter((f) => {
-      if (existingFingerprints.current?.has(f.name)) {
-        skippedCount++;
-        return false;
-      }
-      return true;
-    });
-
-    if (skippedCount > 0) {
-      toast.info(`Skipped ${skippedCount} duplicate file${skippedCount !== 1 ? "s" : ""}`);
-    }
-
-    if (filtered.length === 0) return;
-
-    setFiles((prev) => {
-      const existingKeys = new Set(prev.map((f) => `${f.fileName}::${f.file.size}`));
-      const newFiles: LocalStagedFile[] = [];
-
-      for (const file of filtered) {
-        const key = `${file.name}::${file.size}`;
-        if (existingKeys.has(key)) continue;
-        existingKeys.add(key);
-
-        newFiles.push({
-          id: crypto.randomUUID(),
-          file,
-          previewUrl: URL.createObjectURL(file),
-          mimeType: file.type,
-          fileName: file.name,
-          latitude: null,
-          longitude: null,
-          takenAt: null,
-          cameraMake: null,
-          cameraModel: null,
-          exifDone: false,
-        });
-      }
-
-      if (newFiles.length === 0) return prev;
-
-      extractExifSequential(
-        newFiles.map((f) => f.id),
-        filtered.filter((_, i) => {
-          const key = `${filtered[i].name}::${filtered[i].size}`;
-          return newFiles.some((nf) => `${nf.fileName}::${nf.file.size}` === key);
-        }),
-      );
-
-      return [...prev, ...newFiles];
-    });
-  }, []);
+  }, [files]);
 
   const generateVideoThumbnail = (file: File): Promise<string | null> => {
     return new Promise((resolve) => {
@@ -185,20 +124,40 @@ export function PhotoImport({
     });
   };
 
-  const extractExifSequential = useCallback(async (ids: string[], rawFiles: File[]) => {
-    const results: Array<{
-      id: string;
-      latitude: number | null;
-      longitude: number | null;
-      takenAt: Date | null;
-      cameraMake: string | null;
-      cameraModel: string | null;
-      newPreviewUrl: string | null;
-    }> = [];
+  const handleFiles = useCallback(async (incoming: File[]) => {
+    const mediaFiles = incoming.filter(
+      (f) =>
+        f.type.startsWith("image/") ||
+        f.type.startsWith("video/") ||
+        f.name.toLowerCase().endsWith(".heic") ||
+        f.name.toLowerCase().endsWith(".heif"),
+    );
+    if (mediaFiles.length === 0) return;
 
-    for (let i = 0; i < rawFiles.length; i++) {
-      const id = ids[i];
-      const file = rawFiles[i];
+    let skippedCount = 0;
+    const filtered = mediaFiles.filter((f) => {
+      if (existingFingerprints.current?.has(f.name)) {
+        skippedCount++;
+        return false;
+      }
+      return true;
+    });
+
+    if (skippedCount > 0) {
+      toast.info(`Skipped ${skippedCount} duplicate file${skippedCount !== 1 ? "s" : ""}`);
+    }
+
+    if (filtered.length === 0) return;
+
+    // FIX: Lock the UI immediately. Do not mount the inbox yet.
+    setIsAnalyzing(true);
+    setAnalysisProgress({ done: 0, total: filtered.length });
+
+    // Process files purely in memory to prevent React from re-rendering 43 times.
+    const processedFiles: LocalStagedFile[] = [];
+
+    for (let i = 0; i < filtered.length; i++) {
+      const file = filtered[i];
       let newPreviewUrl: string | null = null;
 
       const isVideo = file.type.startsWith("video/");
@@ -220,13 +179,14 @@ export function PhotoImport({
         }
       }
 
-      let exifResult: {
-        latitude: number | null;
-        longitude: number | null;
-        takenAt: Date | null;
-        cameraMake: string | null;
-        cameraModel: string | null;
+      let exifResult = {
+        latitude: null as number | null,
+        longitude: null as number | null,
+        takenAt: null as Date | null,
+        cameraMake: null as string | null,
+        cameraModel: null as string | null,
       };
+
       try {
         const exif = await extractExifFromFile(file);
         exifResult = {
@@ -237,47 +197,47 @@ export function PhotoImport({
           cameraModel: exif.cameraModel ?? null,
         };
       } catch {
-        exifResult = { latitude: null, longitude: null, takenAt: null, cameraMake: null, cameraModel: null };
+        // Silently fallback on failure
       }
 
-      results.push({ id, ...exifResult, newPreviewUrl });
+      processedFiles.push({
+        id: crypto.randomUUID(),
+        file,
+        previewUrl: newPreviewUrl || URL.createObjectURL(file),
+        mimeType: file.type,
+        fileName: file.name,
+        ...exifResult,
+        exifDone: true,
+      });
 
-      // Update state incrementally so StagingInbox can track the single progress bar
-      setFiles((prev) =>
-        prev.map((f) => {
-          if (f.id === id) {
-            if (newPreviewUrl) URL.revokeObjectURL(f.previewUrl);
-            return {
-              ...f,
-              latitude: exifResult.latitude,
-              longitude: exifResult.longitude,
-              takenAt: exifResult.takenAt,
-              cameraMake: exifResult.cameraMake,
-              cameraModel: exifResult.cameraModel,
-              previewUrl: newPreviewUrl ?? f.previewUrl,
-              exifDone: true,
-            };
-          }
-          return f;
-        }),
-      );
+      setAnalysisProgress({ done: i + 1, total: filtered.length });
 
-      await new Promise((resolve) => setTimeout(resolve, 50));
+      // Brief yield to keep the browser from freezing during heavy processing
+      await new Promise((r) => setTimeout(r, 10));
     }
+
+    // FIX: Update React state exactly ONCE. This mounts the Inbox perfectly.
+    setFiles((prev) => {
+      const existingKeys = new Set(prev.map((f) => `${f.fileName}::${f.file.size}`));
+      const uniqueNew = processedFiles.filter((f) => !existingKeys.has(`${f.fileName}::${f.file.size}`));
+      return [...prev, ...uniqueNew];
+    });
+
+    setIsAnalyzing(false);
   }, []);
 
   const handleDrop = useCallback(
     (e: React.DragEvent) => {
       e.preventDefault();
       setDragOver(false);
-      handleFiles(Array.from(e.dataTransfer.files));
+      void handleFiles(Array.from(e.dataTransfer.files));
     },
     [handleFiles],
   );
 
   const handleFileSelect = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
-      handleFiles(Array.from(e.target.files || []));
+      void handleFiles(Array.from(e.target.files || []));
       if (e.target) e.target.value = "";
     },
     [handleFiles],
@@ -292,11 +252,37 @@ export function PhotoImport({
     });
   }, []);
 
-  const showDropZone = files.length === 0;
+  const analysisPercent =
+    analysisProgress.total > 0 ? Math.round((analysisProgress.done / analysisProgress.total) * 100) : 0;
 
   return (
     <div className="flex flex-col gap-6">
-      {showDropZone && (
+      {isAnalyzing ? (
+        <div className="flex flex-col gap-2 rounded-xl border border-border bg-card p-10 shadow-sm text-center items-center justify-center">
+          <Loader2 className="h-8 w-8 animate-spin text-primary mb-4" />
+          <h3 className="font-display text-lg font-semibold text-foreground">Reading image data...</h3>
+          <p className="text-sm text-muted-foreground max-w-sm mt-1">
+            Processing {analysisProgress.done} of {analysisProgress.total} files.
+          </p>
+          <div className="h-3 w-full max-w-md overflow-hidden rounded-full bg-gray-100 mt-6 border border-border">
+            <div
+              className="h-full rounded-full transition-all duration-300 bg-primary"
+              style={{ width: `${Math.max(analysisPercent, 2)}%` }}
+            />
+          </div>
+        </div>
+      ) : files.length > 0 ? (
+        <StagingInbox
+          tripId={tripId}
+          localFiles={files}
+          onDeleteFiles={deleteFiles}
+          onImportComplete={onImportComplete}
+          onCancel={onCancel}
+          onAddMore={() => fileInputRef.current?.click()}
+          onProgressChange={onProgressChange}
+          existingSteps={existingSteps}
+        />
+      ) : (
         <div className="flex flex-col gap-3">
           <label
             onDragOver={(e) => {
@@ -338,21 +324,7 @@ export function PhotoImport({
         </div>
       )}
 
-      {/* We mount StagingInbox immediately now, so it can control the unified progress bar */}
-      {files.length > 0 && (
-        <StagingInbox
-          tripId={tripId}
-          localFiles={files}
-          onDeleteFiles={deleteFiles}
-          onImportComplete={onImportComplete}
-          onCancel={onCancel}
-          onAddMore={() => fileInputRef.current?.click()}
-          onProgressChange={onProgressChange}
-          existingSteps={existingSteps}
-        />
-      )}
-
-      {!showDropZone && (
+      {!isAnalyzing && files.length > 0 && (
         <input
           ref={fileInputRef}
           type="file"
