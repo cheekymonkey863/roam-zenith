@@ -28,7 +28,7 @@ interface WorldMapProps {
 
 export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function WorldMap(
   { steps, singleTrip = false, className, style },
-  ref
+  ref,
 ) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
@@ -37,7 +37,7 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
 
   const flyToStep = useCallback((step: TripStep) => {
     const map = mapRef.current;
-    if (!map) return;
+    if (!map || (step.latitude === 0 && step.longitude === 0)) return;
     map.flyTo({
       center: [step.longitude, step.latitude],
       zoom: Math.max(map.getZoom(), 10),
@@ -50,7 +50,11 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
     const map = mapRef.current;
     if (!map || stepsRef.current.length === 0) return;
     const bounds = new mapboxgl.LngLatBounds();
-    stepsRef.current.forEach((s) => bounds.extend([s.longitude, s.latitude]));
+    stepsRef.current.forEach((s) => {
+      if (s.latitude !== 0 && s.longitude !== 0) {
+        bounds.extend([s.longitude, s.latitude]);
+      }
+    });
     if (!bounds.isEmpty()) {
       map.fitBounds(bounds, { padding: 60, maxZoom: 14, duration: 800 });
     }
@@ -60,7 +64,6 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
 
   useImperativeHandle(ref, () => ({ flyToStep, fitAllSteps, highlightStep }), [flyToStep, fitAllSteps, highlightStep]);
 
-  // Initialize map and draw routes
   useEffect(() => {
     if (!containerRef.current) return;
 
@@ -84,6 +87,12 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
     map.addControl(new mapboxgl.NavigationControl({ showCompass: false }), "bottom-right");
     mapRef.current = map;
 
+    // FIX: Force map to redraw if its container changes size, preventing the blank white box
+    const resizeObserver = new ResizeObserver(() => {
+      map.resize();
+    });
+    resizeObserver.observe(containerRef.current);
+
     map.on("load", () => {
       if (steps.length === 0) return;
 
@@ -101,7 +110,10 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
         const color = singleTrip ? ROUTE_COLOR : ROUTE_COLOR_ALT[colorIdx % ROUTE_COLOR_ALT.length];
         colorIdx += 1;
 
-        const routeCoordinates = tripSteps.map((step) => [step.longitude, step.latitude] as [number, number]);
+        const routeCoordinates = tripSteps
+          .filter((step) => step.latitude !== 0 && step.longitude !== 0)
+          .map((step) => [step.longitude, step.latitude] as [number, number]);
+
         routeCoordinates.forEach((coordinate) => bounds.extend(coordinate));
 
         if (routeCoordinates.length > 1) {
@@ -142,6 +154,7 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
     });
 
     return () => {
+      resizeObserver.disconnect();
       map.remove();
       mapRef.current = null;
     };
@@ -150,9 +163,10 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
   return (
     <div
       ref={containerRef}
-      className={className
-        ? `relative z-0 max-h-[40vh] mb-8 w-full overflow-hidden ${className}`
-        : "relative z-0 max-h-[40vh] mb-8 w-full overflow-hidden rounded-2xl shadow-card"
+      className={
+        className
+          ? `relative z-0 max-h-[40vh] mb-8 w-full overflow-hidden ${className}`
+          : "relative z-0 max-h-[40vh] mb-8 w-full overflow-hidden rounded-2xl shadow-card"
       }
       style={style ?? { minHeight: singleTrip ? 420 : 340 }}
     />
