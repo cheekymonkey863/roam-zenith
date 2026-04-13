@@ -87,7 +87,7 @@ function parseNominatimAddress(data: any): string | null {
 
 function useGroupLocationNames(groups: StagingGroup[]) {
   const [names, setNames] = useState<Map<string, string>>(new Map());
-  const [geocodingDone, setGeocodingDone] = useState(false);
+  const [isGeocoding, setIsGeocoding] = useState(false);
   const [geocodingProgress, setGeocodingProgress] = useState({ current: 0, total: 0 });
   const prevKeysRef = useRef<string>("");
 
@@ -99,11 +99,11 @@ function useGroupLocationNames(groups: StagingGroup[]) {
     const toResolve = groups.filter((g) => g.latitude != null && g.longitude != null && !names.has(g.key));
 
     if (toResolve.length === 0) {
-      setGeocodingDone(true);
+      setIsGeocoding(false);
       return;
     }
 
-    setGeocodingDone(false);
+    setIsGeocoding(true);
     setGeocodingProgress({ current: 0, total: toResolve.length });
     let cancelled = false;
 
@@ -115,24 +115,35 @@ function useGroupLocationNames(groups: StagingGroup[]) {
         let success = false;
         let attempts = 0;
 
-        while (!success && attempts < 3) {
+        while (!success && attempts < 2) {
           try {
             attempts++;
+            // Force a unique timestamp query parameter to bypass Nominatim's aggressive caching
             const res = await fetch(
-              `https://nominatim.openstreetmap.org/reverse?format=json&lat=${group.latitude}&lon=${group.longitude}&zoom=18`,
+              `https://nominatim.openstreetmap.org/reverse?format=json&lat=${group.latitude}&lon=${group.longitude}&zoom=18&_t=${Date.now()}`
             );
             if (res.ok) {
               const data = await res.json();
               const label = parseNominatimAddress(data);
-              if (label) batch.set(group.key, label);
+              if (label) {
+                batch.set(group.key, label);
+              } else {
+                // If it resolves but finds no specific name, fallback to coords immediately to prevent AI hallucination
+                batch.set(group.key, `${group.latitude!.toFixed(4)}°, ${group.longitude!.toFixed(4)}°`);
+              }
               success = true;
             } else {
-              throw new Error("Nominatim rate limit or error");
+              throw new Error("Nominatim error");
             }
           } catch (err) {
             console.warn(`Geocoding failed for group ${group.key}, attempt ${attempts}`);
-            if (attempts < 3) await new Promise((r) => setTimeout(r, 2000));
+            if (attempts < 2) await new Promise((r) => setTimeout(r, 2000));
           }
+        }
+        
+        // If it still fails after retries, assign the coordinate fallback
+        if (!success) {
+           batch.set(group.key, `${group.latitude!.toFixed(4)}°, ${group.longitude!.toFixed(4)}°`);
         }
 
         done++;
@@ -146,11 +157,13 @@ function useGroupLocationNames(groups: StagingGroup[]) {
               return next;
             });
           }
-          await new Promise((r) => setTimeout(r, 1000));
+          // STRICT 1.5 SECOND DELAY to prevent Nominatim from IP banning the request loop
+          await new Promise((r) => setTimeout(r, 1500));
         }
       }
+      
       if (!cancelled) {
-        setGeocodingDone(true);
+        setIsGeocoding(false);
       }
     })();
 
@@ -159,7 +172,7 @@ function useGroupLocationNames(groups: StagingGroup[]) {
     };
   }, [groups]);
 
-  return { names, geocodingDone, geocodingProgress };
+  return { names, isGeocoding, geocodingProgress };
 }
 
 export function StagingInbox({
@@ -183,7 +196,7 @@ export function StagingInbox({
   const [completedGroups, setCompletedGroups] = useState<Set<string>>(new Set());
 
   const groups = useMemo(() => groupLocalFiles(localFiles), [localFiles]);
-  const { names: resolvedNames, geocodingDone, geocodingProgress } = useGroupLocationNames(groups);
+  const { names: resolvedNames, isGeocoding, geocodingProgress } = useGroupLocationNames(groups);
 
   const [groupSelection, setGroupSelection] = useState<Map<string, boolean>>(() => {
     const map = new Map<string, boolean>();
@@ -334,8 +347,9 @@ export function StagingInbox({
         }
 
         const earliest = group.earliestDate?.toISOString() ?? new Date().toISOString();
-        const finalLocationName =
-          resolvedNames.get(group.key) || `${coords.latitude.toFixed(4)}°, ${coords.longitude.toFixed(4)}°`;
+        
+        // Force raw coordinates if map lookup failed, protecting against AI hallucinations
+        const finalLocationName = resolvedNames.get(group.key) || `${coords.latitude.toFixed(4)}°, ${coords.longitude.toFixed(4)}°`;
 
         const stepDetails = buildImportedStepDetails({
           locationName: finalLocationName,
@@ -435,14 +449,36 @@ export function StagingInbox({
 
   const exifPending = localFiles.some((f) => !f.exifDone);
   const exifDoneCount = localFiles.filter((f) => f.exifDone).length;
-  const analysisPercent = localFiles.length > 0 ? Math.round((exifDoneCount / localFiles.length) * 100) : 0;
+  
+  const isAnalyzing = exifPending || isGeocoding;
+  const showProgressBar = isAnalyzing || importing;
+  const isCurtainLifted = !isAnalyzing;
 
-  const isAnalyzing = exifPending || !geocodingDone;
-  const uploadPercent =
-    importProgress.total > 0 ? Math.round((importProgress.current / importProgress.total) * 100) : 0;
+  // Add the groups to the total analysis steps for accurate math
+  const totalAnalysisSteps = localFiles.length + (groups.length > 0 ? groups.length : 0);
+  const completedAnalysisSteps = exifDoneCount + geocodingProgress.current;
+  const analysisPercent = totalAnalysisSteps > 0 ? Math.round((completedAnalysisSteps / totalAnalysisSteps) * 100) : 0;
+  const uploadPercent = importProgress.total > 0 ? Math.round((importProgress.current / importProgress.total) * 100) : 0;
 
-  // Render ONLY the progress bar if we are analyzing EXIF or Geocoding
-  if (isAnalyzing && !importing) {
+  let progressLabel = "";
+  let progressPercent = 0;
+  let progressColor = "bg-gray-400";
+
+  if (importing) {
+    progressLabel =
+      importProgress.phase === "sorting"
+        ? "Sorting media into trip stops…"
+        : `Uploading & importing… (${importProgress.current} of ${importProgress.total})`;
+    progressPercent = uploadPercent;
+    progressColor = "bg-blue-600";
+  } else if (isAnalyzing) {
+    progressLabel = "Analyzing media & fetching locations...";
+    progressPercent = analysisPercent;
+    progressColor = "bg-gray-400";
+  }
+
+  // Hide the entire UI until the curtain lifts
+  if (!isCurtainLifted && !importing) {
     return (
       <div className="flex flex-col gap-4">
         <div className="flex flex-col gap-2 rounded-xl border border-border bg-card p-8 shadow-sm text-center items-center justify-center">
@@ -451,16 +487,14 @@ export function StagingInbox({
             {exifPending ? "Reading image data..." : "Fetching map locations..."}
           </h3>
           <p className="text-sm text-muted-foreground max-w-sm">
-            {exifPending
-              ? `Processing ${exifDoneCount} of ${localFiles.length} files.`
+            {exifPending 
+              ? `Processing ${exifDoneCount} of ${localFiles.length} files.` 
               : `Dropping pins for ${geocodingProgress.current} of ${geocodingProgress.total} locations.`}
           </p>
           <div className="h-2 w-full max-w-md overflow-hidden rounded-full bg-gray-100 mt-4">
             <div
               className="h-full rounded-full transition-all duration-300 bg-primary"
-              style={{
-                width: `${Math.max(exifPending ? analysisPercent : geocodingProgress.total > 0 ? Math.round((geocodingProgress.current / geocodingProgress.total) * 100) : 0, 2)}%`,
-              }}
+              style={{ width: `${Math.max(progressPercent, 2)}%` }}
             />
           </div>
         </div>
@@ -468,7 +502,6 @@ export function StagingInbox({
     );
   }
 
-  // Once Analyzing is complete, lift the curtain and render the actual inbox
   return (
     <div className="flex flex-col gap-4 relative">
       <div className="sticky top-0 z-50 bg-background/95 backdrop-blur py-4 border-b border-border shadow-sm flex flex-col gap-4">
@@ -477,11 +510,11 @@ export function StagingInbox({
             <div className="flex items-center justify-between text-sm font-medium">
               <span className="flex items-center gap-2 text-foreground">
                 <Loader2 className={cn("h-4 w-4 animate-spin text-blue-600")} />
-                {importProgress.phase === "sorting"
-                  ? "Sorting media into trip stops…"
-                  : `Uploading & importing… (${importProgress.current} of ${importProgress.total})`}
+                {importProgress.phase === "sorting" ? "Sorting media into trip stops…" : `Uploading & importing… (${importProgress.current} of ${importProgress.total})`}
               </span>
-              <span className="font-semibold text-blue-600">{uploadPercent}%</span>
+              <span className="font-semibold text-blue-600">
+                {uploadPercent}%
+              </span>
             </div>
             <div className="h-4 w-full overflow-hidden rounded-full bg-gray-100">
               <div
@@ -528,155 +561,4 @@ export function StagingInbox({
               )}
               <button
                 onClick={importSelected}
-                disabled={importing || selectedGroupCount === 0}
-                className="flex items-center gap-2 rounded-xl bg-primary px-6 py-2.5 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50 shadow-md"
-              >
-                {importing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-                {importing ? `Importing… (${uploadPercent}%)` : "Import Selected"}
-              </button>
-            </div>
-          </div>
-          <p className="text-xs text-muted-foreground">
-            Locations are preliminary. The importing process will populate accurate AI details.
-          </p>
-        </div>
-      </div>
-
-      <div className="flex flex-col gap-3 mt-2">
-        {groups.map((group) => {
-          const isSelected = groupSelection.get(group.key) ?? true;
-          const isCompleted = completedGroups.has(group.key);
-          return (
-            <div
-              key={group.key}
-              className={cn(
-                "rounded-2xl border-2 p-4 transition-all",
-                isCompleted
-                  ? "border-green-500 bg-green-50 dark:bg-green-950/20"
-                  : isSelected
-                    ? "border-primary bg-primary/5"
-                    : "border-border bg-card opacity-60",
-              )}
-            >
-              <div className="flex items-start gap-4">
-                {isCompleted ? (
-                  <div className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-green-500">
-                    <CheckCircle2 className="h-4 w-4 text-white" />
-                  </div>
-                ) : (
-                  <div
-                    onClick={() => !importing && toggleGroup(group.key)}
-                    className={cn(
-                      "mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-lg transition-colors",
-                      importing ? "cursor-default" : "cursor-pointer",
-                      isSelected ? "bg-primary" : "bg-muted",
-                    )}
-                  >
-                    {isSelected && <Check className="h-3.5 w-3.5 text-primary-foreground" />}
-                  </div>
-                )}
-
-                <div className="flex flex-1 flex-col gap-3">
-                  <div className="flex flex-wrap items-center gap-2">
-                    {isCompleted ? (
-                      <CheckCircle2 className="h-4 w-4 text-green-500" />
-                    ) : (
-                      <MapPin className="h-4 w-4 text-primary" />
-                    )}
-                    <span className="text-lg font-semibold text-foreground">
-                      {resolvedNames.get(group.key) ||
-                        (group.latitude != null
-                          ? `📍 ${group.latitude!.toFixed(4)}, ${group.longitude!.toFixed(4)}`
-                          : `${group.files.length} file${group.files.length !== 1 ? "s" : ""}`)}
-                    </span>
-                    {group.earliestDate && (
-                      <span className="text-sm text-muted-foreground">
-                        {group.earliestDate.toLocaleDateString("en-US", {
-                          weekday: "short",
-                          month: "short",
-                          day: "numeric",
-                          hour: "numeric",
-                          minute: "2-digit",
-                        })}
-                      </span>
-                    )}
-                    <span className="text-sm text-muted-foreground">
-                      ({group.files.length} file{group.files.length !== 1 ? "s" : ""})
-                    </span>
-                    {isCompleted && (
-                      <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700 dark:bg-green-900/50 dark:text-green-400">
-                        Imported ✓
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="grid grid-cols-4 gap-2 sm:grid-cols-6 md:grid-cols-8">
-                    {group.files.map((file) => {
-                      const isFileSelected = selectedIds.has(file.id);
-                      return (
-                        <div
-                          key={file.id}
-                          className={cn(
-                            "relative rounded-lg ring-2 transition-all group/thumb",
-                            isCompleted
-                              ? "ring-green-300 opacity-75"
-                              : isFileSelected
-                                ? "ring-primary cursor-pointer"
-                                : "ring-transparent hover:ring-primary/50 cursor-pointer",
-                          )}
-                          draggable={!importing && !isCompleted}
-                          onDragStart={(e) => {
-                            e.dataTransfer.setData(
-                              "text/plain",
-                              JSON.stringify({ fileId: file.id, sourceGroupKey: group.key }),
-                            );
-                            e.dataTransfer.effectAllowed = "move";
-                          }}
-                          onClick={() => !importing && !isCompleted && toggleFileSelection(file.id)}
-                        >
-                          <FileThumbnail file={file} />
-                          <button
-                            type="button"
-                            aria-pressed={isFileSelected}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              if (!importing && !isCompleted) {
-                                toggleFileSelection(file.id);
-                              }
-                            }}
-                            className={cn(
-                              "absolute top-1 left-1 flex h-5 w-5 items-center justify-center rounded-sm border-2 transition-all",
-                              isFileSelected
-                                ? "border-primary bg-primary opacity-100"
-                                : "border-white/70 bg-black/30 opacity-0 group-hover/thumb:opacity-100",
-                            )}
-                          >
-                            {isFileSelected ? (
-                              <CheckSquare className="h-3.5 w-3.5 text-primary-foreground" />
-                            ) : (
-                              <Square className="h-3.5 w-3.5 text-white" />
-                            )}
-                          </button>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {localFiles.length === 0 && (
-        <div className="flex flex-col items-center gap-4 rounded-2xl border-2 border-dashed border-border p-12 text-center">
-          <ImageIcon className="h-10 w-10 text-muted-foreground" />
-          <div>
-            <p className="font-medium text-foreground">Your Trip Inbox is empty</p>
-            <p className="text-sm text-muted-foreground">Drop photos & videos to start building your timeline</p>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
+                disabled={
