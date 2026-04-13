@@ -50,7 +50,10 @@ const TripDetail = () => {
   const isMobile = useIsMobile();
   const [trip, setTrip] = useState<Trip | null>(null);
   const [steps, setSteps] = useState<TripStep[]>([]);
+
+  // Starts as true, but will NEVER be set to true again on background refreshes
   const [loading, setLoading] = useState(true);
+
   const [isOwner, setIsOwner] = useState(false);
   const [showPhotoImport, setShowPhotoImport] = useState(false);
   const [showItineraryImport, setShowItineraryImport] = useState(false);
@@ -69,7 +72,7 @@ const TripDetail = () => {
   const mapRef = useRef<WorldMapHandle>(null);
 
   const fetchData = useCallback(async () => {
-    if (!id) {
+    if (!id || !user) {
       setTrip(null);
       setSteps([]);
       setIsOwner(false);
@@ -77,21 +80,8 @@ const TripDetail = () => {
       return;
     }
 
-    if (authLoading) {
-      setLoading(true);
-      return;
-    }
-
-    if (!user) {
-      setTrip(null);
-      setSteps([]);
-      setIsOwner(false);
-      setLoading(false);
-      return;
-    }
-
-    setLoading(true);
-
+    // FIX: We do NOT set loading to true here.
+    // This allows real-time updates to pull data silently without unmounting the Uploader component.
     const [tripRes, stepsRes] = await Promise.all([
       supabase.from("trips").select("*").eq("id", id).single(),
       supabase
@@ -103,15 +93,6 @@ const TripDetail = () => {
     ]);
 
     if (tripRes.error) {
-      if (tripRes.error.code === "PGRST116") {
-        setTrip(null);
-        setSteps([]);
-        setIsOwner(false);
-        setLoading(false);
-        return;
-      }
-
-      console.error("Failed to fetch trip", tripRes.error);
       setTrip(null);
       setSteps([]);
       setIsOwner(false);
@@ -129,7 +110,7 @@ const TripDetail = () => {
     setTrip(tripRes.data);
     setIsOwner(tripRes.data.user_id === user.id);
     setLoading(false);
-  }, [authLoading, id, user]);
+  }, [id, user]);
 
   const fetchPendingJobs = useCallback(async () => {
     if (authLoading || !user || !id) return;
@@ -143,11 +124,7 @@ const TripDetail = () => {
   }, [authLoading, id, user]);
 
   useEffect(() => {
-    if (authLoading) {
-      setLoading(true);
-      return;
-    }
-
+    if (authLoading) return;
     void fetchData();
     void fetchPendingJobs();
 
@@ -182,9 +159,7 @@ const TripDetail = () => {
           const newStatus = (payload.new as { status: string }).status;
           if (newStatus === "complete" || newStatus === "failed") {
             void fetchPendingJobs();
-            if (newStatus === "complete") {
-              void fetchData();
-            }
+            if (newStatus === "complete") void fetchData();
           }
         },
       )
@@ -209,7 +184,7 @@ const TripDetail = () => {
           filter: `trip_id=eq.${id}`,
         },
         () => {
-          void fetchData();
+          void fetchData(); // This will pull the new stops instantly to create the waterfall effect
         },
       )
       .subscribe();
@@ -267,7 +242,12 @@ const TripDetail = () => {
     }
   }, [id, user, steps, fetchData]);
 
-  if (authLoading || loading) return <div className="py-20 text-center text-muted-foreground">Loading...</div>;
+  if (authLoading || loading)
+    return (
+      <div className="py-20 text-center text-muted-foreground flex justify-center">
+        <Loader2 className="h-6 w-6 animate-spin" />
+      </div>
+    );
 
   if (!trip) {
     return (
@@ -358,7 +338,7 @@ const TripDetail = () => {
         </div>
       )}
 
-      {/* Button row — fixed height, never deforms */}
+      {/* Button row */}
       <div className="flex flex-wrap gap-3">
         <button
           onClick={() => {
@@ -422,7 +402,6 @@ const TripDetail = () => {
         )}
       </div>
 
-      {/* Forms render BELOW the button row */}
       {showAddEvent && (
         <AddEventForm
           tripId={trip.id}
@@ -440,7 +419,6 @@ const TripDetail = () => {
           tripId={trip.id}
           onImportComplete={() => {
             void fetchData();
-            // Force the upload box to close immediately after import succeeds
             setShowPhotoImport(false);
             setHasStagedFiles(false);
           }}
@@ -465,15 +443,16 @@ const TripDetail = () => {
 
       {steps.length > 0 ? (
         <div className="flex flex-col">
-          {/* Map Layout fixed - z-0 and relative so it stays behind popups */}
-          <div className="relative z-0 max-h-[40vh] mb-4 h-[35vh] w-full bg-background lg:h-[40vh]">
+          {/* FIX: Strict min-height applied here so the map physically cannot overlap the timeline text */}
+          <div className="relative z-0 min-h-[420px] w-full bg-background mb-4 rounded-xl overflow-hidden shadow-sm border border-border">
             <WorldMap
               ref={mapRef}
               steps={steps}
               singleTrip
               visualTypes={visualTypes}
               activeStepId={activeStepId}
-              className="h-full w-full overflow-hidden rounded-b-2xl"
+              className="absolute inset-0 h-full w-full"
+              style={{ minHeight: "100%", height: "100%" }}
             />
           </div>
 
