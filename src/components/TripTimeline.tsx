@@ -323,8 +323,9 @@ export function TripTimeline({
           const isSelected = selectedIds.has(step.id);
           const isDragOver = overIndex === index && dragIndex !== null && dragIndex !== index;
 
-          // Strict Populating Check: If the AI hasn't written the description yet, show the badge.
-          const isPopulating = !step.description || step.description.trim() === "" || step.description === "null";
+          // FIX: Strict check for completely empty descriptions to prevent the infinite loading badge bug
+          const isPopulating = step.description === null || step.description === undefined || step.description === "";
+
           const hasCoordinates = step.latitude !== 0 && step.longitude !== 0;
           const displayLocation =
             step.location_name && !step.location_name.toLowerCase().includes("unknown")
@@ -421,7 +422,8 @@ export function TripTimeline({
                   )}
                 </div>
 
-                {step.description && !isPopulating && (
+                {/* Only render description if it is NOT populating and NOT exactly 'null' or 'None' string from AI */}
+                {!isPopulating && step.description !== "null" && step.description !== "None" && (
                   <p className="text-sm leading-relaxed text-foreground/80 mt-1">{step.description}</p>
                 )}
                 {step.notes && <p className="text-sm leading-relaxed text-muted-foreground mt-1">{step.notes}</p>}
