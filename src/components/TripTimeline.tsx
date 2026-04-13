@@ -324,8 +324,7 @@ export function TripTimeline({
           const isDragOver = overIndex === index && dragIndex !== null && dragIndex !== index;
 
           // Strict Populating Check: If the AI hasn't written the description yet, show the badge.
-          const isPopulating = !step.description || step.description.trim() === "";
-
+          const isPopulating = !step.description || step.description.trim() === "" || step.description === "null";
           const hasCoordinates = step.latitude !== 0 && step.longitude !== 0;
           const displayLocation =
             step.location_name && !step.location_name.toLowerCase().includes("unknown")
