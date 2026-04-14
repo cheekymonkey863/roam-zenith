@@ -23,6 +23,7 @@ interface ItineraryImportProps {
   tripId: string;
   onImportComplete: () => void;
   onCancel?: () => void;
+  initialFiles?: File[];
 }
 
 async function extractTextFromFile(file: File): Promise<string> {
