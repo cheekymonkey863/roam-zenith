@@ -102,7 +102,7 @@ export default function TripDetail() {
             </div>
 
             <div className="flex items-center gap-2">
-              <EditTripDialog trip={trip} onUpdate={refetchTrip} />
+              <EditTripDialog trip={trip} onUpdated={refetchTrip} />
               <button className="flex items-center gap-2 rounded-xl bg-secondary px-4 py-2.5 text-sm font-medium hover:bg-secondary/80 transition-colors">
                 <Share2 className="h-4 w-4" /> Share
               </button>
@@ -174,7 +174,7 @@ export default function TripDetail() {
         {/* Main Content Area */}
         <div className="space-y-8">
           {activeTab === "timeline" ? (
-            <TripTimeline steps={steps || []} onUpdate={refetchSteps} />
+            <TripTimeline steps={steps || []} onUpdated={refetchSteps} />
           ) : (
             <div className="h-[600px] w-full overflow-hidden rounded-3xl border border-border shadow-card">
               <WorldMap steps={steps || []} singleTrip={true} />
