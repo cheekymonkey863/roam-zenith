@@ -221,20 +221,54 @@ const TripDetail = () => {
     );
   }
 
-  const countries = [...new Set(steps.map((s) => s.country).filter(Boolean))];
+  // --- FIX: Robust Counter Logic ---
+  const uniqueCountries = new Set<string>();
+  const uniqueCities = new Set<string>();
 
-  // FIX: Normalize the city names so "City of Edinburgh, GB" and "Edinburgh" don't inflate the city counter
-  const normalizedCities = new Set(
-    steps
-      .map((s) => {
-        if (!s.location_name) return null;
-        let city = s.location_name.split(",")[0];
-        city = city.replace("City of ", "").trim();
-        return city;
-      })
-      .filter(Boolean),
-  );
-  const displayCityCount = normalizedCities.size;
+  steps.forEach((step) => {
+    // 1. Handle Country
+    if (step.country) {
+      uniqueCountries.add(step.country);
+    } else if (step.location_name) {
+      const locUpper = step.location_name.toUpperCase();
+      if (
+        locUpper.includes("GB") ||
+        locUpper.includes("UK") ||
+        locUpper.includes("SCOTLAND") ||
+        locUpper.includes("UNITED KINGDOM")
+      ) {
+        uniqueCountries.add("United Kingdom");
+      }
+    }
+
+    // 2. Handle City (Normalization)
+    if (step.location_name) {
+      const locLower = step.location_name.toLowerCase();
+      let city = "";
+
+      if (locLower.includes("edinburgh")) {
+        city = "Edinburgh";
+      } else if (locLower.includes("glasgow")) {
+        city = "Glasgow";
+      } else {
+        // Generic fallback to parse "Street, City, CC"
+        const parts = step.location_name.split(",");
+        if (parts.length > 1) {
+          city = parts[parts.length - 2].split("-").pop() || parts[0];
+        } else {
+          city = step.location_name;
+        }
+      }
+
+      if (city) {
+        uniqueCities.add(city.replace(/City of /gi, "").trim());
+      }
+    }
+  });
+
+  const displayCityCount = uniqueCities.size;
+  const displayCountries = Array.from(uniqueCountries);
+  // ----------------------------------
 
   return (
     <div className="flex flex-col gap-8 py-8">
@@ -257,7 +291,7 @@ const TripDetail = () => {
                 {getTripStatusLabel(getTripStatus(trip.start_date, trip.end_date))}
               </span>
               {isOwner && <ShareTripDialog tripId={trip.id} tripTitle={trip.title} />}
-              {isOwner && <EditTripDialog trip={trip} tripCountries={countries} onUpdated={fetchData} />}
+              {isOwner && <EditTripDialog trip={trip} tripCountries={displayCountries} onUpdated={fetchData} />}
               {isOwner && (
                 <DeleteTripDialog
                   tripId={trip.id}
@@ -278,10 +312,10 @@ const TripDetail = () => {
               <Calendar className="h-4 w-4" />
               {formatTripDateRange(trip.start_date, trip.end_date)}
             </span>
-            {countries.length > 0 && (
+            {displayCountries.length > 0 && (
               <span className="flex items-center gap-1.5">
                 <MapPin className="h-4 w-4" />
-                {countries.join(", ")}
+                {displayCountries.join(", ")}
               </span>
             )}
             {displayCityCount > 0 && (
@@ -312,7 +346,7 @@ const TripDetail = () => {
         </div>
       )}
 
-      {/* Button row - Cleaned up and removed the misplaced Clear All button */}
+      {/* Action Buttons */}
       <div className="flex flex-wrap gap-3">
         <button
           onClick={() => {
@@ -407,50 +441,50 @@ const TripDetail = () => {
       )}
 
       {steps.length > 0 ? (
-        <div className="flex flex-col">
-          <div className="relative z-0 min-h-[420px] w-full bg-background mb-4 rounded-xl overflow-hidden shadow-sm border border-border">
-            <WorldMap
-              ref={mapRef}
-              steps={steps}
-              singleTrip
-              visualTypes={visualTypes}
-              activeStepId={activeStepId}
-              className="absolute inset-0 h-full w-full"
-              style={{ minHeight: "100%", height: "100%" }}
-            />
-          </div>
-
-          <AiProgressBanner steps={steps} tripId={trip.id} onCancelled={fetchData} />
-
-          <div className="relative z-10 flex flex-col gap-4 px-4 py-8">
-            {/* FIX: The timeline header now includes the Clear All button directly above the timeline */}
-            <div className="max-w-3xl mx-auto w-full flex justify-between items-center">
-              <h2 className="font-display text-2xl font-semibold text-foreground">Journey Timeline</h2>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={handleClearAllSteps}
-                  className="flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-medium text-destructive bg-destructive/10 hover:bg-destructive/20 transition-colors"
-                >
-                  <Trash2 className="h-4 w-4" />
-                  Clear All Stops
-                </button>
-              </div>
-            </div>
-
-            <div className="max-w-3xl mx-auto w-full">
-              <TripTimeline
+        <div className="relative flex flex-col w-full">
+          {/* FIX: The Sticky Map Section - Stays locked to top while timeline slides underneath */}
+          <div className="sticky top-0 pt-4 pb-4 z-20 w-full bg-background/95 backdrop-blur-md border-b border-border/50 shadow-[0_10px_30px_rgba(0,0,0,0.05)]">
+            <div className="relative z-0 h-[40vh] min-h-[350px] w-full rounded-2xl overflow-hidden shadow-card border border-border">
+              <WorldMap
+                ref={mapRef}
                 steps={steps}
-                onUpdated={fetchData}
+                singleTrip
                 visualTypes={visualTypes}
-                onStepInView={handleStepInView}
+                activeStepId={activeStepId}
+                className="absolute inset-0 h-full w-full"
+                style={{ height: "100%" }}
               />
             </div>
+            <div className="mt-4">
+              <AiProgressBanner steps={steps} tripId={trip.id} onCancelled={fetchData} />
+            </div>
+          </div>
+
+          {/* The Journey Timeline - Z-10 allows it to slide cleanly behind the Z-20 sticky map */}
+          <div className="relative z-10 flex flex-col gap-6 px-4 pt-10 pb-20 w-full max-w-3xl mx-auto">
+            <div className="flex items-center justify-between">
+              <h2 className="font-display text-2xl font-semibold text-foreground">Journey Timeline</h2>
+              <button
+                onClick={handleClearAllSteps}
+                className="flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-medium text-destructive bg-destructive/10 hover:bg-destructive/20 transition-colors"
+              >
+                <Trash2 className="h-4 w-4" />
+                Clear All Stops
+              </button>
+            </div>
+
+            <TripTimeline
+              steps={steps}
+              onUpdated={fetchData}
+              visualTypes={visualTypes}
+              onStepInView={handleStepInView}
+            />
           </div>
         </div>
       ) : (
         <div className="flex flex-col gap-4 mt-8">
           <h2 className="font-display text-2xl font-semibold text-foreground">Journey Timeline</h2>
-          <div className="flex flex-col items-center gap-3 rounded-2xl bg-card p-12 shadow-card text-center">
+          <div className="flex flex-col items-center gap-3 rounded-2xl bg-card p-12 shadow-card text-center border border-border">
             <Navigation className="h-8 w-8 text-muted-foreground/50" />
             <p className="text-muted-foreground">
               No stops yet. Start tracking or import photos to auto-detect locations.
