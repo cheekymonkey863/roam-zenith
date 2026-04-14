@@ -9,7 +9,6 @@ import { useAuth } from "@/hooks/useAuth";
 import { groupLocalFiles, getGroupRepresentativeCoordinates } from "@/lib/stagingGrouping";
 import { resumableUpload } from "@/lib/resumableUpload";
 import { queueVideoAnalysisJob } from "@/lib/videoAnalysisQueue";
-import { buildImportedStepDetails } from "@/lib/placeClassification";
 
 export interface LocalStagedFile {
   id: string;
@@ -53,7 +52,6 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const existingFingerprints = useRef<Set<string> | null>(null);
 
-  // The single, unified master state for the entire direct-upload pipeline
   const [uploadState, setUploadState] = useState<{
     phase: "idle" | "reading" | "uploading" | "finalizing";
     current: number;
@@ -143,9 +141,7 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
     if (skippedCount > 0) toast.info(`Skipped ${skippedCount} duplicate files`);
     if (filtered.length === 0) return;
 
-    // --- PIPELINE START --- //
-    // 1. Read EXIF Data
-    setUploadState({ phase: "reading", current: 0, total: filtered.length, message: "Extracting GPS metadata..." });
+    setUploadState({ phase: "reading", current: 0, total: filtered.length, message: "Reading EXIF data..." });
     const processedFiles: LocalStagedFile[] = [];
 
     for (let i = 0; i < filtered.length; i++) {
@@ -197,10 +193,9 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
       });
 
       setUploadState((p) => ({ ...p, current: i + 1 }));
-      await new Promise((r) => setTimeout(r, 10)); // Yield to browser
+      await new Promise((r) => setTimeout(r, 10));
     }
 
-    // 2. Group Files
     setUploadState({
       phase: "reading",
       current: filtered.length,
@@ -209,7 +204,6 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
     });
     const rawGroups = groupLocalFiles(processedFiles);
 
-    // 3. Upload & Write to Database
     setUploadState({
       phase: "uploading",
       current: 0,
@@ -219,7 +213,6 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
     let completedUploads = 0;
     const allNewStepIds: string[] = [];
 
-    // Setup inheritance tracker
     let lastValidCoords =
       existingSteps.length > 0
         ? {
@@ -229,13 +222,12 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
         : { latitude: 0, longitude: 0 };
 
     for (const group of rawGroups) {
-      // Coordinate Inheritance
       const rawCoords = getGroupRepresentativeCoordinates(group);
       let coords = rawCoords && (rawCoords.latitude !== 0 || rawCoords.longitude !== 0) ? rawCoords : null;
       if (coords) lastValidCoords = coords;
       else coords = lastValidCoords;
 
-      // Quick fallback Nominatim fetch (so it doesn't look terrible for the 10 seconds before AI kicks in)
+      // FIX: Restore the "Place - City, Country" format so the AI can understand it
       let fallbackName = `${coords.latitude.toFixed(4)}°, ${coords.longitude.toFixed(4)}°`;
       try {
         const res = await fetch(
@@ -245,23 +237,18 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
           const data = await res.json();
           const addr = data?.address;
           if (addr) {
-            if (addr.house_number && addr.road)
-              fallbackName = `${addr.house_number} ${addr.road}, ${addr.city || addr.town || ""}`;
-            else
-              fallbackName =
-                addr.amenity ||
-                addr.leisure ||
-                addr.tourism ||
-                addr.shop ||
-                addr.historic ||
-                addr.building ||
-                addr.road ||
-                fallbackName;
+            const place = addr.amenity || addr.leisure || addr.tourism || addr.shop || addr.historic || addr.building;
+            const road = addr.road || addr.pedestrian || addr.path;
+            const city = addr.city || addr.town || addr.village || "";
+            const cc = addr.country_code ? addr.country_code.toUpperCase() : "";
+
+            if (place && city) fallbackName = `${place} - ${city}, ${cc}`;
+            else if (road && city) fallbackName = `${road}, ${city}, ${cc}`;
+            else if (city && cc) fallbackName = `${city}, ${cc}`;
           }
         }
       } catch (e) {}
 
-      // Upload the actual media files for this group
       const uploadedFiles = [];
       for (const f of group.files) {
         const ext = f.fileName.split(".").pop() || "jpg";
@@ -279,9 +266,7 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
         setUploadState((p) => ({ ...p, current: completedUploads }));
       }
 
-      // Create the Step in the database (CRITICAL: is_confirmed: false so AI takes over immediately)
       const earliest = group.earliestDate?.toISOString() ?? new Date().toISOString();
-      const stepDetails = buildImportedStepDetails({ locationName: fallbackName, country: "" });
       const stepId = crypto.randomUUID();
 
       await supabase.from("trip_steps").insert({
@@ -292,13 +277,14 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
         longitude: coords.longitude,
         recorded_at: earliest,
         source: "photo_import",
-        event_type: stepDetails.eventType,
+        event_type: "other",
         is_confirmed: false,
         location_name: fallbackName,
+        // Set description to "null" to ensure the progress bar shows while AI works
+        description: "null",
       });
       allNewStepIds.push(stepId);
 
-      // Attach Photos to the Step
       const photoRows = uploadedFiles.map(({ file, objectName }) => ({
         step_id: stepId,
         user_id: user.id,
@@ -316,7 +302,6 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
       }));
       await supabase.from("step_photos").insert(photoRows);
 
-      // Queue Video Analysis
       for (const { file, objectName } of uploadedFiles) {
         if (file.mimeType.startsWith("video/")) {
           queueVideoAnalysisJob({
@@ -338,13 +323,12 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
       }
     }
 
-    // 4. Trigger AI & Clean Up
-    setUploadState({ phase: "finalizing", current: 0, total: 0, message: "Activating AI verification..." });
+    setUploadState({ phase: "finalizing", current: 0, total: 0, message: "Initiating AI visual recognition..." });
     if (allNewStepIds.length > 0) {
       supabase.functions.invoke("process-trip-steps", { body: { step_ids: allNewStepIds } }).catch(() => {});
     }
 
-    toast.success("Upload complete! AI is finalizing locations on the timeline.");
+    toast.success("Upload complete! AI is finalizing locations.");
     setTimeout(() => {
       onImportComplete();
     }, 1500);
@@ -367,7 +351,6 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
     [handleFiles],
   );
 
-  // If we are processing, show the unified pipeline screen
   if (uploadState.phase !== "idle") {
     const percent = uploadState.total > 0 ? Math.round((uploadState.current / uploadState.total) * 100) : 100;
     return (
@@ -403,7 +386,6 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
     );
   }
 
-  // Initial Dropzone State
   return (
     <div className="relative z-20 w-full bg-background border border-border shadow-xl rounded-2xl p-6 mb-8">
       <div className="flex flex-col gap-3">
