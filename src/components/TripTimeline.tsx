@@ -323,8 +323,12 @@ export function TripTimeline({
           const isSelected = selectedIds.has(step.id);
           const isDragOver = overIndex === index && dragIndex !== null && dragIndex !== index;
 
-          // FIX: Strict check for completely empty descriptions to prevent the infinite loading badge bug
-          const isPopulating = step.description === null || step.description === undefined || step.description === "";
+          // Strict Populating Check
+          const isPopulating =
+            step.description === null ||
+            step.description === undefined ||
+            step.description === "" ||
+            step.description === "null";
 
           const hasCoordinates = step.latitude !== 0 && step.longitude !== 0;
           const displayLocation =
@@ -382,19 +386,34 @@ export function TripTimeline({
                 } ${selectMode ? "cursor-pointer" : ""}`}
                 onClick={selectMode ? () => toggleSelect(step.id) : undefined}
               >
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                  <div>
+                <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+                  <div className="flex-1 min-w-0">
                     <h4 className="font-display text-lg font-semibold text-foreground">{displayLocation}</h4>
                     {step.country && <p className="text-sm text-muted-foreground">{step.country}</p>}
+
+                    {/* The new animated AI Progress Bar for this specific stop */}
+                    {isPopulating ? (
+                      <div className="mt-3 flex flex-col gap-2 bg-primary/5 border border-primary/10 rounded-xl p-3">
+                        <div className="flex items-center gap-2 text-xs font-semibold text-primary">
+                          <Sparkles className="h-3.5 w-3.5 animate-pulse" />
+                          AI is analyzing photos and writing details...
+                        </div>
+                        <div className="h-1.5 w-full overflow-hidden rounded-full bg-primary/10">
+                          <div className="h-full w-full bg-primary/60 animate-pulse rounded-full" />
+                        </div>
+                      </div>
+                    ) : (
+                      step.description !== "null" &&
+                      step.description !== "None" &&
+                      step.description && (
+                        <p className="text-sm leading-relaxed text-foreground/80 mt-2">{step.description}</p>
+                      )
+                    )}
                   </div>
 
+                  {/* Header Actions */}
                   {!selectMode && (
-                    <div className="flex flex-wrap items-center justify-end gap-2">
-                      {isPopulating && (
-                        <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary">
-                          ✨ Populating trip details...
-                        </span>
-                      )}
+                    <div className="flex flex-wrap items-center justify-end gap-2 shrink-0">
                       <span className="shrink-0 rounded-full bg-secondary px-3 py-1 text-xs font-medium text-secondary-foreground">
                         {formatStepDate(step.recorded_at)}
                       </span>
@@ -409,12 +428,7 @@ export function TripTimeline({
                     </div>
                   )}
                   {selectMode && (
-                    <div className="flex flex-wrap items-center justify-end gap-2">
-                      {isPopulating && (
-                        <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary">
-                          ✨ Populating trip details...
-                        </span>
-                      )}
+                    <div className="flex flex-wrap items-center justify-end gap-2 shrink-0">
                       <span className="shrink-0 rounded-full bg-secondary px-3 py-1 text-xs font-medium text-secondary-foreground">
                         {formatStepDate(step.recorded_at)}
                       </span>
@@ -422,10 +436,6 @@ export function TripTimeline({
                   )}
                 </div>
 
-                {/* Only render description if it is NOT populating and NOT exactly 'null' or 'None' string from AI */}
-                {!isPopulating && step.description !== "null" && step.description !== "None" && (
-                  <p className="text-sm leading-relaxed text-foreground/80 mt-1">{step.description}</p>
-                )}
                 {step.notes && <p className="text-sm leading-relaxed text-muted-foreground mt-1">{step.notes}</p>}
 
                 {photos.length > 0 && (
