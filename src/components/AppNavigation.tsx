@@ -29,6 +29,7 @@ export function AppNavigation() {
   const [groupedTrips, setGroupedTrips] = useState<any>({});
   const [expandedYears, setExpandedYears] = useState<Set<string>>(new Set());
   const [expandedMonths, setExpandedMonths] = useState<Set<string>>(new Set());
+  const [showTrips, setShowTrips] = useState(true);
   const [showAddTrip, setShowAddTrip] = useState(false);
   const [tripTitle, setTripTitle] = useState("");
   const [tripStartDate, setTripStartDate] = useState("");
@@ -49,12 +50,22 @@ export function AppNavigation() {
     const grouped: any = {};
     data.forEach((trip) => {
       if (!trip.start_date) return;
-      const d = new Date(trip.start_date);
-      const year = d.getFullYear().toString();
-      const month = MONTHS[d.getMonth()];
-      if (!grouped[year]) grouped[year] = {};
-      if (!grouped[year][month]) grouped[year][month] = [];
-      grouped[year][month].push(trip);
+      const start = new Date(trip.start_date);
+      const end = trip.end_date ? new Date(trip.end_date) : start;
+      // Walk each month from start to end
+      const cursor = new Date(start.getFullYear(), start.getMonth(), 1);
+      const endMonth = new Date(end.getFullYear(), end.getMonth(), 1);
+      while (cursor <= endMonth) {
+        const year = cursor.getFullYear().toString();
+        const month = MONTHS[cursor.getMonth()];
+        if (!grouped[year]) grouped[year] = {};
+        if (!grouped[year][month]) grouped[year][month] = [];
+        // Avoid duplicates
+        if (!grouped[year][month].some((t: any) => t.id === trip.id)) {
+          grouped[year][month].push(trip);
+        }
+        cursor.setMonth(cursor.getMonth() + 1);
+      }
     });
     setGroupedTrips(grouped);
   };
@@ -193,8 +204,15 @@ export function AppNavigation() {
               </button>
             </div>
           )}
-          <div className="flex w-full items-center gap-3 rounded-xl bg-primary/10 p-3 font-display text-sm font-semibold mb-4" style={{ color: "#1e3a5f" }}>Trips TRKD</div>
-          {years.map((year) => (
+          <button
+            onClick={() => setShowTrips(!showTrips)}
+            className="flex w-full items-center gap-3 rounded-xl bg-primary/10 p-3 font-display text-sm font-semibold mb-2 hover:bg-primary/20 transition-colors"
+            style={{ color: "#1e3a5f" }}
+          >
+            Trips TRKD
+            {years.length > 0 && (showTrips ? <ChevronDown className="h-3 w-3 ml-auto" /> : <ChevronRight className="h-3 w-3 ml-auto" />)}
+          </button>
+          {showTrips && years.map((year) => (
             <div key={year} className="mb-2">
               <button
                 onClick={() =>
