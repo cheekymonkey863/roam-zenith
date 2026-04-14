@@ -24,6 +24,13 @@ export function AppNavigation() {
   const [expandedYears, setExpandedYears] = useState<Set<string>>(new Set());
   const [expandedMonths, setExpandedMonths] = useState<Set<string>>(new Set());
   const [showTrips, setShowTrips] = useState(true);
+  const [showCountries, setShowCountries] = useState(false);
+  const [showCities, setShowCities] = useState(false);
+  const [showPlaces, setShowPlaces] = useState(false);
+  const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
+  const [tripsByCountry, setTripsByCountry] = useState<Record<string, { id: string; title: string }[]>>({});
+  const [tripsByCity, setTripsByCity] = useState<Record<string, { id: string; title: string }[]>>({});
+  const [tripsByPlace, setTripsByPlace] = useState<Record<string, { id: string; title: string }[]>>({});
   const [showAddTrip, setShowAddTrip] = useState(false);
   const [tripTitle, setTripTitle] = useState("");
   const [tripStartDate, setTripStartDate] = useState("");
