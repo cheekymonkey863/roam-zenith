@@ -195,6 +195,11 @@ const TripDetail = () => {
   useEffect(() => {
     const importType = searchParams.get("import");
     if (!importType || loading) return;
+    // Consume any pending files from the Add a Trip form
+    const pending = consumePendingImport();
+    if (pending && pending.files.length > 0) {
+      setPendingImportFiles(pending.files);
+    }
     if (importType === "photos") setShowPhotoImport(true);
     else if (importType === "document") setShowDocumentImport(true);
     else if (importType === "inbox") setShowEmailImport(true);
