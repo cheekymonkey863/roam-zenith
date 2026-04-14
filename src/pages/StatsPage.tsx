@@ -36,11 +36,11 @@ const StatsPage = () => {
       </div>
 
       <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-5">
-        <StatCard icon={Globe} label="Countries" value={countries.length} />
-        <StatCard icon={MapPin} label="Cities" value={isResolvingCities && steps.length > 0 ? "…" : cityCount} />
-        <StatCard icon={Route} label="Steps" value={steps.length} />
-        <StatCard icon={Compass} label="Trips" value={trips.length} />
-        <StatCard icon={Calendar} label="Active" value={trips.filter((t) => t.is_active).length} />
+        <StatCard icon={Globe} title="Countries" value={countries.length} />
+        <StatCard icon={MapPin} title="Cities" value={isResolvingCities && steps.length > 0 ? "…" : cityCount} />
+        <StatCard icon={Route} title="Steps" value={steps.length} />
+        <StatCard icon={Compass} title="Trips" value={trips.length} />
+        <StatCard icon={Calendar} title="Active" value={trips.filter((t) => t.is_active).length} />
       </div>
 
       {countries.length > 0 && (
