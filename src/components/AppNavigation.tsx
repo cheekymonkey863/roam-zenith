@@ -42,50 +42,23 @@ export function AppNavigation() {
   const [tripTrackBg, setTripTrackBg] = useState(false);
   const [creating, setCreating] = useState(false);
 
-  const fetchTrips = async () => {
-    if (!user) return;
-    const { data } = await supabase
-      .from("trips")
-      .select("*")
-      .eq("user_id", user.id)
-      .order("start_date", { ascending: false });
-    if (!data) return;
+  // Import preview state
+  const [navImportType, setNavImportType] = useState<"photos" | "document" | "inbox" | null>(null);
+  const [navImportedStops, setNavImportedStops] = useState<PendingStop[]>([]);
+  const [navPendingFiles, setNavPendingFiles] = useState<File[]>([]);
+  const [navExtracting, setNavExtracting] = useState(false);
 
-    const grouped: any = {};
-    data.forEach((trip) => {
-      if (!trip.start_date) return;
-      const start = new Date(trip.start_date);
-      const end = trip.end_date ? new Date(trip.end_date) : start;
-      // Walk each month from start to end
-      const cursor = new Date(start.getFullYear(), start.getMonth(), 1);
-      const endMonth = new Date(end.getFullYear(), end.getMonth(), 1);
-      while (cursor <= endMonth) {
-        const year = cursor.getFullYear().toString();
-        const month = MONTHS[cursor.getMonth()];
-        if (!grouped[year]) grouped[year] = {};
-        if (!grouped[year][month]) grouped[year][month] = [];
-        // Avoid duplicates
-        if (!grouped[year][month].some((t: any) => t.id === trip.id)) {
-          grouped[year][month].push(trip);
-        }
-        cursor.setMonth(cursor.getMonth() + 1);
-      }
-    });
-    setGroupedTrips(grouped);
-  };
+  const navPhotoInputRef = useRef<HTMLInputElement>(null);
+  const navDocInputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    fetchTrips();
-  }, [user]);
-
-  const years = Object.keys(groupedTrips).sort((a, b) => b.localeCompare(a));
-
-  const generateNavTripTitle = (): string => {
-    const countries = parseTripCountriesInput(tripCountries);
-    const countryPart = countries.length > 0 ? countries.join(", ") : "New Trip";
-    if (tripStartDate) {
-      const startFormatted = format(new Date(tripStartDate + "T00:00:00"), "MMM-yy");
-      const endFormatted = tripEndDate ? format(new Date(tripEndDate + "T00:00:00"), "MMM-yy") : startFormatted;
+  const generateNavTripTitle = (countries?: string[], sDate?: string, eDate?: string): string => {
+    const c = countries ?? parseTripCountriesInput(tripCountries);
+    const countryPart = c.length > 0 ? c.join(", ") : "New Trip";
+    const sd = sDate ?? tripStartDate;
+    const ed = eDate ?? tripEndDate;
+    if (sd) {
+      const startFormatted = format(new Date(sd + "T00:00:00"), "MMM-yy");
+      const endFormatted = ed ? format(new Date(ed + "T00:00:00"), "MMM-yy") : startFormatted;
       return startFormatted === endFormatted
         ? `${countryPart} | ${startFormatted}`
         : `${countryPart} | ${startFormatted} - ${endFormatted}`;
@@ -93,12 +66,104 @@ export function AppNavigation() {
     return countryPart;
   };
 
-  const createAndImport = async (importType: "photos" | "document" | "inbox" | null) => {
+  const autoFillNavFromStops = (stops: PendingStop[]) => {
+    const countries = [...new Set(stops.map((s) => s.country).filter(Boolean))];
+    const dates = stops.map((s) => (s.date ? new Date(s.date) : null)).filter(Boolean) as Date[];
+    dates.sort((a, b) => a.getTime() - b.getTime());
+    if (countries.length > 0) setTripCountries(countries.join(", "));
+    if (dates.length > 0) {
+      setTripStartDate(format(dates[0], "yyyy-MM-dd"));
+      setTripEndDate(format(dates[dates.length - 1], "yyyy-MM-dd"));
+    }
+    if (!tripTitle.trim()) {
+      setTripTitle(generateNavTripTitle(
+        countries,
+        dates.length > 0 ? format(dates[0], "yyyy-MM-dd") : "",
+        dates.length > 0 ? format(dates[dates.length - 1], "yyyy-MM-dd") : ""
+      ));
+    }
+  };
+
+  const handleNavPhotoFiles = useCallback(async (files: File[]) => {
+    if (files.length === 0) return;
+    setNavExtracting(true);
+    setNavImportType("photos");
+    setNavPendingFiles(files);
+    try {
+      const result = await processImportedMediaFiles(files);
+      const stops: PendingStop[] = result.steps.map((s) => ({
+        locationName: s.locationName,
+        country: s.country,
+        latitude: s.latitude,
+        longitude: s.longitude,
+        eventType: s.eventType,
+        date: s.earliestDate ? s.earliestDate.toISOString() : null,
+        description: s.description,
+        notes: "",
+      }));
+      setNavImportedStops(stops);
+      autoFillNavFromStops(stops);
+      toast.success(`Found ${stops.length} stops from ${files.length} files`);
+    } catch {
+      toast.error("Failed to extract photo metadata");
+      setNavImportType(null);
+      setNavPendingFiles([]);
+    } finally {
+      setNavExtracting(false);
+    }
+  }, [tripTitle]);
+
+  const handleNavDocFiles = useCallback(async (files: File[]) => {
+    const file = files[0];
+    if (!file) return;
+    setNavExtracting(true);
+    setNavImportType("document");
+    setNavPendingFiles([file]);
+    try {
+      const text = await file.text();
+      if (text.length < 20) {
+        toast.error("Could not extract enough text");
+        setNavExtracting(false);
+        setNavImportType(null);
+        setNavPendingFiles([]);
+        return;
+      }
+      const { data, error } = await supabase.functions.invoke("parse-itinerary", { body: { text } });
+      if (error) throw error;
+      const stops: PendingStop[] = (data?.activities || []).map((a: any) => ({
+        locationName: a.locationName || a.activityName || "Unknown Location",
+        country: [a.city, a.country].filter(Boolean).join(", "),
+        latitude: a.latitude ?? null,
+        longitude: a.longitude ?? null,
+        eventType: a.eventType || "other",
+        date: a.date || null,
+        description: a.description || "",
+        notes: a.notes || "",
+      }));
+      setNavImportedStops(stops);
+      autoFillNavFromStops(stops);
+      if (stops.length === 0) toast.error("No stops extracted");
+      else toast.success(`Found ${stops.length} stops`);
+    } catch {
+      toast.error("Failed to parse document");
+      setNavImportType(null);
+      setNavPendingFiles([]);
+    } finally {
+      setNavExtracting(false);
+    }
+  }, [tripTitle]);
+
+  const clearNavImport = () => {
+    setNavImportType(null);
+    setNavImportedStops([]);
+    setNavPendingFiles([]);
+  };
+
+  const createNavTrip = async () => {
     if (!user) return;
-    const forImport = importType !== null;
-    const finalTitle = tripTitle.trim() || (forImport ? generateNavTripTitle() : "");
-    if (!finalTitle) {
-      toast.error("Please enter a trip name");
+    const finalTitle = tripTitle.trim() || generateNavTripTitle();
+    if (!finalTitle || finalTitle === "New Trip") {
+      toast.error("Please enter a trip name or import data first");
       return;
     }
     setCreating(true);
@@ -117,6 +182,18 @@ export function AppNavigation() {
         .select()
         .single();
       if (error) throw error;
+
+      if (navImportType && navPendingFiles.length > 0) {
+        setPendingImport({
+          type: navImportType,
+          files: navPendingFiles,
+          stops: navImportedStops,
+          countries,
+          startDate: tripStartDate || null,
+          endDate: tripEndDate || null,
+        });
+      }
+
       toast.success("Trip created!");
       setShowAddTrip(false);
       setTripTitle("");
@@ -124,9 +201,10 @@ export function AppNavigation() {
       setTripEndDate("");
       setTripCountries("");
       setTripTrackBg(false);
+      clearNavImport();
       setIsOpen(false);
       fetchTrips();
-      navigate(importType ? `/trip/${data.id}?import=${importType}` : `/trip/${data.id}`);
+      navigate(navImportType ? `/trip/${data.id}?import=${navImportType}` : `/trip/${data.id}`);
     } catch {
       toast.error("Failed to create trip");
     } finally {
