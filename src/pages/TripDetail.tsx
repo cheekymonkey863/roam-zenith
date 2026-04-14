@@ -27,6 +27,7 @@ import { toast } from "sonner";
 
 import { PhotoImport } from "@/components/PhotoImport";
 import { ItineraryImport } from "@/components/ItineraryImport";
+import { consumePendingImport } from "@/lib/pendingImportStore";
 import { WorldMap, type WorldMapHandle } from "@/components/WorldMap";
 import { AddEventForm } from "@/components/AddEventForm";
 import { EditTripDialog } from "@/components/EditTripDialog";
@@ -65,6 +66,7 @@ const TripDetail = () => {
   const [hasStagedFiles, setHasStagedFiles] = useState(false);
   const visualTypes = useStepVisualTypes(steps);
   const mapRef = useRef<WorldMapHandle>(null);
+  const [pendingImportFiles, setPendingImportFiles] = useState<File[]>([]);
 
   const fetchData = useCallback(async () => {
     if (!id || !user) {
@@ -193,6 +195,11 @@ const TripDetail = () => {
   useEffect(() => {
     const importType = searchParams.get("import");
     if (!importType || loading) return;
+    // Consume any pending files from the Add a Trip form
+    const pending = consumePendingImport();
+    if (pending && pending.files.length > 0) {
+      setPendingImportFiles(pending.files);
+    }
     if (importType === "photos") setShowPhotoImport(true);
     else if (importType === "document") setShowDocumentImport(true);
     else if (importType === "inbox") setShowEmailImport(true);
@@ -482,12 +489,14 @@ const TripDetail = () => {
       {showPhotoImport && (
         <PhotoImport
           tripId={trip.id}
+          initialFiles={pendingImportFiles.length > 0 ? pendingImportFiles : undefined}
           onImportComplete={() => {
             void fetchData();
             setShowPhotoImport(false);
             setHasStagedFiles(false);
+            setPendingImportFiles([]);
           }}
-          onCancel={() => setShowPhotoImport(false)}
+          onCancel={() => { setShowPhotoImport(false); setPendingImportFiles([]); }}
           onProgressChange={setImportProgress}
           existingSteps={steps.map((s) => ({
             id: s.id,
@@ -503,7 +512,7 @@ const TripDetail = () => {
       )}
 
       {showDocumentImport && (
-        <ItineraryImport tripId={trip.id} onImportComplete={fetchData} onCancel={() => setShowDocumentImport(false)} />
+        <ItineraryImport tripId={trip.id} initialFiles={pendingImportFiles.length > 0 ? pendingImportFiles : undefined} onImportComplete={() => { fetchData(); setPendingImportFiles([]); }} onCancel={() => { setShowDocumentImport(false); setPendingImportFiles([]); }} />
       )}
 
       {showEmailImport && (

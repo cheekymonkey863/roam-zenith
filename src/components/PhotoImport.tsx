@@ -28,6 +28,7 @@ interface PhotoImportProps {
   tripId: string;
   onImportComplete: () => void;
   onCancel?: () => void;
+  initialFiles?: File[];
   onProgressChange?: (progress: {
     importing: boolean;
     current: number;
@@ -57,7 +58,7 @@ function getDistanceFromLatLonInM(lat1: number, lon1: number, lat2: number, lon2
   return R * c;
 }
 
-export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps = [] }: PhotoImportProps) {
+export function PhotoImport({ tripId, onImportComplete, onCancel, initialFiles, existingSteps = [] }: PhotoImportProps) {
   const { user } = useAuth();
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -96,6 +97,15 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
     }
     loadFingerprints();
   }, [tripId]);
+
+  // Auto-start import if initialFiles are provided
+  const initialFilesProcessed = useRef(false);
+  useEffect(() => {
+    if (initialFiles && initialFiles.length > 0 && !initialFilesProcessed.current && existingFingerprints.current !== null) {
+      initialFilesProcessed.current = true;
+      handleFiles(initialFiles);
+    }
+  }, [initialFiles]);
 
   const generateVideoThumbnail = (file: File): Promise<string | null> => {
     return new Promise((resolve) => {

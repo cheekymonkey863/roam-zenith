@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { FileText, Check, Loader2, X, Pencil, MapPin, Calendar, Clock } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -23,6 +23,7 @@ interface ItineraryImportProps {
   tripId: string;
   onImportComplete: () => void;
   onCancel?: () => void;
+  initialFiles?: File[];
 }
 
 async function extractTextFromFile(file: File): Promise<string> {
@@ -95,7 +96,7 @@ async function extractTextFromDOCX(file: File): Promise<string> {
   return text || "Could not extract text from DOCX. Please try copying and pasting the document text instead.";
 }
 
-export function ItineraryImport({ tripId, onImportComplete, onCancel }: ItineraryImportProps) {
+export function ItineraryImport({ tripId, onImportComplete, onCancel, initialFiles }: ItineraryImportProps) {
   const { user } = useAuth();
   const [dragOver, setDragOver] = useState(false);
   const [processing, setProcessing] = useState(false);
@@ -104,6 +105,7 @@ export function ItineraryImport({ tripId, onImportComplete, onCancel }: Itinerar
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [pasteMode, setPasteMode] = useState(false);
   const [pasteText, setPasteText] = useState("");
+  const initialFilesProcessed = useRef(false);
 
   const parseDocument = useCallback(async (text: string) => {
     setProcessing(true);
@@ -162,6 +164,14 @@ export function ItineraryImport({ tripId, onImportComplete, onCancel }: Itinerar
     },
     [parseDocument],
   );
+
+  // Auto-start import if initialFiles are provided
+  useEffect(() => {
+    if (initialFiles && initialFiles.length > 0 && !initialFilesProcessed.current) {
+      initialFilesProcessed.current = true;
+      handleFiles(Array.from(initialFiles));
+    }
+  }, [initialFiles, handleFiles]);
 
   const handleDrop = useCallback(
     (e: React.DragEvent) => {
