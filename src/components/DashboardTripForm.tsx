@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Plus, ChevronDown, ChevronUp, Image, FileText, Mail } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { parseTripCountriesInput } from "@/lib/tripManagement";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 
@@ -14,6 +15,7 @@ export function DashboardTripForm({ onTripAdded }: { onTripAdded?: () => void })
   const [title, setTitle] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
+  const [countriesText, setCountriesText] = useState("");
   const [trackInBackground, setTrackInBackground] = useState(false);
   const [creating, setCreating] = useState(false);
 
@@ -21,6 +23,7 @@ export function DashboardTripForm({ onTripAdded }: { onTripAdded?: () => void })
     if (!user || !title.trim()) return null;
     setCreating(true);
     try {
+      const countries = parseTripCountriesInput(countriesText);
       const { data, error } = await supabase
         .from("trips")
         .insert({
@@ -29,7 +32,8 @@ export function DashboardTripForm({ onTripAdded }: { onTripAdded?: () => void })
           start_date: startDate || null,
           end_date: endDate || null,
           is_active: trackInBackground,
-        })
+          countries,
+        } as any)
         .select()
         .single();
       if (error) throw error;
@@ -112,6 +116,17 @@ export function DashboardTripForm({ onTripAdded }: { onTripAdded?: () => void })
                 className="rounded-xl border border-border bg-background p-3 text-sm"
               />
             </div>
+          </div>
+          <div className="flex flex-col gap-2">
+            <label className="text-xs font-bold text-muted-foreground uppercase">Countries</label>
+            <input
+              type="text"
+              value={countriesText}
+              onChange={(e) => setCountriesText(e.target.value)}
+              className="rounded-xl border border-border bg-background p-3 text-sm"
+              placeholder="e.g. France, Italy, Spain"
+            />
+            <p className="text-xs text-muted-foreground">Comma-separated list of countries</p>
           </div>
           <div className="flex items-center justify-between py-2">
             <span className="text-sm font-medium">Track in background</span>

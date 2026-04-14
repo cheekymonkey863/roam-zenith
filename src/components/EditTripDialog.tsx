@@ -89,7 +89,8 @@ export function EditTripDialog({ trip, tripCountries = [], onUpdated, trigger }:
         title: title.trim(),
         start_date: startDate || null,
         end_date: endDate || null,
-      })
+        countries: nextCountries,
+      } as any)
       .eq("id", trip.id);
 
     if (error) {
