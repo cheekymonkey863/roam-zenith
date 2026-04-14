@@ -550,7 +550,7 @@ const TripDetail = () => {
             </div>
           </div>
 
-          <div className="relative z-10 flex flex-col gap-6 w-full max-w-3xl mx-auto">
+          <div className="relative z-10 flex flex-col gap-6 w-full max-w-3xl mx-auto pb-[60vh]">
             <div className="flex items-center justify-between px-2">
               <h2 className="font-display text-2xl font-semibold text-foreground">{timelineLabel}</h2>
               <button
