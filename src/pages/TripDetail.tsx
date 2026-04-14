@@ -13,6 +13,7 @@ import {
   Video,
   XCircle,
   Plus,
+  Mail,
 } from "lucide-react";
 import { getTripStatus, getTripStatusLabel, getTripStatusStyle, formatTripDateRange } from "@/lib/tripStatus";
 import { supabase } from "@/integrations/supabase/client";
@@ -20,7 +21,6 @@ import { useAuth } from "@/hooks/useAuth";
 import { useStepVisualTypes } from "@/hooks/useStepVisualTypes";
 import { supabase as supabaseClient } from "@/integrations/supabase/client";
 import { TripTimeline } from "@/components/TripTimeline";
-import { AiProgressBanner } from "@/components/AiProgressBanner";
 import { toast } from "sonner";
 
 import { PhotoImport } from "@/components/PhotoImport";
@@ -48,7 +48,8 @@ const TripDetail = () => {
 
   const [isOwner, setIsOwner] = useState(false);
   const [showPhotoImport, setShowPhotoImport] = useState(false);
-  const [showItineraryImport, setShowItineraryImport] = useState(false);
+  const [showDocumentImport, setShowDocumentImport] = useState(false);
+  const [showEmailImport, setShowEmailImport] = useState(false);
   const [showAddEvent, setShowAddEvent] = useState(false);
   const [activeStepId, setActiveStepId] = useState<string | null>(null);
   const [pendingVideoJobs, setPendingVideoJobs] = useState(0);
@@ -221,12 +222,10 @@ const TripDetail = () => {
     );
   }
 
-  // --- FIX: Robust Counter Logic ---
   const uniqueCountries = new Set<string>();
   const uniqueCities = new Set<string>();
 
   steps.forEach((step) => {
-    // 1. Handle Country
     if (step.country) {
       uniqueCountries.add(step.country);
     } else if (step.location_name) {
@@ -241,7 +240,6 @@ const TripDetail = () => {
       }
     }
 
-    // 2. Handle City (Normalization)
     if (step.location_name) {
       const locLower = step.location_name.toLowerCase();
       let city = "";
@@ -251,7 +249,6 @@ const TripDetail = () => {
       } else if (locLower.includes("glasgow")) {
         city = "Glasgow";
       } else {
-        // Generic fallback to parse "Street, City, CC"
         const parts = step.location_name.split(",");
         if (parts.length > 1) {
           city = parts[parts.length - 2].split("-").pop() || parts[0];
@@ -268,22 +265,28 @@ const TripDetail = () => {
 
   const displayCityCount = uniqueCities.size;
   const displayCountries = Array.from(uniqueCountries);
-  // ----------------------------------
+
+  // We only show "Parsed Activities" or "Trip Stops" depending on context
+  const hasStops = steps.length > 0;
+  // If we are looking at imported stops from an itinerary, we don't really want the "Parsed Activities" label.
+  const timelineLabel = "Journey Timeline";
 
   return (
-    <div className="flex flex-col gap-8 py-8">
+    <div className="flex flex-col gap-8 py-8 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto w-full">
       <div className="flex flex-col gap-4">
         <Link
           to="/"
-          className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
+          className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors w-fit"
         >
           <ArrowLeft className="h-4 w-4" />
           Back to dashboard
         </Link>
 
-        <div className="rounded-2xl bg-gradient-to-br from-primary/15 via-accent/10 to-secondary p-8">
-          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-            <h1 className="font-display text-3xl font-semibold text-foreground md:text-4xl">{trip.title}</h1>
+        <div className="rounded-2xl bg-gradient-to-br from-primary/15 via-accent/10 to-secondary p-6 sm:p-8">
+          <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+            <h1 className="font-display text-3xl sm:text-4xl font-semibold text-foreground break-words">
+              {trip.title}
+            </h1>
             <div className="flex shrink-0 items-center gap-2 self-start">
               <span
                 className={`rounded-full px-3 py-1 text-xs font-medium ${getTripStatusStyle(getTripStatus(trip.start_date, trip.end_date))}`}
@@ -307,20 +310,20 @@ const TripDetail = () => {
             </div>
           </div>
 
-          <div className="mt-4 flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
+          <div className="mt-6 flex flex-wrap items-center gap-x-6 gap-y-3 text-sm text-muted-foreground">
             <span className="flex items-center gap-1.5">
-              <Calendar className="h-4 w-4" />
+              <Calendar className="h-4 w-4 text-primary/70" />
               {formatTripDateRange(trip.start_date, trip.end_date)}
             </span>
             {displayCountries.length > 0 && (
               <span className="flex items-center gap-1.5">
-                <MapPin className="h-4 w-4" />
+                <MapPin className="h-4 w-4 text-primary/70" />
                 {displayCountries.join(", ")}
               </span>
             )}
             {displayCityCount > 0 && (
               <span className="flex items-center gap-1.5">
-                <Route className="h-4 w-4" />
+                <Route className="h-4 w-4 text-primary/70" />
                 {displayCityCount} {displayCityCount === 1 ? "city" : "cities"}
               </span>
             )}
@@ -347,16 +350,17 @@ const TripDetail = () => {
       )}
 
       {/* Action Buttons */}
-      <div className="flex flex-wrap gap-3">
+      <div className="flex flex-wrap gap-3 overflow-x-auto pb-2 scrollbar-hide">
         <button
           onClick={() => {
             setShowAddEvent(!showAddEvent);
             if (!showAddEvent) {
               setShowPhotoImport(false);
-              setShowItineraryImport(false);
+              setShowDocumentImport(false);
+              setShowEmailImport(false);
             }
           }}
-          className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition-colors ${
+          className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition-colors whitespace-nowrap ${
             showAddEvent
               ? "bg-secondary/80 text-secondary-foreground ring-2 ring-primary/20"
               : "bg-secondary text-secondary-foreground hover:bg-secondary/80"
@@ -369,11 +373,12 @@ const TripDetail = () => {
           onClick={() => {
             setShowPhotoImport(!showPhotoImport);
             if (!showPhotoImport) {
-              setShowItineraryImport(false);
+              setShowDocumentImport(false);
               setShowAddEvent(false);
+              setShowEmailImport(false);
             }
           }}
-          className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition-colors ${
+          className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition-colors whitespace-nowrap ${
             showPhotoImport
               ? "bg-secondary/80 text-secondary-foreground ring-2 ring-primary/20"
               : "bg-secondary text-secondary-foreground hover:bg-secondary/80"
@@ -384,20 +389,39 @@ const TripDetail = () => {
         </button>
         <button
           onClick={() => {
-            setShowItineraryImport(!showItineraryImport);
-            if (!showItineraryImport) {
+            setShowDocumentImport(!showDocumentImport);
+            if (!showDocumentImport) {
               setShowPhotoImport(false);
               setShowAddEvent(false);
+              setShowEmailImport(false);
             }
           }}
-          className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition-colors ${
-            showItineraryImport
+          className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition-colors whitespace-nowrap ${
+            showDocumentImport
               ? "bg-secondary/80 text-secondary-foreground ring-2 ring-primary/20"
               : "bg-secondary text-secondary-foreground hover:bg-secondary/80"
           }`}
         >
           <FileText className="h-4 w-4" />
-          Add from Itinerary
+          Add from Document
+        </button>
+        <button
+          onClick={() => {
+            setShowEmailImport(!showEmailImport);
+            if (!showEmailImport) {
+              setShowPhotoImport(false);
+              setShowAddEvent(false);
+              setShowDocumentImport(false);
+            }
+          }}
+          className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition-colors whitespace-nowrap ${
+            showEmailImport
+              ? "bg-secondary/80 text-secondary-foreground ring-2 ring-primary/20"
+              : "bg-secondary text-secondary-foreground hover:bg-secondary/80"
+          }`}
+        >
+          <Mail className="h-4 w-4" />
+          Add from Email
         </button>
       </div>
 
@@ -436,15 +460,33 @@ const TripDetail = () => {
         />
       )}
 
-      {showItineraryImport && (
-        <ItineraryImport tripId={trip.id} onImportComplete={fetchData} onCancel={() => setShowItineraryImport(false)} />
+      {showDocumentImport && (
+        <ItineraryImport tripId={trip.id} onImportComplete={fetchData} onCancel={() => setShowDocumentImport(false)} />
       )}
 
-      {steps.length > 0 ? (
-        <div className="relative flex flex-col w-full">
-          {/* FIX: The Sticky Map Section - Stays locked to top while timeline slides underneath */}
-          <div className="sticky top-0 pt-4 pb-4 z-20 w-full bg-background/95 backdrop-blur-md border-b border-border/50 shadow-[0_10px_30px_rgba(0,0,0,0.05)]">
-            <div className="relative z-0 h-[40vh] min-h-[350px] w-full rounded-2xl overflow-hidden shadow-card border border-border">
+      {/* Placeholder for Email Inbox component (needs to be created later) */}
+      {showEmailImport && (
+        <div className="relative z-20 w-full bg-background border border-border shadow-xl rounded-2xl p-6 mb-8 flex items-center justify-between">
+          <div>
+            <h3 className="font-display text-lg font-semibold text-foreground">Confirmation Inbox</h3>
+            <p className="text-sm text-muted-foreground mt-1">
+              Send booking emails to:{" "}
+              <strong className="text-foreground select-all">add+{trip.id.split("-")[0]}@trips.domain.com</strong>
+            </p>
+          </div>
+          <button
+            onClick={() => setShowEmailImport(false)}
+            className="text-muted-foreground hover:text-foreground p-2 rounded-full hover:bg-secondary transition-colors"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+      )}
+
+      {hasStops ? (
+        <div className="relative flex flex-col w-full gap-8">
+          <div className="sticky top-0 z-30 w-full bg-background/95 backdrop-blur-md pb-4 pt-2 -mx-4 px-4 sm:mx-0 sm:px-0">
+            <div className="relative z-0 h-[35vh] sm:h-[40vh] min-h-[300px] w-full rounded-2xl overflow-hidden shadow-sm border border-border">
               <WorldMap
                 ref={mapRef}
                 steps={steps}
@@ -455,21 +497,18 @@ const TripDetail = () => {
                 style={{ height: "100%" }}
               />
             </div>
-            <div className="mt-4">
-              <AiProgressBanner steps={steps} tripId={trip.id} onCancelled={fetchData} />
-            </div>
           </div>
 
-          {/* The Journey Timeline - Z-10 allows it to slide cleanly behind the Z-20 sticky map */}
-          <div className="relative z-10 flex flex-col gap-6 px-4 pt-10 pb-20 w-full max-w-3xl mx-auto">
-            <div className="flex items-center justify-between">
-              <h2 className="font-display text-2xl font-semibold text-foreground">Journey Timeline</h2>
+          <div className="relative z-10 flex flex-col gap-6 w-full max-w-3xl mx-auto">
+            <div className="flex items-center justify-between px-2">
+              <h2 className="font-display text-2xl font-semibold text-foreground">{timelineLabel}</h2>
               <button
                 onClick={handleClearAllSteps}
-                className="flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-medium text-destructive bg-destructive/10 hover:bg-destructive/20 transition-colors"
+                className="flex items-center gap-1.5 sm:gap-2 rounded-xl px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium text-destructive bg-destructive/10 hover:bg-destructive/20 transition-colors"
               >
                 <Trash2 className="h-4 w-4" />
-                Clear All Stops
+                <span className="hidden sm:inline">Clear All Stops</span>
+                <span className="sm:hidden">Clear All</span>
               </button>
             </div>
 
@@ -483,8 +522,8 @@ const TripDetail = () => {
         </div>
       ) : (
         <div className="flex flex-col gap-4 mt-8">
-          <h2 className="font-display text-2xl font-semibold text-foreground">Journey Timeline</h2>
-          <div className="flex flex-col items-center gap-3 rounded-2xl bg-card p-12 shadow-card text-center border border-border">
+          <h2 className="font-display text-2xl font-semibold text-foreground">{timelineLabel}</h2>
+          <div className="flex flex-col items-center gap-3 rounded-2xl bg-card p-12 shadow-sm border border-border border-dashed text-center">
             <Navigation className="h-8 w-8 text-muted-foreground/50" />
             <p className="text-muted-foreground">
               No stops yet. Start tracking or import photos to auto-detect locations.
