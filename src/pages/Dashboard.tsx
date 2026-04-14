@@ -1,142 +1,115 @@
-import { useEffect, useState } from "react";
-import { useAuth } from "@/hooks/useAuth";
+import { useCallback, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { Upload, FileText, Image, Loader2, X, Plus, ChevronDown, ChevronUp } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { WorldMap } from "@/components/WorldMap";
-import { StatCard } from "@/components/StatCard";
-import { DashboardTripForm } from "@/components/DashboardTripForm";
-import { TripCard } from "@/components/TripCard";
-import { Globe, MapPin, Navigation } from "lucide-react";
-import type { Tables } from "@/integrations/supabase/types";
+import { useAuth } from "@/hooks/useAuth";
+import { Switch } from "@/components/ui/switch";
+import { toast } from "sonner";
+import { buildStoredMediaMetadata } from "@/lib/mediaMetadata"; // Corrected naming
+import { processImportedMediaFiles } from "@/lib/mediaImport";
 
-type Trip = Tables<"trips">;
-type TripStep = Tables<"trip_steps">;
-
-export default function Dashboard() {
+export function DashboardTripForm({ onTripAdded }: { onTripAdded?: () => void }) {
   const { user } = useAuth();
-  const [trips, setTrips] = useState<Trip[]>([]);
-  const [allSteps, setAllSteps] = useState<TripStep[]>([]);
-  const [loading, setLoading] = useState(true);
+  const navigate = useNavigate();
 
-  const fetchData = async () => {
-    if (!user) return;
+  // STAYS CLOSED ON START
+  const [isOpen, setIsOpen] = useState(false);
+  const [title, setTitle] = useState("");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const [trackInBackground, setTrackInBackground] = useState(false);
+  const [creating, setCreating] = useState(false);
+
+  const handleCreate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user || !title.trim()) return;
+    setCreating(true);
 
     try {
-      // Fetch all trips for this user
-      const { data: tripsData, error: tripsError } = await supabase
+      const { data, error } = await supabase
         .from("trips")
-        .select("*")
-        .eq("user_id", user.id)
-        .order("start_date", { ascending: false });
+        .insert({
+          user_id: user.id,
+          title: title.trim(),
+          start_date: startDate || null,
+          end_date: endDate || null,
+          is_active: trackInBackground,
+        })
+        .select()
+        .single();
 
-      if (tripsError) throw tripsError;
-
-      // Fetch all stops/steps for the map and global statistics
-      const { data: stepsData, error: stepsError } = await supabase
-        .from("trip_steps")
-        .select("*")
-        .eq("user_id", user.id);
-
-      if (stepsError) throw stepsError;
-
-      setTrips(tripsData || []);
-      setAllSteps(stepsData || []);
-    } catch (error) {
-      console.error("Error fetching dashboard data:", error);
+      if (error) throw error;
+      toast.success("Trip created!");
+      setIsOpen(false);
+      setTitle("");
+      if (onTripAdded) onTripAdded();
+    } catch (err) {
+      toast.error("Failed to create trip");
     } finally {
-      setLoading(false);
+      setCreating(false);
     }
   };
 
-  useEffect(() => {
-    fetchData();
-
-    // Subscribe to real-time updates for trips and steps
-    const channel = supabase
-      .channel("dashboard-changes")
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "trips", filter: `user_id=eq.${user?.id}` },
-        fetchData,
-      )
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "trip_steps", filter: `user_id=eq.${user?.id}` },
-        fetchData,
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [user]);
-
-  // Calculate unique stats
-  const totalCountries = new Set(allSteps.map((s) => s.country).filter(Boolean)).size;
-
-  // Extract city names from location strings for unique count
-  const totalCities = new Set(
-    allSteps
-      .map((s) => {
-        if (!s.location_name) return null;
-        const parts = s.location_name.split(",");
-        return parts.length > 1 ? parts[parts.length - 2].trim() : parts[0].trim();
-      })
-      .filter(Boolean),
-  ).size;
-
-  if (loading) {
-    return (
-      <div className="flex h-screen items-center justify-center bg-background">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
-      </div>
-    );
-  }
-
   return (
-    <div className="min-h-screen bg-background pb-20 pt-24 px-6 sm:px-10 lg:px-16">
-      <div className="mx-auto max-w-7xl">
-        {/* Header with Logo on the Left */}
-        <div className="flex flex-col items-start justify-start mb-12">
-          <img src="/logo.png" alt="TravelTRKR" className="h-16 w-auto mb-2 object-contain" />
-          <p className="text-muted-foreground text-sm">Track every journey, remember every moment.</p>
+    <div className="rounded-2xl border border-border bg-card shadow-sm">
+      <button
+        type="button"
+        onClick={() => setIsOpen(!isOpen)}
+        className="flex w-full items-center justify-between p-5 hover:bg-secondary/30 transition-colors"
+      >
+        <div className="flex items-center gap-3">
+          <Plus className="h-5 w-5 text-primary" />
+          <span className="font-display font-semibold">Add a New Trip</span>
         </div>
+        {isOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+      </button>
 
-        {/* Create Trip Form (Ensure this component has internal state `isOpen: false`) */}
-        <div className="mb-12">
-          <DashboardTripForm onTripAdded={fetchData} />
-        </div>
-
-        {/* Global Statistics Grid */}
-        <div className="grid grid-cols-1 gap-6 mb-12 sm:grid-cols-3">
-          <StatCard title="Countries" value={totalCountries} icon={Globe} description="Explored across the globe" />
-          <StatCard title="Cities" value={totalCities} icon={MapPin} description="Visited worldwide" />
-          <StatCard title="Trips" value={trips.length} icon={Navigation} description="Recorded adventures" />
-        </div>
-
-        {/* Global Map Section */}
-        <div className="mb-16">
-          <h2 className="font-display text-2xl font-bold text-foreground mb-6">Where You've Been</h2>
-          <div className="overflow-hidden rounded-2xl border border-border shadow-sm">
-            <WorldMap steps={allSteps} singleTrip={false} />
+      {isOpen && (
+        <form onSubmit={handleCreate} className="p-6 border-t border-border flex flex-col gap-6">
+          <div className="flex flex-col gap-2">
+            <label className="text-xs font-bold text-muted-foreground uppercase">Trip Name *</label>
+            <input
+              type="text"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              className="rounded-xl border border-border bg-background p-3 text-sm"
+              placeholder="Summer in Europe"
+              required
+            />
           </div>
-        </div>
-
-        {/* Trips Collection */}
-        <div>
-          <h2 className="font-display text-2xl font-bold text-foreground mb-6">Your Trips</h2>
-          {trips.length === 0 ? (
-            <div className="rounded-2xl border-2 border-dashed border-border p-12 text-center">
-              <p className="text-muted-foreground">You haven't added any trips yet. Start your first journey above!</p>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="flex flex-col gap-2">
+              <label className="text-xs font-bold text-muted-foreground uppercase">Start Date</label>
+              <input
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                className="rounded-xl border border-border bg-background p-3 text-sm"
+              />
             </div>
-          ) : (
-            <div className="grid grid-cols-1 gap-8 md:grid-cols-2 lg:grid-cols-3">
-              {trips.map((trip) => (
-                <TripCard key={trip.id} trip={trip} />
-              ))}
+            <div className="flex flex-col gap-2">
+              <label className="text-xs font-bold text-muted-foreground uppercase">End Date</label>
+              <input
+                type="date"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+                className="rounded-xl border border-border bg-background p-3 text-sm"
+              />
             </div>
-          )}
-        </div>
-      </div>
+          </div>
+          <div className="flex items-center justify-between py-2">
+            <span className="text-sm font-medium">Track in background</span>
+            <Switch checked={trackInBackground} onCheckedChange={setTrackInBackground} />
+          </div>
+          <button
+            type="submit"
+            disabled={creating}
+            className="rounded-xl bg-primary py-3 text-sm font-bold text-primary-foreground hover:bg-primary/90 transition-all disabled:opacity-50"
+          >
+            {creating ? "Creating..." : "Add Trip"}
+          </button>
+        </form>
+      )}
     </div>
   );
 }
