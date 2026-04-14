@@ -131,6 +131,64 @@ export function AppNavigation() {
     setTripsByPlace(toSorted(placeMap));
   };
 
+  useEffect(() => { fetchTrips(); }, [user]);
+
+  const years = Object.keys(groupedTrips).sort((a, b) => b.localeCompare(a));
+
+  const toggleExpanded = (key: string) => {
+    setExpandedItems((prev) => {
+      const n = new Set(prev);
+      n.has(key) ? n.delete(key) : n.add(key);
+      return n;
+    });
+  };
+
+  const renderLocationSection = (
+    label: string,
+    show: boolean,
+    setShow: (v: boolean) => void,
+    data: Record<string, { id: string; title: string }[]>,
+    prefix: string,
+  ) => {
+    const keys = Object.keys(data);
+    return (
+      <>
+        <button
+          onClick={() => setShow(!show)}
+          className="flex w-full items-center gap-3 rounded-xl bg-primary/10 p-3 pl-[40px] font-display text-sm font-semibold mb-2 hover:bg-primary/20 transition-colors"
+          style={{ color: "#1e3a5f" }}
+        >
+          {label}
+          {keys.length > 0 && (show ? <ChevronDown className="h-3 w-3 ml-auto" /> : <ChevronRight className="h-3 w-3 ml-auto" />)}
+        </button>
+        {show && keys.map((key) => (
+          <div key={key} className="mb-1">
+            <button
+              onClick={() => toggleExpanded(`${prefix}-${key}`)}
+              className="flex w-full items-center justify-between pl-[40px] pr-2 py-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <span className="truncate">{key}</span>
+              <span className="flex items-center gap-1 shrink-0">
+                <span className="text-[10px] text-muted-foreground/60">{data[key].length}</span>
+                {expandedItems.has(`${prefix}-${key}`) ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+              </span>
+            </button>
+            {expandedItems.has(`${prefix}-${key}`) && data[key].map((trip) => (
+              <Link
+                key={trip.id}
+                to={`/trip/${trip.id}`}
+                onClick={() => setIsOpen(false)}
+                className="block py-1 pl-[40px] pr-2 text-xs font-medium text-muted-foreground hover:text-primary transition-colors truncate"
+              >
+                {trip.title}
+              </Link>
+            ))}
+          </div>
+        ))}
+      </>
+    );
+  };
+
   const generateNavTripTitle = (countries?: string[], sDate?: string, eDate?: string): string => {
     const c = countries ?? parseTripCountriesInput(tripCountries);
     const countryPart = c.length > 0 ? c.join(", ") : "New Trip";
