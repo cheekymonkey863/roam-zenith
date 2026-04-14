@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Plus, ChevronDown, ChevronUp, Image, FileText, Mail } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { parseTripCountriesInput } from "@/lib/tripManagement";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 
@@ -14,6 +15,7 @@ export function DashboardTripForm({ onTripAdded }: { onTripAdded?: () => void })
   const [title, setTitle] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
+  const [countriesText, setCountriesText] = useState("");
   const [trackInBackground, setTrackInBackground] = useState(false);
   const [creating, setCreating] = useState(false);
 
@@ -21,6 +23,7 @@ export function DashboardTripForm({ onTripAdded }: { onTripAdded?: () => void })
     if (!user || !title.trim()) return null;
     setCreating(true);
     try {
+      const countries = parseTripCountriesInput(countriesText);
       const { data, error } = await supabase
         .from("trips")
         .insert({
@@ -29,7 +32,8 @@ export function DashboardTripForm({ onTripAdded }: { onTripAdded?: () => void })
           start_date: startDate || null,
           end_date: endDate || null,
           is_active: trackInBackground,
-        })
+          countries,
+        } as any)
         .select()
         .single();
       if (error) throw error;
