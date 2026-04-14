@@ -456,7 +456,15 @@ export function TripTimeline({
                   >
                     <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2">
                       <div className="flex-1 min-w-0">
-                        <h4 className="font-display text-lg font-semibold text-foreground">{displayLocation}</h4>
+                        <div className="flex items-center gap-2">
+                          <h4 className="font-display text-lg font-semibold text-foreground">{displayLocation}</h4>
+                          {flightDestination && (
+                            <span className="flex items-center gap-1.5 text-lg font-semibold text-foreground">
+                              <ArrowRightLeft className="h-4 w-4 text-muted-foreground" />
+                              {flightDestination}
+                            </span>
+                          )}
+                        </div>
                         {step.country && !isPopulating && <p className="text-sm text-muted-foreground">{step.country}</p>}
 
                         {isPopulating ? (
@@ -497,7 +505,7 @@ export function TripTimeline({
 
                     {step.notes && <p className="text-sm leading-relaxed text-muted-foreground mt-1">{step.notes}</p>}
 
-                    {photos.length > 0 && (
+                    {photos.length > 0 ? (
                       <div className="mt-3 w-full">
                         <StepMediaGallery
                           photos={photos}
@@ -505,6 +513,10 @@ export function TripTimeline({
                           allSteps={steps.map((s) => ({ id: s.id, location_name: s.location_name }))}
                           onUpdated={onUpdated}
                         />
+                      </div>
+                    ) : (
+                      <div className={`mt-3 flex items-center justify-center rounded-xl ${config.bg}/10 py-6`}>
+                        <StepIcon className={`h-10 w-10 ${config.bg.replace("bg-", "text-")} opacity-40`} />
                       </div>
                     )}
 
