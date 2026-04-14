@@ -57,47 +57,44 @@ export function WebImageSearch({
         return;
       }
 
-      // PlacesService needs a map or an element attached to DOM
-      const mapDiv = document.createElement("div");
-      mapDiv.style.cssText = "width:1px;height:1px;position:absolute;left:-9999px;";
-      document.body.appendChild(mapDiv);
-      const map = new google.maps.Map(mapDiv, {
-        center: { lat: latitude, lng: longitude },
-        zoom: 15,
-      });
-      const service = new google.maps.places.PlacesService(map);
+      const host = document.createElement("div");
+      const service = new google.maps.places.PlacesService(host);
 
-      service.textSearch(
-        {
-          query: searchQuery,
-          location: new google.maps.LatLng(latitude, longitude),
-          radius: 5000,
-        },
-        (results: any[] | null, status: string) => {
-          try { document.body.removeChild(mapDiv); } catch {}
-          if (status !== google.maps.places.PlacesServiceStatus.OK || !results?.length) {
-            setPhotos([]);
-            setLoading(false);
-            return;
-          }
-
-          const allPhotos: PlacePhoto[] = [];
-          for (const result of results.slice(0, 3)) {
-            if (result.photos) {
-              for (const photo of result.photos) {
-                allPhotos.push({
-                  url: photo.getUrl({ maxWidth: 800 }),
-                  attribution: photo.html_attributions?.[0] || "",
-                  width: photo.width || 800,
-                  height: photo.height || 600,
-                });
-              }
+      const results = await new Promise<any[]>((resolve) => {
+        // Add timeout in case callback never fires
+        const timer = setTimeout(() => resolve([]), 10000);
+        service.textSearch(
+          {
+            query: searchQuery,
+            location: new google.maps.LatLng(latitude, longitude),
+            radius: 50000,
+          },
+          (res: any[] | null, status: string) => {
+            clearTimeout(timer);
+            if (status !== "OK" || !res?.length) {
+              resolve([]);
+              return;
             }
+            resolve(res);
           }
-          setPhotos(allPhotos);
-          setLoading(false);
+        );
+      });
+
+      const allPhotos: PlacePhoto[] = [];
+      for (const result of results.slice(0, 3)) {
+        if (result.photos) {
+          for (const photo of result.photos) {
+            allPhotos.push({
+              url: photo.getUrl({ maxWidth: 800 }),
+              attribution: photo.html_attributions?.[0] || "",
+              width: photo.width || 800,
+              height: photo.height || 600,
+            });
+          }
         }
-      );
+      }
+      setPhotos(allPhotos);
+      setLoading(false);
     } catch (err) {
       console.error("Place photo search error:", err);
       toast.error("Failed to search for photos");
