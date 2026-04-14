@@ -1,13 +1,13 @@
 import { Link } from "react-router-dom";
 import { Calendar, MapPin } from "lucide-react";
-import type { Tables } from "@/integrations/supabase/types";
 
-type Trip = Tables<"trips">;
-
-export function TripCard({ trip }: { trip: Trip }) {
+export function TripCard({ trip }: { trip: any }) {
   const startDate = trip.start_date
     ? new Date(trip.start_date).toLocaleDateString("en-US", { month: "short", year: "numeric" })
     : "Dates TBD";
+
+  // Use the image_url if it exists, otherwise use a fallback icon
+  const tripImage = (trip as any).image_url;
 
   return (
     <Link
@@ -15,9 +15,9 @@ export function TripCard({ trip }: { trip: Trip }) {
       className="group relative flex flex-col overflow-hidden rounded-2xl border border-border bg-card transition-all hover:shadow-lg hover:-translate-y-1"
     >
       <div className="aspect-[16/9] w-full bg-muted overflow-hidden">
-        {trip.image_url ? (
+        {tripImage ? (
           <img
-            src={trip.image_url}
+            src={tripImage}
             alt={trip.title}
             className="h-full w-full object-cover transition-transform group-hover:scale-105"
           />
