@@ -198,7 +198,6 @@ paint: { "line-color": color, "line-width": singleTrip ? 3.5 : 2.5, "line-opacit
 
 if (!bounds.isEmpty()) {
 map.fitBounds(bounds, {
-          padding: { top: 60, bottom: 60, left: 60, right: 60 },
           padding: { top: 80, bottom: 80, left: 80, right: 80 },
 maxZoom: singleTrip ? 14 : 12,
 duration: 800,
