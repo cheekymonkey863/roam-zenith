@@ -42,7 +42,7 @@ export default function AuthPage() {
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
       <div className="w-full max-w-md">
         <div className="mb-8 flex flex-col items-center gap-3 text-center">
-          <img src="/logo.png" alt="TravelTRKR" className="h-14 w-auto object-contain" />
+          <img src="/logo.png" alt="TravelTRKR" className="h-[168px] w-auto object-contain" />
           <p className="text-muted-foreground">Track every journey, remember every moment</p>
         </div>
 
