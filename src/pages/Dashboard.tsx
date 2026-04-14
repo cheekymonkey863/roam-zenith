@@ -27,7 +27,11 @@ export default function Dashboard() {
   };
 
   useEffect(() => {
-    fetchData();
+    if (user) {
+      fetchData();
+    } else {
+      setLoading(false);
+    }
   }, [user]);
 
   const totalCountries = new Set(allSteps.map((s) => s.country).filter(Boolean)).size;
