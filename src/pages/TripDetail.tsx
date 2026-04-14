@@ -1,5 +1,6 @@
 import { useParams, Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useEffect, useState, useRef, useCallback } from "react";
+import { format } from "date-fns";
 import {
   ArrowLeft,
   Calendar,
@@ -92,10 +93,38 @@ const TripDetail = () => {
       return;
     }
 
-    if (!stepsRes.error) setSteps(stepsRes.data || []);
+    const stepsData = stepsRes.data || [];
+    const tripData = tripRes.data;
 
-    setTrip(tripRes.data);
-    setIsOwner(tripRes.data.user_id === user.id);
+    // Auto-update trip title if it's a placeholder and we have steps with countries/dates
+    if (tripData.title === "New Trip" && stepsData.length > 0) {
+      const countries = [...new Set(stepsData.map((s: TripStep) => s.country).filter(Boolean))];
+      const dates = stepsData
+        .map((s: TripStep) => new Date(s.recorded_at))
+        .sort((a: Date, b: Date) => a.getTime() - b.getTime());
+      const countryPart = countries.length > 0 ? countries.join(", ") : "New Trip";
+      let newTitle = countryPart;
+      if (dates.length > 0) {
+        const startF = format(dates[0], "MMM-yy");
+        const endF = format(dates[dates.length - 1], "MMM-yy");
+        newTitle = startF === endF ? `${countryPart} | ${startF}` : `${countryPart} | ${startF} - ${endF}`;
+      }
+      if (newTitle !== tripData.title) {
+        await supabase.from("trips").update({ title: newTitle }).eq("id", tripData.id);
+        tripData.title = newTitle;
+      }
+      if (!tripData.start_date && dates.length > 0) {
+        const sd = format(dates[0], "yyyy-MM-dd");
+        const ed = format(dates[dates.length - 1], "yyyy-MM-dd");
+        await supabase.from("trips").update({ start_date: sd, end_date: ed }).eq("id", tripData.id);
+        tripData.start_date = sd;
+        tripData.end_date = ed;
+      }
+    }
+
+    if (!stepsRes.error) setSteps(stepsData);
+    setTrip(tripData);
+    setIsOwner(tripData.user_id === user.id);
     setLoading(false);
   }, [id, user]);
 

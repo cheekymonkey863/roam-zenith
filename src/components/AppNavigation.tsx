@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Menu, X, Plus, ChevronRight, ChevronDown, Image, FileText, Mail } from "lucide-react";
+import { format } from "date-fns";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Switch } from "@/components/ui/switch";
@@ -76,8 +77,27 @@ export function AppNavigation() {
 
   const years = Object.keys(groupedTrips).sort((a, b) => b.localeCompare(a));
 
+  const generateNavTripTitle = (): string => {
+    const countries = parseTripCountriesInput(tripCountries);
+    const countryPart = countries.length > 0 ? countries.join(", ") : "New Trip";
+    if (tripStartDate) {
+      const startFormatted = format(new Date(tripStartDate + "T00:00:00"), "MMM-yy");
+      const endFormatted = tripEndDate ? format(new Date(tripEndDate + "T00:00:00"), "MMM-yy") : startFormatted;
+      return startFormatted === endFormatted
+        ? `${countryPart} | ${startFormatted}`
+        : `${countryPart} | ${startFormatted} - ${endFormatted}`;
+    }
+    return countryPart;
+  };
+
   const createAndImport = async (importType: "photos" | "document" | "inbox" | null) => {
-    if (!user || !tripTitle.trim()) return;
+    if (!user) return;
+    const forImport = importType !== null;
+    const finalTitle = tripTitle.trim() || (forImport ? generateNavTripTitle() : "");
+    if (!finalTitle) {
+      toast.error("Please enter a trip name");
+      return;
+    }
     setCreating(true);
     try {
       const countries = parseTripCountriesInput(tripCountries);
@@ -85,7 +105,7 @@ export function AppNavigation() {
         .from("trips")
         .insert({
           user_id: user.id,
-          title: tripTitle.trim(),
+          title: finalTitle,
           start_date: tripStartDate || null,
           end_date: tripEndDate || null,
           is_active: tripTrackBg,
@@ -147,7 +167,7 @@ export function AppNavigation() {
               <div className="grid grid-cols-3 gap-2">
                 <button
                   type="button"
-                  disabled={creating || !tripTitle.trim()}
+                  disabled={creating}
                   onClick={() => createAndImport("photos")}
                   className="flex flex-col items-center gap-1 rounded-lg border border-border bg-card p-2 text-xs hover:bg-secondary/40 transition-colors disabled:opacity-50"
                 >
@@ -156,7 +176,7 @@ export function AppNavigation() {
                 </button>
                 <button
                   type="button"
-                  disabled={creating || !tripTitle.trim()}
+                  disabled={creating}
                   onClick={() => createAndImport("document")}
                   className="flex flex-col items-center gap-1 rounded-lg border border-border bg-card p-2 text-xs hover:bg-secondary/40 transition-colors disabled:opacity-50"
                 >
@@ -165,7 +185,7 @@ export function AppNavigation() {
                 </button>
                 <button
                   type="button"
-                  disabled={creating || !tripTitle.trim()}
+                  disabled={creating}
                   onClick={() => createAndImport("inbox")}
                   className="flex flex-col items-center gap-1 rounded-lg border border-border bg-card p-2 text-xs hover:bg-secondary/40 transition-colors disabled:opacity-50"
                 >
@@ -178,7 +198,7 @@ export function AppNavigation() {
                 value={tripTitle}
                 onChange={(e) => setTripTitle(e.target.value)}
                 className="rounded-lg border border-border bg-card p-2 text-xs"
-                placeholder="Trip Name *"
+                placeholder="Trip Name (auto-generated if blank)"
               />
               <div className="grid grid-cols-2 gap-2">
                 <input type="date" value={tripStartDate} onChange={(e) => setTripStartDate(e.target.value)} className="rounded-lg border border-border bg-card p-2 text-xs" />
