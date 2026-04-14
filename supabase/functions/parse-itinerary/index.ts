@@ -64,9 +64,13 @@ Deno.serve(async (req) => {
             content: `You parse travel itinerary documents into structured activities. Extract EVERY activity, accommodation, transport, meal, sightseeing stop, and event mentioned.
 
 For each item determine:
-- locationName: specific place name (hotel name, restaurant, landmark, airport, station)
+- locationName: specific place name (hotel name, restaurant, landmark, station)
+  IMPORTANT FOR FLIGHTS: locationName MUST be formatted as "Origin Airport (IATA) → Destination Airport (IATA)"
+  Example: "Edinburgh Airport (EDI) → London Heathrow Airport (LHR)"
+  Example: "São Paulo Guarulhos (GRU) → Madrid Barajas (MAD)"
+  For trains: "Origin Station → Destination Station" (e.g. "London St Pancras → Paris Gare du Nord")
 - country: country name
-- latitude/longitude: your best estimate of coordinates (use your knowledge of the location)
+- latitude/longitude: your best estimate of coordinates (use your knowledge of the location). For flights/trains, use the ARRIVAL/DESTINATION coordinates.
 - eventType: MUST be one of these exact values:
 
   TRANSPORT types (for any movement between places):
