@@ -69,13 +69,13 @@ export function AppNavigation() {
       <div
         className={`fixed top-0 left-0 bottom-0 z-50 w-56 bg-card border-r border-border transition-transform duration-300 ${isOpen ? "translate-x-0" : "-translate-x-full"}`}
       >
-        <div className="flex items-center justify-between p-4 border-b border-border">
+        <div className="flex flex-col items-center p-4 border-b border-border relative">
+          <button onClick={() => setIsOpen(false)} className="absolute top-3 right-3 p-2 hover:bg-secondary rounded-lg">
+            <X className="h-5 w-5" />
+          </button>
           <Link to="/" onClick={() => setIsOpen(false)}>
             <img src="/logo.png" alt="TravelTRKR" className="h-[54px] w-auto" />
           </Link>
-          <button onClick={() => setIsOpen(false)} className="p-2 hover:bg-secondary rounded-lg">
-            <X className="h-5 w-5" />
-          </button>
         </div>
         <div className="p-4 overflow-y-auto h-[calc(100vh-100px)]">
           <button
