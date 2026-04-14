@@ -173,7 +173,7 @@ export function ItineraryImport({ tripId, onImportComplete, onCancel, initialFil
     }
   }, [initialFiles, handleFiles]);
 
-
+  const handleDrop = useCallback(
     (e: React.DragEvent) => {
       e.preventDefault();
       setDragOver(false);
