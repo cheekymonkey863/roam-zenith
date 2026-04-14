@@ -252,9 +252,44 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
 
       if (!targetStepId) {
         targetStepId = crypto.randomUUID();
+
+        let fallbackName = `${coords.latitude.toFixed(4)}°, ${coords.longitude.toFixed(4)}°`;
+        let fallbackCountry = "";
+
+        try {
+          const res = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${coords.latitude}&lon=${coords.longitude}&zoom=18&addressdetails=1`,
+          );
+          if (res.ok) {
+            const data = await res.json();
+            const addr = data?.address;
+            if (addr) {
+              const place = addr.amenity || addr.leisure || addr.tourism || addr.shop || addr.historic || addr.building;
+              const road = addr.road || addr.pedestrian || addr.path;
+              const city = addr.city || addr.town || addr.village || addr.county || "";
+              const state = addr.state || "";
+              const cc = addr.country || (addr.country_code ? addr.country_code.toUpperCase() : "");
+
+              // FIX: Strictly apply formatting for Place (Name) and City/State (Country)
+              if (place) {
+                fallbackName = place;
+                fallbackCountry = [city, state || cc].filter(Boolean).join(", ");
+              } else if (road) {
+                fallbackName = road;
+                fallbackCountry = [city, state || cc].filter(Boolean).join(", ");
+              } else if (city) {
+                fallbackName = city;
+                fallbackCountry = state || cc;
+              } else {
+                fallbackName = "Unknown Location";
+                fallbackCountry = cc;
+              }
+            }
+          }
+        } catch (e) {}
+
         const earliest = group.earliestDate?.toISOString() ?? new Date().toISOString();
 
-        // FIX: Explicitly set location_name to null so the AI does the heavy lifting
         await supabase.from("trip_steps").insert({
           id: targetStepId,
           trip_id: tripId,
@@ -265,8 +300,9 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
           source: "photo_import",
           event_type: "other",
           is_confirmed: false,
-          location_name: null,
-          description: null,
+          location_name: fallbackName,
+          country: fallbackCountry || null,
+          description: "null",
         });
 
         allNewStepIds.push(targetStepId);
@@ -274,8 +310,8 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
           id: targetStepId,
           latitude: coords.latitude,
           longitude: coords.longitude,
-          location_name: null,
-          country: null,
+          location_name: fallbackName,
+          country: fallbackCountry || null,
           recorded_at: earliest,
           event_type: "other",
           description: null,
@@ -384,7 +420,6 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
               : `Securing ${uploadState.current} of ${uploadState.total} files in the cloud...`}
           </p>
         )}
-        {/* FIX: Solid loading bar without pulsing */}
         <div className="h-3 w-full max-w-md overflow-hidden rounded-full bg-muted border border-border relative">
           <div
             className={cn(
