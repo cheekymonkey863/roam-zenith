@@ -4,6 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { EditStepDialog } from "@/components/EditStepDialog";
 import { StepMediaGallery } from "@/components/StepMediaGallery";
 import { toast } from "sonner";
+import { WebImageSearch } from "@/components/WebImageSearch";
 import { inferStepVisualType, type StepVisualType } from "@/lib/stepVisuals";
 
 import {
