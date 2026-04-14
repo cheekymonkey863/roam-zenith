@@ -64,17 +64,29 @@ async function extractTextFromFile(file: File): Promise<string> {
     const zip = await JSZip.loadAsync(await file.arrayBuffer());
     const xml = await zip.file("word/document.xml")?.async("string");
     if (!xml) return "";
-    return xml.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+    return xml
+      .replace(/<[^>]+>/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
   }
 
   return file.text();
 }
 
-export function AddEventForm({ tripId, onEventAdded, isOpen, onClose }: AddEventFormProps & { isOpen?: boolean; onClose?: () => void }) {
+export function AddEventForm({
+  tripId,
+  onEventAdded,
+  isOpen,
+  onClose,
+}: AddEventFormProps & { isOpen?: boolean; onClose?: () => void }) {
   const { user } = useAuth();
   const [internalOpen, setInternalOpen] = useState(false);
   const open = isOpen ?? internalOpen;
-  const setOpen = onClose ? (v: boolean) => { if (!v) onClose(); } : setInternalOpen;
+  const setOpen = onClose
+    ? (v: boolean) => {
+        if (!v) onClose();
+      }
+    : setInternalOpen;
   const [saving, setSaving] = useState(false);
   const [parsing, setParsing] = useState(false);
   const [eventType, setEventType] = useState("");
@@ -163,7 +175,10 @@ export function AddEventForm({ tripId, onEventAdded, isOpen, onClose }: AddEvent
           display_name: displayName,
           lat: String(evt.latitude),
           lon: String(evt.longitude),
-          address: { country: evt.country || "" },
+          address: {
+            city: evt.city || "",
+            country: evt.country || "",
+          },
         });
       }
 
@@ -188,11 +203,32 @@ export function AddEventForm({ tripId, onEventAdded, isOpen, onClose }: AddEvent
       return;
     }
     if (!activityName.trim()) {
-      toast.error("Please enter an activity name");
+      toast.error("Please enter a place name");
       return;
     }
 
     setSaving(true);
+
+    // FIX: Extract City, State/Country cleanly from the selected place object
+    let formattedCountry = null;
+    if (places.selectedPlace.address) {
+      const addr = places.selectedPlace.address;
+      const city = addr.city || addr.town || addr.village || addr.county || "";
+      const state = addr.state || "";
+      const cc = addr.country || (addr.country_code ? addr.country_code.toUpperCase() : "");
+      formattedCountry = [city, state || cc].filter(Boolean).join(", ");
+    } else {
+      // Fallback if the address object isn't perfectly structured
+      const parts = places.selectedPlace.display_name.split(",");
+      if (parts.length >= 3) {
+        formattedCountry = [parts[parts.length - 3].trim(), parts[parts.length - 1].trim()].join(", ");
+      } else if (parts.length > 1) {
+        formattedCountry = parts[parts.length - 1].trim();
+      } else {
+        formattedCountry = places.selectedPlace.display_name;
+      }
+    }
+
     const { data, error } = await supabase
       .from("trip_steps")
       .insert({
@@ -200,23 +236,24 @@ export function AddEventForm({ tripId, onEventAdded, isOpen, onClose }: AddEvent
         user_id: user.id,
         latitude: parseFloat(places.selectedPlace.lat),
         longitude: parseFloat(places.selectedPlace.lon),
-        location_name: activityName.trim(),
-        country: places.selectedPlace.address?.country || null,
+        location_name: activityName.trim(), // Enforces Place Title
+        country: formattedCountry, // Enforces City, Country Subtitle
         description: description.trim() || null,
         notes: notes.trim() || null,
         recorded_at: new Date(date).toISOString(),
         source: "manual",
         event_type: eventType,
+        is_confirmed: true, // It's manual, so no AI override needed
       })
       .select()
       .single();
 
     if (error || !data) {
-      toast.error("Failed to add activity");
+      toast.error("Failed to add stop");
       console.error(error);
     } else {
       await uploadPhotosForStep(data.id);
-      toast.success("Activity added!");
+      toast.success("Stop added successfully!");
       resetForm();
       setOpen(false);
       onEventAdded();
@@ -226,7 +263,6 @@ export function AddEventForm({ tripId, onEventAdded, isOpen, onClose }: AddEvent
   };
 
   if (!open) {
-    // If externally controlled, don't render anything when closed
     if (isOpen !== undefined) return null;
     return (
       <button
@@ -272,11 +308,11 @@ export function AddEventForm({ tripId, onEventAdded, isOpen, onClose }: AddEvent
           >
             {parsing ? (
               <>
-                <Loader2 className="h-4 w-4 animate-spin" /> Parsing confirmation...
+                <Loader2 className="h-4 w-4 animate-spin" /> Parsing document...
               </>
             ) : (
               <>
-                <FileUp className="h-4 w-4" /> Import from Confirmation
+                <FileUp className="h-4 w-4" /> Import from Document
               </>
             )}
           </button>
@@ -288,30 +324,19 @@ export function AddEventForm({ tripId, onEventAdded, isOpen, onClose }: AddEvent
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <label className="text-sm font-medium text-foreground">Activity Name *</label>
+          <label className="text-sm font-medium text-foreground">Place / Venue Name *</label>
           <input
             type="text"
             value={activityName}
             onChange={(e) => setActivityName(e.target.value)}
-            placeholder="e.g. Visit Eiffel Tower, Lunch at tapas bar"
+            placeholder="e.g. Eiffel Tower, The British Museum"
             className="rounded-xl border border-border bg-background px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
             required
           />
         </div>
 
-        <div className="flex flex-col gap-1.5">
-          <label className="text-sm font-medium text-foreground">Description</label>
-          <textarea
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            placeholder="A short description of this activity..."
-            rows={2}
-            className="resize-none rounded-xl border border-border bg-background px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-          />
-        </div>
-
         <div className="relative flex flex-col gap-1.5" ref={places.resultsRef}>
-          <label className="text-sm font-medium text-foreground">Location *</label>
+          <label className="text-sm font-medium text-foreground">City / Exact Location *</label>
           <div className="relative">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <input
@@ -322,7 +347,7 @@ export function AddEventForm({ tripId, onEventAdded, isOpen, onClose }: AddEvent
                 places.setSelectedPlace(null);
               }}
               onFocus={() => places.results.length > 0 && places.setShowResults(true)}
-              placeholder="Search for a place..."
+              placeholder="Search for a city or address to pin on map..."
               className="w-full rounded-xl border border-border bg-background py-2.5 pl-10 pr-10 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
             />
             {places.searching && (
@@ -367,12 +392,23 @@ export function AddEventForm({ tripId, onEventAdded, isOpen, onClose }: AddEvent
         </div>
 
         <div className="flex flex-col gap-1.5">
+          <label className="text-sm font-medium text-foreground">Description</label>
+          <textarea
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="A short description of this stop..."
+            rows={2}
+            className="resize-none rounded-xl border border-border bg-background px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+          />
+        </div>
+
+        <div className="flex flex-col gap-1.5">
           <label className="text-sm font-medium text-foreground">Notes</label>
           <textarea
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
-            placeholder="Any details about this activity..."
-            rows={3}
+            placeholder="Any details, booking references, etc."
+            rows={2}
             className="resize-none rounded-xl border border-border bg-background px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
           />
         </div>
@@ -388,7 +424,7 @@ export function AddEventForm({ tripId, onEventAdded, isOpen, onClose }: AddEvent
             "Saving..."
           ) : (
             <>
-              {selectedType && <selectedType.icon className="h-4 w-4" />} Add {selectedType?.label || "Event"}
+              {selectedType && <selectedType.icon className="h-4 w-4" />} Add {selectedType?.label || "Stop"}
             </>
           )}
         </button>
