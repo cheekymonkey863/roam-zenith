@@ -146,6 +146,7 @@ export default function AuthPage() {
             Continue with Apple
           </button>
 
+          <p className="text-center text-sm text-muted-foreground">
             {isLogin ? "Don't have an account?" : "Already have an account?"}{" "}
             <button type="button" onClick={() => setIsLogin(!isLogin)} className="font-medium text-primary hover:underline">
               {isLogin ? "Sign up" : "Sign in"}
