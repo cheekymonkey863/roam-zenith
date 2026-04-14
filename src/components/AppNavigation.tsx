@@ -71,7 +71,7 @@ export function AppNavigation() {
       >
         <div className="flex items-center justify-between p-6 border-b border-border">
           <Link to="/" onClick={() => setIsOpen(false)}>
-            <img src="/logo.png" alt="TravelTRKR" className="h-[120px] w-auto mix-blend-multiply dark:mix-blend-screen" />
+            <img src="/logo.png" alt="TravelTRKR" className="h-[120px] w-auto" />
           </Link>
           <button onClick={() => setIsOpen(false)} className="p-2 hover:bg-secondary rounded-lg">
             <X className="h-5 w-5" />
