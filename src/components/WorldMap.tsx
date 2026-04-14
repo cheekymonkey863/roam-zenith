@@ -87,7 +87,6 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
       pitchWithRotate: false,
       dragRotate: false,
       touchPitch: false,
-      // FIX: Prevents the map from duplicating the globe infinitely horizontally
       renderWorldCopies: false,
     });
 
@@ -151,7 +150,6 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
 
       const photoMap = new Map<string, string[]>();
 
-      // FIX: Only fetch photos if we are on a single trip page. Dashboard doesn't need them!
       if (singleTrip && stepIds.length > 0) {
         const { data: photos } = await supabase
           .from("step_photos")
@@ -201,15 +199,40 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
             `;
         } else {
           // --- COMPACT BUBBLE (Dashboard Page) ---
-          // Fallback to splitting the location name if the country column is empty
-          const fallbackCity = step.location_name
-            ? step.location_name.split(",").slice(-2).join(",").trim()
-            : "Unknown";
-          const shortName = step.country || fallbackCity;
+          let cityName = "Location";
+
+          // Smart parser to extract the best City or Place Name (ignoring the Country column)
+          if (step.location_name) {
+            const parts = step.location_name.split(",");
+
+            // If it's a formatted "Place, City, CountryCode", grab the City
+            if (parts.length >= 3) {
+              cityName = parts[parts.length - 2].trim();
+            }
+            // If it's "Place, City", grab the City
+            else if (parts.length === 2) {
+              cityName = parts[1].trim();
+            }
+            // If it's a raw string, use the string (extracting City if separated by a hyphen)
+            else {
+              cityName = parts[0].trim();
+              if (cityName.includes(" - ")) {
+                cityName = cityName.split(" - ").pop()?.trim() || cityName;
+              }
+            }
+
+            // Clean up any known messy prefixes
+            cityName = cityName.replace(/City of /gi, "").trim();
+          }
+
+          // Keep the label clean and prevent massive text bubbles on the dashboard
+          if (cityName.length > 24) {
+            cityName = cityName.substring(0, 24) + "...";
+          }
 
           el.innerHTML = `
-              <div class="bg-card text-foreground text-[10px] font-semibold px-2 py-1 rounded-full shadow border border-border whitespace-nowrap mb-1 opacity-90">
-                ${shortName}
+              <div class="bg-card text-foreground text-[10px] font-semibold px-2 py-1 rounded-full shadow border border-border whitespace-nowrap mb-1 opacity-90 pointer-events-none">
+                ${cityName}
               </div>
               <div class="h-3 w-3 rounded-full border-2 border-white shadow bg-primary"></div>
             `;
