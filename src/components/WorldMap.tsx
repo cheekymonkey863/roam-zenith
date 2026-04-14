@@ -225,11 +225,18 @@ paint: { "line-color": color, "line-width": singleTrip ? 3.5 : 2.5, "line-opacit
           markersRef.current.push(marker);
         });
       } else {
-        // Dashboard: deduplicated city-name labels with photo thumbnails
+        // Dashboard: show only accommodation & activity steps, deduplicated by city, with photo thumbnails
+        const DASHBOARD_ACCOMMODATION = new Set(["hotel", "apartment_flat", "private_home", "villa", "safari", "glamping", "camping", "resort", "ski_lodge", "accommodation"]);
+        const DASHBOARD_ACTIVITY = new Set(["activity", "sightseeing", "tour", "dining", "food", "meeting", "concert", "theatre", "live_show", "wellness", "sport", "other"]);
+        const DASHBOARD_TYPES = new Set([...DASHBOARD_ACCOMMODATION, ...DASHBOARD_ACTIVITY]);
+
+        const relevantSteps = validSteps.filter((s) => DASHBOARD_TYPES.has(s.event_type));
+
         const citySet = new Map<string, { lng: number; lat: number; stepId: string }>();
-        validSteps.forEach((step) => {
+        relevantSteps.forEach((step) => {
           const raw = step.location_name || step.country || "Unknown";
           const parts = raw.split(",").map((p) => p.trim());
+          // Extract city: prefer second-to-last segment (city in "Place, City, Country")
           const cityName = parts.length >= 2 ? parts[parts.length - 2] : parts[0];
           if (!citySet.has(cityName)) {
             citySet.set(cityName, { lng: step.longitude, lat: step.latitude, stepId: step.id });
