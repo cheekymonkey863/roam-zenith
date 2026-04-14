@@ -66,6 +66,7 @@ const TripDetail = () => {
   const [hasStagedFiles, setHasStagedFiles] = useState(false);
   const visualTypes = useStepVisualTypes(steps);
   const mapRef = useRef<WorldMapHandle>(null);
+  const [pendingImportFiles, setPendingImportFiles] = useState<File[]>([]);
 
   const fetchData = useCallback(async () => {
     if (!id || !user) {
