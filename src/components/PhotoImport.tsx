@@ -103,7 +103,9 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, initialFiles, 
   // Auto-start import if initialFiles are provided
   const initialFilesProcessed = useRef(false);
   useEffect(() => {
+    console.log("[PhotoImport] initialFiles effect:", initialFiles?.length ?? 0, "fingerprintsReady:", fingerprintsReady, "processed:", initialFilesProcessed.current);
     if (initialFiles && initialFiles.length > 0 && !initialFilesProcessed.current && fingerprintsReady) {
+      console.log("[PhotoImport] Auto-starting import with", initialFiles.length, "files");
       initialFilesProcessed.current = true;
       handleFiles(initialFiles);
     }
