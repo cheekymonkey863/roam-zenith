@@ -88,10 +88,15 @@ export function StagingInbox({
   onCancel,
   onAddMore,
   existingSteps = [],
+  onProgressChange,
 }: StagingInboxProps) {
   const { user } = useAuth();
   const [importing, setImporting] = useState(false);
-  const [importProgress, setImportProgress] = useState({ current: 0, total: 0 });
+  const [importProgress, setImportProgress] = useState({
+    current: 0,
+    total: 0,
+    phase: "upload" as "upload" | "sorting",
+  });
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [completedGroups, setCompletedGroups] = useState<Set<string>>(new Set());
   const [resolvedNames, setResolvedNames] = useState<Map<string, string>>(new Map());
@@ -105,7 +110,7 @@ export function StagingInbox({
 
     return rawGroups.map((g) => {
       const coords = getGroupRepresentativeCoordinates(g);
-      if (coords && coords.latitude !== 0) {
+      if (coords && (coords.latitude !== 0 || coords.longitude !== 0)) {
         lastValidLat = coords.latitude;
         lastValidLon = coords.longitude;
         return { ...g, latitude: coords.latitude, longitude: coords.longitude };
@@ -115,7 +120,7 @@ export function StagingInbox({
   }, [localFiles, existingSteps]);
 
   useEffect(() => {
-    const toResolve = groups.filter((g) => g.latitude !== 0 && !resolvedNames.has(g.key));
+    const toResolve = groups.filter((g) => (g.latitude !== 0 || g.longitude !== 0) && !resolvedNames.has(g.key));
     if (toResolve.length === 0 || isGeocoding) return;
 
     setIsGeocoding(true);
@@ -132,10 +137,10 @@ export function StagingInbox({
           if (res.ok) {
             const data = await res.json();
             const name = parseNominatimAddress(data);
-            newNames.set(g.key, name || `${g.latitude?.toFixed(4)}, ${g.longitude?.toFixed(4)}`);
+            if (name) newNames.set(g.key, name);
           }
         } catch (e) {
-          newNames.set(g.key, `${g.latitude?.toFixed(4)}, ${g.longitude?.toFixed(4)}`);
+          // silently handle the failed map fetch and rely on fallback coords later
         }
         setResolvedNames(new Map(newNames));
         setGeoProgress({ current: i + 1, total: toResolve.length });
@@ -154,11 +159,36 @@ export function StagingInbox({
     });
   };
 
+  const deleteSelected = () => {
+    if (selectedIds.size === 0) return;
+    onDeleteFiles(Array.from(selectedIds));
+    setSelectedIds(new Set());
+  };
+
+  useEffect(() => {
+    if (!importing) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "Upload in progress. Do not close.";
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [importing]);
+
+  useEffect(() => {
+    onProgressChange?.({
+      importing,
+      current: importProgress.current,
+      total: importProgress.total,
+      phase: importProgress.phase,
+    });
+  }, [importing, importProgress, onProgressChange]);
+
   const importSelected = async () => {
     if (!user) return;
     setImporting(true);
     const selectedGroups = groups;
-    setImportProgress({ current: 0, total: localFiles.length });
+    setImportProgress({ current: 0, total: localFiles.length, phase: "upload" });
 
     try {
       const allNewStepIds: string[] = [];
@@ -173,7 +203,7 @@ export function StagingInbox({
         }
 
         const stepId = crypto.randomUUID();
-        const locName = resolvedNames.get(group.key);
+        const locName = resolvedNames.get(group.key) || null;
         await supabase.from("trip_steps").insert({
           id: stepId,
           trip_id: tripId,
@@ -182,7 +212,7 @@ export function StagingInbox({
           longitude: group.longitude,
           recorded_at: group.earliestDate?.toISOString(),
           location_name: locName,
-          is_confirmed: true,
+          is_confirmed: false,
           source: "photo_import",
         });
         allNewStepIds.push(stepId);
@@ -197,8 +227,30 @@ export function StagingInbox({
           })),
         );
 
+        for (const { file, objectName } of uploadedFiles) {
+          if (file.mimeType.startsWith("video/")) {
+            queueVideoAnalysisJob({
+              captionId: file.id,
+              userId: user.id,
+              tripId,
+              storagePath: objectName,
+              fileName: file.fileName,
+              mimeType: file.mimeType,
+              takenAt: file.takenAt?.toISOString() ?? null,
+              latitude: group.latitude,
+              longitude: group.longitude,
+              locationName: locName || "",
+              country: "",
+              nearbyPlaces: [],
+              itinerarySteps: [],
+            }).catch(() => {});
+          }
+        }
+
         setCompletedGroups((prev) => new Set(prev).add(group.key));
       }
+
+      setImportProgress((p) => ({ ...p, phase: "sorting" }));
       supabase.functions.invoke("process-trip-steps", { body: { step_ids: allNewStepIds } });
       toast.success("Import Secured!");
       setTimeout(onImportComplete, 2000);
@@ -233,12 +285,17 @@ export function StagingInbox({
         {importing && (
           <div className="p-4 bg-primary/5 rounded-xl border border-primary/20">
             <div className="flex justify-between text-sm font-medium mb-2">
-              <span>Securing Media...</span>
-              <span>{Math.round((importProgress.current / importProgress.total) * 100)}%</span>
+              <span className="flex items-center gap-2">
+                <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                {importProgress.phase === "sorting" ? "Sorting stops..." : "Securing Media..."}
+              </span>
+              <span className="font-semibold text-primary">
+                {Math.round((importProgress.current / importProgress.total) * 100)}%
+              </span>
             </div>
             <div className="h-2 w-full bg-gray-200 rounded-full overflow-hidden">
               <div
-                className="h-full bg-blue-600 transition-all"
+                className="h-full bg-primary transition-all"
                 style={{ width: `${(importProgress.current / importProgress.total) * 100}%` }}
               />
             </div>
@@ -246,15 +303,42 @@ export function StagingInbox({
         )}
         <div className="flex justify-between items-center">
           <h3 className="text-xl font-bold">Trip Inbox ({localFiles.length})</h3>
-          <div className="flex gap-2">
-            <button onClick={onAddMore} className="px-4 py-2 bg-secondary rounded-xl text-sm font-medium">
-              Add More
-            </button>
+
+          <div className="flex items-center gap-2">
+            {/* The Restored Delete and Cancel Buttons */}
+            {selectedIds.size > 0 && (
+              <button
+                onClick={deleteSelected}
+                className="flex items-center gap-1.5 rounded-xl bg-destructive/10 px-4 py-2 text-sm font-medium text-destructive hover:bg-destructive/20 transition-colors"
+              >
+                <Trash2 className="h-4 w-4" />
+                Delete ({selectedIds.size})
+              </button>
+            )}
+            {!importing && (
+              <button
+                onClick={onAddMore}
+                className="flex items-center gap-1.5 rounded-xl bg-secondary px-4 py-2 text-sm font-medium text-secondary-foreground hover:bg-secondary/80 transition-colors"
+              >
+                <Upload className="h-4 w-4" />
+                Add More
+              </button>
+            )}
+            {onCancel && !importing && (
+              <button
+                onClick={onCancel}
+                className="flex items-center gap-1.5 rounded-xl bg-secondary px-4 py-2 text-sm font-medium text-secondary-foreground hover:bg-secondary/80 transition-colors"
+              >
+                <X className="h-4 w-4" />
+                Cancel
+              </button>
+            )}
             <button
               onClick={importSelected}
-              disabled={importing}
-              className="px-6 py-2 bg-primary text-white rounded-xl font-bold shadow-lg disabled:opacity-50"
+              disabled={importing || groups.length === 0}
+              className="flex items-center gap-2 rounded-xl bg-primary px-6 py-2.5 text-sm font-semibold text-primary-foreground shadow-lg disabled:opacity-50"
             >
+              {importing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
               {importing ? "Importing..." : "Import Selected"}
             </button>
           </div>
@@ -262,56 +346,62 @@ export function StagingInbox({
       </div>
 
       <div className="flex flex-col gap-4 mt-4">
-        {groups.map((group) => (
-          <div
-            key={group.key}
-            className={cn(
-              "rounded-2xl border-2 p-4 transition-all",
-              completedGroups.has(group.key) ? "border-green-500 bg-green-50" : "border-border bg-card",
-            )}
-          >
-            <div className="flex items-start gap-4">
-              {completedGroups.has(group.key) ? (
-                <CheckCircle2 className="h-6 w-6 text-green-500" />
-              ) : (
-                <MapPin className="h-6 w-6 text-primary" />
+        {groups.map((group) => {
+          // Check for valid location display vs 0.0000 fallback
+          const hasValidCoords = group.latitude !== 0 || group.longitude !== 0;
+          const fallbackDisplay = hasValidCoords
+            ? `${group.latitude?.toFixed(4)}, ${group.longitude?.toFixed(4)}`
+            : "Unknown Location";
+          const displayName = resolvedNames.get(group.key) || fallbackDisplay;
+
+          return (
+            <div
+              key={group.key}
+              className={cn(
+                "rounded-2xl border-2 p-4 transition-all",
+                completedGroups.has(group.key) ? "border-green-500 bg-green-50" : "border-border bg-card",
               )}
-              <div className="flex-1">
-                <div className="flex justify-between items-center mb-3">
-                  <span className="text-lg font-bold">
-                    {resolvedNames.get(group.key) ||
-                      `${group.latitude?.toFixed(4) ?? 0}, ${group.longitude?.toFixed(4) ?? 0}`}
-                  </span>
-                  <span className="text-xs text-muted-foreground">
-                    {group.earliestDate?.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                  </span>
-                </div>
-                <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
-                  {group.files.map((file) => (
-                    <div
-                      key={file.id}
-                      className={cn(
-                        "relative rounded-lg ring-2 transition-all cursor-pointer",
-                        selectedIds.has(file.id) ? "ring-primary" : "ring-transparent",
-                      )}
-                      onClick={() => toggleFileSelection(file.id)}
-                    >
-                      <FileThumbnail file={file} />
+            >
+              <div className="flex items-start gap-4">
+                {completedGroups.has(group.key) ? (
+                  <CheckCircle2 className="h-6 w-6 text-green-500 shrink-0 mt-0.5" />
+                ) : (
+                  <MapPin className="h-6 w-6 text-primary shrink-0 mt-0.5" />
+                )}
+                <div className="flex-1 min-w-0">
+                  <div className="flex justify-between items-center mb-3 gap-4">
+                    <span className="text-lg font-bold truncate">{displayName}</span>
+                    <span className="text-xs text-muted-foreground shrink-0">
+                      {group.earliestDate?.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-2">
+                    {group.files.map((file) => (
                       <div
+                        key={file.id}
                         className={cn(
-                          "absolute top-1 left-1 h-5 w-5 rounded border-2 flex items-center justify-center",
-                          selectedIds.has(file.id) ? "bg-primary border-primary" : "bg-black/20 border-white",
+                          "relative rounded-lg ring-2 transition-all cursor-pointer",
+                          selectedIds.has(file.id) ? "ring-primary" : "ring-transparent",
                         )}
+                        onClick={() => toggleFileSelection(file.id)}
                       >
-                        {selectedIds.has(file.id) && <Check className="h-3 w-3 text-white" />}
+                        <FileThumbnail file={file} />
+                        <div
+                          className={cn(
+                            "absolute top-1 left-1 h-5 w-5 rounded border-2 flex items-center justify-center",
+                            selectedIds.has(file.id) ? "bg-primary border-primary" : "bg-black/20 border-white",
+                          )}
+                        >
+                          {selectedIds.has(file.id) && <Check className="h-3 w-3 text-white" />}
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
