@@ -376,12 +376,21 @@ export function TripTimeline({
 
               const hasCoordinates = step.latitude !== 0 && step.longitude !== 0;
 
-              const displayLocation =
+              const isFlightType = visualType === "flight" || step.event_type === "flight";
+              const rawLocation =
                 step.location_name && !step.location_name.toLowerCase().includes("unknown")
                   ? step.location_name
                   : hasCoordinates
                     ? `${step.latitude.toFixed(4)}°, ${step.longitude.toFixed(4)}°`
                     : "Unknown Location";
+              // For flights, show only origin airport in card title
+              const displayLocation = isFlightType && rawLocation.includes("→")
+                ? rawLocation.split("→")[0].trim()
+                : rawLocation;
+              // For flights, extract destination for subtitle
+              const flightDestination = isFlightType && rawLocation.includes("→")
+                ? rawLocation.split("→")[1].trim()
+                : null;
 
               const isLastInGroup = groupIndex === group.steps.length - 1;
 
