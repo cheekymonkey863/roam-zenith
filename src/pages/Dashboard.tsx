@@ -103,7 +103,7 @@ export default function Dashboard() {
 
         {/* Create Trip Form */}
         <div className="mb-12">
-          <DashboardTripForm onTripAdded={fetchData} />
+          <DashboardTripForm />
         </div>
 
         {/* Global Statistics Grid */}
