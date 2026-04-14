@@ -67,7 +67,7 @@ export default function Dashboard() {
         <h2 className="text-2xl font-bold mb-6">Your Trips</h2>
         <div className="grid grid-cols-1 gap-8 md:grid-cols-2 lg:grid-cols-3">
           {trips.map((trip) => (
-            <TripCard key={trip.id} trip={trip} />
+            <TripCard key={trip.id} trip={trip} allTrips={trips} onUpdated={fetchData} />
           ))}
         </div>
       </div>
