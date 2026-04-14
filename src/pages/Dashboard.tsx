@@ -95,15 +95,15 @@ export default function Dashboard() {
   return (
     <div className="min-h-screen bg-background pb-20 pt-24 px-6 sm:px-10 lg:px-16">
       <div className="mx-auto max-w-7xl">
-        {/* Centered Logo Header */}
-        <div className="flex flex-col items-center justify-center mb-12">
-          <img src="/logo.png" alt="TravelTRKR" className="h-24 w-auto mb-4 object-contain" />
-          <p className="text-muted-foreground text-center max-w-sm">Track every journey, remember every moment.</p>
+        {/* Header with Logo on the Left */}
+        <div className="flex flex-col items-start justify-start mb-12">
+          <img src="/logo.png" alt="TravelTRKR" className="h-16 w-auto mb-2 object-contain" />
+          <p className="text-muted-foreground text-sm">Track every journey, remember every moment.</p>
         </div>
 
-        {/* Create Trip Form */}
+        {/* Create Trip Form (Ensure this component has internal state `isOpen: false`) */}
         <div className="mb-12">
-          <DashboardTripForm />
+          <DashboardTripForm onTripAdded={fetchData} />
         </div>
 
         {/* Global Statistics Grid */}
