@@ -210,9 +210,10 @@ export function AddEventForm({
     setSaving(true);
 
     // FIX: Extract City, State/Country cleanly from the selected place object
+    // Using `as any` to bypass TypeScript's strict interface check for county/country_code
     let formattedCountry = null;
     if (places.selectedPlace.address) {
-      const addr = places.selectedPlace.address;
+      const addr = places.selectedPlace.address as any;
       const city = addr.city || addr.town || addr.village || addr.county || "";
       const state = addr.state || "";
       const cc = addr.country || (addr.country_code ? addr.country_code.toUpperCase() : "");
