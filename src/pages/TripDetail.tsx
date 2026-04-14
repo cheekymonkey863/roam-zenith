@@ -14,6 +14,7 @@ import {
   XCircle,
   Plus,
   Mail,
+  X,
 } from "lucide-react";
 import { getTripStatus, getTripStatusLabel, getTripStatusStyle, formatTripDateRange } from "@/lib/tripStatus";
 import { supabase } from "@/integrations/supabase/client";
@@ -266,9 +267,7 @@ const TripDetail = () => {
   const displayCityCount = uniqueCities.size;
   const displayCountries = Array.from(uniqueCountries);
 
-  // We only show "Parsed Activities" or "Trip Stops" depending on context
   const hasStops = steps.length > 0;
-  // If we are looking at imported stops from an itinerary, we don't really want the "Parsed Activities" label.
   const timelineLabel = "Journey Timeline";
 
   return (
@@ -464,7 +463,6 @@ const TripDetail = () => {
         <ItineraryImport tripId={trip.id} onImportComplete={fetchData} onCancel={() => setShowDocumentImport(false)} />
       )}
 
-      {/* Placeholder for Email Inbox component (needs to be created later) */}
       {showEmailImport && (
         <div className="relative z-20 w-full bg-background border border-border shadow-xl rounded-2xl p-6 mb-8 flex items-center justify-between">
           <div>
