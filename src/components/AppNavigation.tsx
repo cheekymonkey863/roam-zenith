@@ -65,6 +65,41 @@ export function AppNavigation() {
 
   const years = Object.keys(groupedTrips).sort((a, b) => b.localeCompare(a));
 
+  const createAndImport = async (importType: "photos" | "document" | "inbox" | null) => {
+    if (!user || !tripTitle.trim()) return;
+    setCreating(true);
+    try {
+      const countries = parseTripCountriesInput(tripCountries);
+      const { data, error } = await supabase
+        .from("trips")
+        .insert({
+          user_id: user.id,
+          title: tripTitle.trim(),
+          start_date: tripStartDate || null,
+          end_date: tripEndDate || null,
+          is_active: tripTrackBg,
+          countries,
+        } as any)
+        .select()
+        .single();
+      if (error) throw error;
+      toast.success("Trip created!");
+      setShowAddTrip(false);
+      setTripTitle("");
+      setTripStartDate("");
+      setTripEndDate("");
+      setTripCountries("");
+      setTripTrackBg(false);
+      setIsOpen(false);
+      fetchTrips();
+      navigate(importType ? `/trip/${data.id}?import=${importType}` : `/trip/${data.id}`);
+    } catch {
+      toast.error("Failed to create trip");
+    } finally {
+      setCreating(false);
+    }
+  };
+
   return (
     <>
       <button
