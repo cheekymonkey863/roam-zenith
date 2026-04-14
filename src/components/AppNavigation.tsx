@@ -76,11 +76,60 @@ export function AppNavigation() {
       }
     });
     setGroupedTrips(grouped);
+
+    // Fetch steps for location-based groupings
+    const { data: steps } = await supabase
+      .from("trip_steps")
+      .select("trip_id, country, location_name")
+      .eq("user_id", user.id);
+
+    const tripMap = new Map(data.map((t) => [t.id, t.title]));
+    const countryMap: Record<string, Map<string, string>> = {};
+    const cityMap: Record<string, Map<string, string>> = {};
+    const placeMap: Record<string, Map<string, string>> = {};
+
+    (steps || []).forEach((step) => {
+      const tripTitle = tripMap.get(step.trip_id);
+      if (!tripTitle) return;
+
+      // Country
+      if (step.country) {
+        if (!countryMap[step.country]) countryMap[step.country] = new Map();
+        countryMap[step.country].set(step.trip_id, tripTitle);
+      }
+
+      // City & Place from location_name
+      if (step.location_name) {
+        const parts = step.location_name.split(",").map((p) => p.trim()).filter(Boolean);
+        // Place = full location name (first part)
+        const place = parts[0];
+        if (place && !place.toLowerCase().includes("unknown")) {
+          if (!placeMap[place]) placeMap[place] = new Map();
+          placeMap[place].set(step.trip_id, tripTitle);
+        }
+        // City = second-to-last part (or first if only 2 parts)
+        let city = "";
+        if (parts.length >= 3) city = parts[parts.length - 2];
+        else if (parts.length === 2) city = parts[0];
+        if (city && !city.toLowerCase().includes("unknown")) {
+          if (!cityMap[city]) cityMap[city] = new Map();
+          cityMap[city].set(step.trip_id, tripTitle);
+        }
+      }
+    });
+
+    const toSorted = (map: Record<string, Map<string, string>>) => {
+      const result: Record<string, { id: string; title: string }[]> = {};
+      Object.keys(map).sort().forEach((key) => {
+        result[key] = Array.from(map[key].entries()).map(([id, title]) => ({ id, title }));
+      });
+      return result;
+    };
+
+    setTripsByCountry(toSorted(countryMap));
+    setTripsByCity(toSorted(cityMap));
+    setTripsByPlace(toSorted(placeMap));
   };
-
-  useEffect(() => { fetchTrips(); }, [user]);
-
-  const years = Object.keys(groupedTrips).sort((a, b) => b.localeCompare(a));
 
   const generateNavTripTitle = (countries?: string[], sDate?: string, eDate?: string): string => {
     const c = countries ?? parseTripCountriesInput(tripCountries);
