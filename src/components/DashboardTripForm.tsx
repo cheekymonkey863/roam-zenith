@@ -142,8 +142,8 @@ export function DashboardTripForm({ onTripAdded }: { onTripAdded?: () => void })
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               className="rounded-xl border border-border bg-background p-3 text-sm"
-              placeholder="Summer in Europe"
-              required
+              placeholder="Trip Name (auto-generated if importing)"
+            />
             />
           </div>
           <div className="grid grid-cols-2 gap-4">
