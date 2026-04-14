@@ -200,7 +200,7 @@ paint: { "line-color": color, "line-width": singleTrip ? 3.5 : 2.5, "line-opacit
             ${bubble}
           `;
 
-          const marker = new mapboxgl.Marker(el).setLngLat([step.longitude, step.latitude]).addTo(map);
+          const marker = new mapboxgl.Marker({ element: el, anchor: "bottom" }).setLngLat([step.longitude, step.latitude]).addTo(map);
           markersRef.current.push(marker);
         });
       } else {
