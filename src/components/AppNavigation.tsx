@@ -345,7 +345,7 @@ export function AppNavigation() {
           {/* Trips TRKD */}
           <button
             onClick={() => setShowTrips(!showTrips)}
-            className="flex w-full items-center gap-3 rounded-xl bg-primary/10 p-3 font-display text-sm font-semibold mb-2 hover:bg-primary/20 transition-colors"
+            className="flex w-full items-center gap-3 rounded-xl bg-primary/10 p-3 pl-[40px] font-display text-sm font-semibold mb-2 hover:bg-primary/20 transition-colors"
             style={{ color: "#1e3a5f" }}
           >
             Trips TRKD
@@ -359,14 +359,14 @@ export function AppNavigation() {
                   n.has(year) ? n.delete(year) : n.add(year);
                   return n;
                 })}
-                className="flex w-full items-center justify-between p-2 text-sm font-bold hover:bg-secondary rounded-lg transition-colors"
+                className="flex w-full items-center justify-between pl-[40px] pr-2 py-2 text-sm font-bold hover:bg-secondary rounded-lg transition-colors"
               >
                 {year}{" "}
                 {expandedYears.has(year) ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
               </button>
               {expandedYears.has(year) &&
                 Object.keys(groupedTrips[year]).map((month) => (
-                  <div key={month} className="ml-4">
+                  <div key={month}>
                     <button
                       onClick={() => setExpandedMonths((prev) => {
                         const n = new Set(prev);
@@ -374,7 +374,7 @@ export function AppNavigation() {
                         n.has(k) ? n.delete(k) : n.add(k);
                         return n;
                       })}
-                      className="flex w-full items-center justify-between p-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
+                      className="flex w-full items-center justify-between pl-[40px] pr-2 py-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
                     >
                       {month}{" "}
                       {expandedMonths.has(`${year}-${month}`) ? (
@@ -389,7 +389,7 @@ export function AppNavigation() {
                           key={trip.id}
                           to={`/trip/${trip.id}`}
                           onClick={() => setIsOpen(false)}
-                          className="block p-1 pl-4 text-xs font-medium text-muted-foreground hover:text-primary transition-colors truncate"
+                          className="block py-1 pl-[40px] pr-2 text-xs font-medium text-muted-foreground hover:text-primary transition-colors truncate"
                         >
                           {trip.title}
                         </Link>
