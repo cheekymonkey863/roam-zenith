@@ -63,6 +63,7 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, initialFiles, 
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const existingFingerprints = useRef<Set<string> | null>(null);
+  const [fingerprintsReady, setFingerprintsReady] = useState(false);
 
   const [uploadState, setUploadState] = useState<{
     phase: "idle" | "reading" | "uploading" | "finalizing";
@@ -94,6 +95,7 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, initialFiles, 
         }
       }
       existingFingerprints.current = fps;
+      setFingerprintsReady(true);
     }
     loadFingerprints();
   }, [tripId]);
@@ -101,11 +103,11 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, initialFiles, 
   // Auto-start import if initialFiles are provided
   const initialFilesProcessed = useRef(false);
   useEffect(() => {
-    if (initialFiles && initialFiles.length > 0 && !initialFilesProcessed.current && existingFingerprints.current !== null) {
+    if (initialFiles && initialFiles.length > 0 && !initialFilesProcessed.current && fingerprintsReady) {
       initialFilesProcessed.current = true;
       handleFiles(initialFiles);
     }
-  }, [initialFiles]);
+  }, [initialFiles, fingerprintsReady]);
 
   const generateVideoThumbnail = (file: File): Promise<string | null> => {
     return new Promise((resolve) => {
