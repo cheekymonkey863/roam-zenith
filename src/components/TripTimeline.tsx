@@ -86,8 +86,6 @@ function formatStepDate(dateStr: string) {
   });
 }
 
-const VIDEO_EXTENSIONS = new Set(["mp4", "mov", "webm", "mkv", "avi", "m4v", "qt", "3gp"]);
-
 export function TripTimeline({
   steps,
   onUpdated,
@@ -267,7 +265,6 @@ export function TripTimeline({
 
   return (
     <div className="relative w-full">
-      {/* We add the style block for the scanning animation here globally */}
       <style>{`
         @keyframes scan {
           0% { transform: translateX(-100%); }
@@ -334,10 +331,9 @@ export function TripTimeline({
 
           const hasCoordinates = step.latitude !== 0 && step.longitude !== 0;
 
-          // FIX: If it is populating, explicitly hide the generic name.
-          const displayLocation = isPopulating
-            ? "Pinpointing location..."
-            : step.location_name && !step.location_name.toLowerCase().includes("unknown")
+          // FIX: Show the GPS/Map data immediately. Never mask it with "Pinpointing location".
+          const displayLocation =
+            step.location_name && !step.location_name.toLowerCase().includes("unknown")
               ? step.location_name
               : hasCoordinates
                 ? `${step.latitude.toFixed(4)}°, ${step.longitude.toFixed(4)}°`
@@ -402,7 +398,6 @@ export function TripTimeline({
                     <h4 className="font-display text-lg font-semibold text-foreground">{displayLocation}</h4>
                     {step.country && !isPopulating && <p className="text-sm text-muted-foreground">{step.country}</p>}
 
-                    {/* FIX: Simplified scanning progress bar */}
                     {isPopulating ? (
                       <div className="mt-3 flex flex-col gap-2">
                         <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
