@@ -1,263 +1,108 @@
-import { useEffect, useRef, useImperativeHandle, forwardRef, useCallback, type CSSProperties } from "react";
+import { useEffect, useRef } from "react";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
-import type { StepVisualType } from "@/lib/stepVisuals";
-import type { Tables } from "@/integrations/supabase/types";
-import { supabase } from "@/integrations/supabase/client";
+import { Tables } from "@/integrations/supabase/types";
 
 type TripStep = Tables<"trip_steps">;
-
-mapboxgl.accessToken = "pk.eyJ1IjoicnNvdXNhMzE1IiwiYSI6ImNtbmo2Z3lsNDA4ajMyc3M0ZW40a2R5dG8ifQ.VO0pQrXPDmIQWzKbpB3lUg";
-
-const ROUTE_COLOR = "#E74C5E";
-const ROUTE_COLOR_ALT = ["#E74C5E", "#3B82F6", "#10B981", "#F59E0B", "#8B5CF6"];
-
-export interface WorldMapHandle {
-  flyToStep: (step: TripStep) => void;
-  fitAllSteps: () => void;
-  highlightStep: (stepId: string | null) => void;
-}
 
 interface WorldMapProps {
   steps: TripStep[];
   singleTrip?: boolean;
-  visualTypes?: Record<string, StepVisualType>;
-  activeStepId?: string | null;
-  className?: string;
-  style?: CSSProperties;
 }
 
-export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function WorldMap(
-  { steps, singleTrip = false, className, style },
-  ref,
-) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const mapRef = useRef<mapboxgl.Map | null>(null);
-  const stepsRef = useRef<TripStep[]>(steps);
-  const markersRef = useRef<mapboxgl.Marker[]>([]);
-  stepsRef.current = steps;
+export function WorldMap({ steps, singleTrip = false }: WorldMapProps) {
+  const mapContainer = useRef<HTMLDivElement>(null);
+  const map = useRef<mapboxgl.Map | null>(null);
 
-  const flyToStep = useCallback((step: TripStep) => {
-    const map = mapRef.current;
-    if (!map || (step.latitude === 0 && step.longitude === 0)) return;
-    map.flyTo({
-      center: [step.longitude, step.latitude],
-      zoom: Math.max(map.getZoom(), 10),
-      duration: 1200,
-      essential: true,
-    });
-  }, []);
-
-  const fitAllSteps = useCallback(() => {
-    const map = mapRef.current;
-    if (!map || stepsRef.current.length === 0) return;
-    const bounds = new mapboxgl.LngLatBounds();
-    stepsRef.current.forEach((s) => {
-      if (s.latitude !== 0 && s.longitude !== 0) {
-        bounds.extend([s.longitude, s.latitude]);
-      }
-    });
-    if (!bounds.isEmpty()) {
-      map.fitBounds(bounds, { padding: 60, maxZoom: 14, duration: 800 });
-    }
-  }, []);
-
-  const highlightStep = useCallback((_stepId: string | null) => {}, []);
-
-  useImperativeHandle(ref, () => ({ flyToStep, fitAllSteps, highlightStep }), [flyToStep, fitAllSteps, highlightStep]);
+  // Filter out steps that don't have valid coordinates
+  const validSteps = steps.filter(
+    (step) => step.latitude !== null && step.longitude !== null && step.latitude !== 0 && step.longitude !== 0,
+  );
 
   useEffect(() => {
-    if (!containerRef.current) return;
+    if (!mapContainer.current) return;
 
-    if (mapRef.current) {
-      mapRef.current.remove();
-      mapRef.current = null;
-    }
+    // Initialize Mapbox
+    mapboxgl.accessToken = "YOUR_MAPBOX_ACCESS_TOKEN"; // Ensure this is set in your env
 
-    markersRef.current.forEach((marker) => marker.remove());
-    markersRef.current = [];
-
-    const map = new mapboxgl.Map({
-      container: containerRef.current,
-      style: "mapbox://styles/mapbox/satellite-streets-v12",
+    map.current = new mapboxgl.Map({
+      container: mapContainer.current,
+      style: "mapbox://styles/mapbox/dark-v11", // Using dark theme to match your UI
       center: [0, 20],
-      zoom: singleTrip ? 1.8 : 1.0, // Zoomed out more for the dashboard
-      projection: "mercator",
-      attributionControl: false,
-      pitchWithRotate: false,
-      dragRotate: false,
-      touchPitch: false,
-      renderWorldCopies: false,
+      zoom: 1.5,
+      projection: "globe" as any,
     });
 
-    map.addControl(new mapboxgl.NavigationControl({ showCompass: false }), "bottom-right");
-    mapRef.current = map;
+    map.current.addControl(new mapboxgl.NavigationControl(), "bottom-right");
 
-    const resizeObserver = new ResizeObserver(() => {
-      map.resize();
-    });
-    resizeObserver.observe(containerRef.current);
+    map.current.on("style.load", () => {
+      if (!map.current) return;
+      map.current.setFog({}); // Add the atmosphere effect
 
-    map.on("load", async () => {
-      if (steps.length === 0) return;
+      if (validSteps.length > 0) {
+        const bounds = new mapboxgl.LngLatBounds();
 
-      const byTrip = new Map<string, TripStep[]>();
-      steps.forEach((step) => {
-        const tripSteps = byTrip.get(step.trip_id) || [];
-        tripSteps.push(step);
-        byTrip.set(step.trip_id, tripSteps);
-      });
+        validSteps.forEach((step) => {
+          const lng = step.longitude as number;
+          const lat = step.latitude as number;
 
-      const bounds = new mapboxgl.LngLatBounds();
-      let colorIdx = 0;
+          bounds.extend([lng, lat]);
 
-      byTrip.forEach((tripSteps, tripId) => {
-        const color = singleTrip ? ROUTE_COLOR : ROUTE_COLOR_ALT[colorIdx % ROUTE_COLOR_ALT.length];
-        colorIdx += 1;
+          // Create Marker
+          const el = document.createElement("div");
+          el.className = "h-3 w-3 rounded-full bg-primary border-2 border-white shadow-lg";
 
-        const routeCoordinates = tripSteps
-          .filter((step) => step.latitude !== 0 && step.longitude !== 0)
-          .map((step) => [step.longitude, step.latitude] as [number, number]);
+          new mapboxgl.Marker(el)
+            .setLngLat([lng, lat])
+            .setPopup(
+              new mapboxgl.Popup({ offset: 25 }).setHTML(`<p className="font-bold text-sm">${step.location_name}</p>`),
+            )
+            .addTo(map.current!);
+        });
 
-        routeCoordinates.forEach((coordinate) => bounds.extend(coordinate));
-
-        if (routeCoordinates.length > 1) {
-          map.addSource(`route-${tripId}`, {
+        // Add lines between points if it's a single trip
+        if (singleTrip && validSteps.length > 1) {
+          const coordinates = validSteps.map((s) => [s.longitude, s.latitude]);
+          map.current.addSource("route", {
             type: "geojson",
-            data: { type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: routeCoordinates } },
+            data: {
+              type: "Feature",
+              properties: {},
+              geometry: {
+                type: "LineString",
+                coordinates: coordinates as any,
+              },
+            },
           });
 
-          map.addLayer({
-            id: `route-glow-${tripId}`,
+          map.current.addLayer({
+            id: "route",
             type: "line",
-            source: `route-${tripId}`,
+            source: "route",
             layout: { "line-join": "round", "line-cap": "round" },
-            paint: { "line-color": color, "line-width": singleTrip ? 6 : 5, "line-opacity": 0.2, "line-blur": 3 },
-          });
-
-          map.addLayer({
-            id: `route-line-${tripId}`,
-            type: "line",
-            source: `route-${tripId}`,
-            layout: { "line-join": "round", "line-cap": "round" },
-            paint: { "line-color": color, "line-width": singleTrip ? 3.5 : 2.5, "line-opacity": 1 },
+            paint: {
+              "line-color": "#ef4444", // Your primary red
+              "line-width": 2,
+              "line-dasharray": [2, 1],
+            },
           });
         }
-      });
 
-      const validSteps = steps.filter((s) => s.latitude !== 0 && s.longitude !== 0);
-      const stepIds = validSteps.map((s) => s.id);
-
-      const photoMap = new Map<string, string[]>();
-
-      if (singleTrip && stepIds.length > 0) {
-        const { data: photos } = await supabase
-          .from("step_photos")
-          .select("step_id, storage_path")
-          .in("step_id", stepIds);
-
-        if (photos) {
-          for (const photo of photos) {
-            const { data: urlData } = supabase.storage.from("trip-photos").getPublicUrl(photo.storage_path);
-            const list = photoMap.get(photo.step_id) || [];
-            if (list.length < 4) {
-              list.push(urlData.publicUrl);
-            }
-            photoMap.set(photo.step_id, list);
-          }
-        }
-      }
-
-      validSteps.forEach((step) => {
-        const el = document.createElement("div");
-        el.className = "custom-map-marker group relative cursor-pointer flex flex-col items-center";
-
-        if (singleTrip) {
-          // --- DETAILED BUBBLE (Trip Page) - Shows exact Venue Name ---
-          const urls = photoMap.get(step.id) || [];
-          const displayName = step.location_name || "Unknown Location";
-
-          let innerImageHtml = "";
-          if (urls.length === 0) {
-            innerImageHtml = `<div class="h-4 w-4 rounded-full border-2 border-white shadow-lg bg-primary"></div>`;
-          } else if (urls.length === 1) {
-            innerImageHtml = `<img src="${urls[0]}" class="h-10 w-10 rounded-full object-cover border-2 border-white shadow-lg" />`;
-          } else {
-            const gridCells = urls.map((u) => `<img src="${u}" class="h-full w-full object-cover" />`).join("");
-            innerImageHtml = `
-                  <div class="h-12 w-12 rounded-full border-2 border-white shadow-lg overflow-hidden grid grid-cols-2 grid-rows-2 bg-muted">
-                    ${gridCells}
-                  </div>
-               `;
-          }
-
-          el.innerHTML = `
-              <div class="bg-card text-foreground text-xs font-semibold px-3 py-1.5 rounded-full shadow-lg border border-border whitespace-nowrap mb-1">
-                ${displayName}
-              </div>
-              ${innerImageHtml}
-            `;
-        } else {
-          // --- COMPACT BUBBLE (Dashboard Page) - STRICTLY CITY ONLY ---
-          let cityName = "Location";
-
-          if (step.country && step.country.includes(",")) {
-            // If country column is "City, State", grab the City
-            cityName = step.country.split(",")[0].trim();
-          } else if (step.location_name) {
-            // If we have to guess from the location name
-            const parts = step.location_name.split(",");
-            if (parts.length >= 3) {
-              cityName = parts[parts.length - 2].trim();
-            } else if (parts.length === 2) {
-              cityName = parts[0].trim();
-            } else {
-              cityName = parts[0].split("-").pop()?.trim() || parts[0];
-            }
-          }
-
-          // Scrub out words like "Airport" or "City of"
-          cityName = cityName
-            .replace(/City of /gi, "")
-            .replace(/ Airport/gi, "")
-            .trim();
-          if (!cityName) cityName = "Location";
-
-          el.innerHTML = `
-              <div class="bg-card text-foreground text-[10px] font-semibold px-2 py-1 rounded-full shadow border border-border whitespace-nowrap mb-1 opacity-90 pointer-events-none">
-                ${cityName}
-              </div>
-              <div class="h-3 w-3 rounded-full border-2 border-white shadow bg-primary"></div>
-            `;
-        }
-
-        const marker = new mapboxgl.Marker(el).setLngLat([step.longitude, step.latitude]).addTo(map);
-
-        markersRef.current.push(marker);
-      });
-
-      if (!bounds.isEmpty()) {
-        map.fitBounds(bounds, {
-          padding: { top: 80, bottom: 80, left: 80, right: 80 },
-          maxZoom: singleTrip ? 14 : 12,
-          duration: 800,
+        // Fit map to show all pins
+        map.current.fitBounds(bounds, {
+          padding: 50,
+          maxZoom: singleTrip ? 8 : 3,
+          duration: 2000,
         });
       }
     });
 
-    return () => {
-      resizeObserver.disconnect();
-      markersRef.current.forEach((marker) => marker.remove());
-      map.remove();
-      mapRef.current = null;
-    };
+    return () => map.current?.remove();
   }, [steps, singleTrip]);
 
   return (
-    <div
-      ref={containerRef}
-      className={className || "relative z-0 max-h-[40vh] mb-8 w-full overflow-hidden rounded-2xl shadow-card"}
-      style={style || { minHeight: singleTrip ? 420 : 340 }}
-    />
+    <div className="relative h-full w-full">
+      <div ref={mapContainer} className="h-full w-full" />
+    </div>
   );
-});
+}
