@@ -98,7 +98,6 @@ map.resize();
 });
 resizeObserver.observe(containerRef.current);
 
-    map.on("load", () => {
     map.on("load", async () => {
 if (steps.length === 0) return;
 
