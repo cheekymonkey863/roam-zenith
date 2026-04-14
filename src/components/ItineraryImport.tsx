@@ -6,7 +6,7 @@ import { toast } from "sonner";
 
 import { ALL_EVENT_TYPES } from "@/lib/eventTypes";
 
-interface ParsedActivity {
+interface ParsedStop {
   locationName: string;
   country: string;
   latitude: number | null;
@@ -55,9 +55,7 @@ async function extractTextFromPDF(file: File): Promise<string> {
   for (let i = 1; i <= pdf.numPages; i++) {
     const page = await pdf.getPage(i);
     const content = await page.getTextContent();
-    const pageText = content.items
-      .map((item: any) => item.str)
-      .join(" ");
+    const pageText = content.items.map((item: any) => item.str).join(" ");
     textParts.push(pageText);
   }
 
@@ -102,14 +100,14 @@ export function ItineraryImport({ tripId, onImportComplete, onCancel }: Itinerar
   const [dragOver, setDragOver] = useState(false);
   const [processing, setProcessing] = useState(false);
   const [importing, setImporting] = useState(false);
-  const [activities, setActivities] = useState<ParsedActivity[]>([]);
+  const [stops, setStops] = useState<ParsedStop[]>([]);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [pasteMode, setPasteMode] = useState(false);
   const [pasteText, setPasteText] = useState("");
 
   const parseItinerary = useCallback(async (text: string) => {
     setProcessing(true);
-    setActivities([]);
+    setStops([]);
 
     try {
       const { data, error } = await supabase.functions.invoke("parse-itinerary", {
@@ -118,84 +116,95 @@ export function ItineraryImport({ tripId, onImportComplete, onCancel }: Itinerar
 
       if (error) throw error;
 
-      const parsed: ParsedActivity[] = (data?.activities || []).map((a: any) => ({
+      const parsed: ParsedStop[] = (data?.activities || []).map((a: any) => ({
         ...a,
         selected: true,
       }));
 
       if (parsed.length === 0) {
-        toast.error("No activities could be extracted from the document");
+        toast.error("No stops could be extracted from the document");
       } else {
-        toast.success(`Found ${parsed.length} activities`);
+        toast.success(`Found ${parsed.length} stops`);
       }
 
-      setActivities(parsed);
+      setStops(parsed);
     } catch (err: any) {
       console.error("Parse error:", err);
-      toast.error(err?.message || "Failed to parse itinerary");
+      toast.error(err?.message || "Failed to parse document");
     } finally {
       setProcessing(false);
     }
   }, []);
 
-  const handleFiles = useCallback(async (files: File[]) => {
-    const file = files[0];
-    if (!file) return;
+  const handleFiles = useCallback(
+    async (files: File[]) => {
+      const file = files[0];
+      if (!file) return;
 
-    setProcessing(true);
-    toast.info(`Reading ${file.name}...`);
+      setProcessing(true);
+      toast.info(`Reading ${file.name}...`);
 
-    try {
-      const text = await extractTextFromFile(file);
-      if (text.length < 20) {
-        toast.error("Could not extract enough text from the file. Try pasting the text instead.");
+      try {
+        const text = await extractTextFromFile(file);
+        if (text.length < 20) {
+          toast.error("Could not extract enough text from the file. Try pasting the text instead.");
+          setProcessing(false);
+          return;
+        }
+        await parseItinerary(text);
+      } catch (err) {
+        console.error("File read error:", err);
+        toast.error("Failed to read file");
         setProcessing(false);
-        return;
       }
-      await parseItinerary(text);
-    } catch (err) {
-      console.error("File read error:", err);
-      toast.error("Failed to read file");
-      setProcessing(false);
-    }
-  }, [parseItinerary]);
+    },
+    [parseItinerary],
+  );
 
-  const handleDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    setDragOver(false);
-    const files = Array.from(e.dataTransfer.files);
-    handleFiles(files);
-  }, [handleFiles]);
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      setDragOver(false);
+      const files = Array.from(e.dataTransfer.files);
+      handleFiles(files);
+    },
+    [handleFiles],
+  );
 
-  const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []);
-    handleFiles(files);
-  }, [handleFiles]);
+  const handleFileSelect = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const files = Array.from(e.target.files || []);
+      handleFiles(files);
+    },
+    [handleFiles],
+  );
 
   const handlePasteSubmit = useCallback(() => {
     if (pasteText.trim().length < 20) {
-      toast.error("Please paste more itinerary text");
+      toast.error("Please paste more text");
       return;
     }
     parseItinerary(pasteText);
   }, [pasteText, parseItinerary]);
 
-  const toggleActivity = (index: number) => {
-    setActivities((prev) => prev.map((a, i) => (i === index ? { ...a, selected: !a.selected } : a)));
+  const toggleStop = (index: number) => {
+    setStops((prev) => prev.map((s, i) => (i === index ? { ...s, selected: !s.selected } : s)));
   };
 
-  const updateActivity = (index: number, updates: Partial<ParsedActivity>) => {
-    setActivities((prev) => prev.map((a, i) => (i === index ? { ...a, ...updates } : a)));
+  const updateStop = (index: number, updates: Partial<ParsedStop>) => {
+    setStops((prev) => prev.map((s, i) => (i === index ? { ...s, ...updates } : s)));
   };
 
   const importSelected = async () => {
     if (!user) return;
-    const selected = activities.filter((a) => a.selected);
+    const selected = stops.filter((s) => s.selected);
     if (selected.length === 0) return;
 
     setImporting(true);
     try {
-      const rows = selected.map((a) => {
+      const rows = [];
+
+      for (const a of selected) {
         let recordedAt = new Date().toISOString();
         if (a.date) {
           const dateStr = a.time ? `${a.date}T${a.time}:00` : `${a.date}T12:00:00`;
@@ -203,31 +212,53 @@ export function ItineraryImport({ tripId, onImportComplete, onCancel }: Itinerar
           if (!isNaN(d.getTime())) recordedAt = d.toISOString();
         }
 
-        return {
+        let lat = a.latitude || 0;
+        let lon = a.longitude || 0;
+
+        // FIX: If the AI failed to grab coordinates, actively geocode them now so they show up on the map!
+        if (lat === 0 && lon === 0 && (a.locationName || a.country)) {
+          try {
+            const query = encodeURIComponent(`${a.locationName || ""} ${a.country || ""}`.trim());
+            const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${query}&limit=1`);
+            if (res.ok) {
+              const data = await res.json();
+              if (data && data.length > 0) {
+                lat = parseFloat(data[0].lat);
+                lon = parseFloat(data[0].lon);
+              }
+            }
+            // Add a small delay to respect Nominatim API rate limits
+            await new Promise((resolve) => setTimeout(resolve, 1000));
+          } catch (e) {
+            console.error("Geocoding fallback failed", e);
+          }
+        }
+
+        rows.push({
           trip_id: tripId,
           user_id: user.id,
-          location_name: a.locationName,
-          country: a.country,
-          latitude: a.latitude || 0,
-          longitude: a.longitude || 0,
+          location_name: a.locationName, // Enforces Place Title
+          country: a.country, // Enforces City, Country Subtitle
+          latitude: lat,
+          longitude: lon,
           event_type: a.eventType,
           description: a.description,
           notes: a.notes || null,
           recorded_at: recordedAt,
           source: "itinerary_import",
           is_confirmed: true,
-        };
-      });
+        });
+      }
 
       const { error } = await supabase.from("trip_steps").insert(rows);
       if (error) throw error;
 
-      toast.success(`Imported ${rows.length} activities`);
-      setActivities([]);
+      toast.success(`Imported ${rows.length} stops`);
+      setStops([]);
       onImportComplete();
     } catch (err: any) {
       console.error("Import error:", err);
-      toast.error(err?.message || "Failed to import activities");
+      toast.error(err?.message || "Failed to import stops");
     } finally {
       setImporting(false);
     }
@@ -237,11 +268,14 @@ export function ItineraryImport({ tripId, onImportComplete, onCancel }: Itinerar
 
   return (
     <div className="flex flex-col gap-6">
-      {activities.length === 0 && !processing && (
+      {stops.length === 0 && !processing && (
         <div className="flex flex-col gap-3">
           {!pasteMode ? (
             <label
-              onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+              onDragOver={(e) => {
+                e.preventDefault();
+                setDragOver(true);
+              }}
               onDragLeave={() => setDragOver(false)}
               onDrop={handleDrop}
               className={`flex cursor-pointer flex-col items-center gap-4 rounded-2xl border-2 border-dashed p-12 transition-colors ${
@@ -260,10 +294,15 @@ export function ItineraryImport({ tripId, onImportComplete, onCancel }: Itinerar
                 className="hidden"
               />
               <div className="flex items-center gap-3">
-                <span className="rounded-xl bg-primary px-4 py-2 text-sm font-medium text-primary-foreground">Browse Files</span>
+                <span className="rounded-xl bg-primary px-4 py-2 text-sm font-medium text-primary-foreground">
+                  Browse Files
+                </span>
                 <button
                   type="button"
-                  onClick={(e) => { e.preventDefault(); setPasteMode(true); }}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    setPasteMode(true);
+                  }}
                   className="rounded-xl bg-secondary px-4 py-2 text-sm font-medium text-secondary-foreground hover:bg-secondary/80 transition-colors"
                 >
                   Paste Text
@@ -281,7 +320,10 @@ export function ItineraryImport({ tripId, onImportComplete, onCancel }: Itinerar
               />
               <div className="flex items-center gap-2 self-end">
                 <button
-                  onClick={() => { setPasteMode(false); setPasteText(""); }}
+                  onClick={() => {
+                    setPasteMode(false);
+                    setPasteText("");
+                  }}
                   className="rounded-xl bg-secondary px-4 py-2 text-sm font-medium text-secondary-foreground hover:bg-secondary/80 transition-colors"
                 >
                   Back
@@ -291,14 +333,17 @@ export function ItineraryImport({ tripId, onImportComplete, onCancel }: Itinerar
                   disabled={pasteText.trim().length < 20}
                   className="rounded-xl bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
                 >
-                  Parse Itinerary
+                  Parse Document
                 </button>
               </div>
             </div>
           )}
 
           {onCancel && (
-            <button onClick={onCancel} className="self-end flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
+            <button
+              onClick={onCancel}
+              className="self-end flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+            >
               <X className="h-4 w-4" />
               Cancel
             </button>
@@ -309,26 +354,29 @@ export function ItineraryImport({ tripId, onImportComplete, onCancel }: Itinerar
       {processing && (
         <div className="flex flex-col items-center gap-3 rounded-2xl bg-card p-8 shadow-card">
           <Loader2 className="h-8 w-8 animate-spin text-primary" />
-          <p className="text-sm text-muted-foreground">Parsing your itinerary with AI...</p>
+          <p className="text-sm text-muted-foreground">Parsing your document with AI...</p>
         </div>
       )}
 
-      {activities.length > 0 && (
+      {stops.length > 0 && (
         <div className="flex flex-col gap-4">
           <div className="flex items-center justify-between">
             <h3 className="font-display text-lg font-semibold text-foreground">
-              Parsed Activities ({activities.filter((a) => a.selected).length}/{activities.length})
+              Trip Stops ({stops.filter((s) => s.selected).length}/{stops.length})
             </h3>
             <div className="flex items-center gap-2">
               {onCancel && (
-                <button onClick={onCancel} className="flex items-center gap-1.5 rounded-xl bg-secondary px-4 py-2 text-sm font-medium text-secondary-foreground hover:bg-secondary/80 transition-colors">
+                <button
+                  onClick={onCancel}
+                  className="flex items-center gap-1.5 rounded-xl bg-secondary px-4 py-2 text-sm font-medium text-secondary-foreground hover:bg-secondary/80 transition-colors"
+                >
                   <X className="h-4 w-4" />
                   Cancel
                 </button>
               )}
               <button
                 onClick={importSelected}
-                disabled={importing || activities.filter((a) => a.selected).length === 0}
+                disabled={importing || stops.filter((s) => s.selected).length === 0}
                 className="flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
               >
                 {importing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
@@ -338,21 +386,21 @@ export function ItineraryImport({ tripId, onImportComplete, onCancel }: Itinerar
           </div>
 
           <div className="flex flex-col gap-3">
-            {activities.map((activity, index) => (
+            {stops.map((stop, index) => (
               <div
                 key={index}
                 className={`rounded-xl border p-4 transition-colors ${
-                  activity.selected ? "border-primary/30 bg-card" : "border-border bg-muted/30 opacity-60"
+                  stop.selected ? "border-primary/30 bg-card" : "border-border bg-muted/30 opacity-60"
                 }`}
               >
                 <div className="flex items-start gap-3">
                   <button
-                    onClick={() => toggleActivity(index)}
+                    onClick={() => toggleStop(index)}
                     className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded border transition-colors ${
-                      activity.selected ? "border-primary bg-primary text-primary-foreground" : "border-border"
+                      stop.selected ? "border-primary bg-primary text-primary-foreground" : "border-border"
                     }`}
                   >
-                    {activity.selected && <Check className="h-3 w-3" />}
+                    {stop.selected && <Check className="h-3 w-3" />}
                   </button>
 
                   <div className="flex-1 min-w-0">
@@ -360,49 +408,51 @@ export function ItineraryImport({ tripId, onImportComplete, onCancel }: Itinerar
                       <div className="flex flex-col gap-3">
                         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                           <input
-                            value={activity.locationName}
-                            onChange={(e) => updateActivity(index, { locationName: e.target.value })}
+                            value={stop.locationName}
+                            onChange={(e) => updateStop(index, { locationName: e.target.value })}
                             className="rounded-lg border border-border bg-background px-3 py-1.5 text-sm"
-                            placeholder="Location name"
+                            placeholder="Location name (Venue, Airport, etc.)"
                           />
                           <input
-                            value={activity.country}
-                            onChange={(e) => updateActivity(index, { country: e.target.value })}
+                            value={stop.country}
+                            onChange={(e) => updateStop(index, { country: e.target.value })}
                             className="rounded-lg border border-border bg-background px-3 py-1.5 text-sm"
-                            placeholder="Country"
+                            placeholder="City, Country"
                           />
                           <input
                             type="date"
-                            value={activity.date || ""}
-                            onChange={(e) => updateActivity(index, { date: e.target.value || null })}
+                            value={stop.date || ""}
+                            onChange={(e) => updateStop(index, { date: e.target.value || null })}
                             className="rounded-lg border border-border bg-background px-3 py-1.5 text-sm"
                           />
                           <input
                             type="time"
-                            value={activity.time || ""}
-                            onChange={(e) => updateActivity(index, { time: e.target.value || null })}
+                            value={stop.time || ""}
+                            onChange={(e) => updateStop(index, { time: e.target.value || null })}
                             className="rounded-lg border border-border bg-background px-3 py-1.5 text-sm"
                           />
                           <select
-                            value={activity.eventType}
-                            onChange={(e) => updateActivity(index, { eventType: e.target.value })}
+                            value={stop.eventType}
+                            onChange={(e) => updateStop(index, { eventType: e.target.value })}
                             className="rounded-lg border border-border bg-background px-3 py-1.5 text-sm"
                           >
                             {ALL_EVENT_TYPES.map((t) => (
-                              <option key={t.value} value={t.value}>{t.label}</option>
+                              <option key={t.value} value={t.value}>
+                                {t.label}
+                              </option>
                             ))}
                           </select>
                         </div>
                         <textarea
-                          value={activity.description}
-                          onChange={(e) => updateActivity(index, { description: e.target.value })}
+                          value={stop.description}
+                          onChange={(e) => updateStop(index, { description: e.target.value })}
                           className="rounded-lg border border-border bg-background px-3 py-1.5 text-sm"
                           placeholder="Description"
                           rows={2}
                         />
                         <textarea
-                          value={activity.notes}
-                          onChange={(e) => updateActivity(index, { notes: e.target.value })}
+                          value={stop.notes}
+                          onChange={(e) => updateStop(index, { notes: e.target.value })}
                           className="rounded-lg border border-border bg-background px-3 py-1.5 text-sm"
                           placeholder="Notes (booking refs, addresses, etc.)"
                           rows={2}
@@ -418,37 +468,35 @@ export function ItineraryImport({ tripId, onImportComplete, onCancel }: Itinerar
                       <div className="flex items-start justify-between gap-2">
                         <div className="flex flex-col gap-1">
                           <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-medium text-foreground">{activity.locationName}</span>
+                            <span className="font-medium text-foreground">{stop.locationName}</span>
                             <span className="rounded-full bg-accent/50 px-2 py-0.5 text-xs text-accent-foreground">
-                              {eventTypeLabel(activity.eventType)}
+                              {eventTypeLabel(stop.eventType)}
                             </span>
                           </div>
                           <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
-                            {activity.country && (
+                            {stop.country && (
                               <span className="flex items-center gap-1">
                                 <MapPin className="h-3 w-3" />
-                                {activity.country}
+                                {stop.country}
                               </span>
                             )}
-                            {activity.date && (
+                            {stop.date && (
                               <span className="flex items-center gap-1">
                                 <Calendar className="h-3 w-3" />
-                                {activity.date}
+                                {stop.date}
                               </span>
                             )}
-                            {activity.time && (
+                            {stop.time && (
                               <span className="flex items-center gap-1">
                                 <Clock className="h-3 w-3" />
-                                {activity.time}
+                                {stop.time}
                               </span>
                             )}
                           </div>
-                          {activity.description && (
-                            <p className="text-xs text-muted-foreground mt-0.5">{activity.description}</p>
+                          {stop.description && (
+                            <p className="text-xs text-muted-foreground mt-0.5">{stop.description}</p>
                           )}
-                          {activity.notes && (
-                            <p className="text-xs text-muted-foreground/70 italic mt-0.5">{activity.notes}</p>
-                          )}
+                          {stop.notes && <p className="text-xs text-muted-foreground/70 italic mt-0.5">{stop.notes}</p>}
                         </div>
                         <button
                           onClick={() => setEditingIndex(index)}
