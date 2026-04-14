@@ -74,7 +74,6 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
       mapRef.current = null;
     }
 
-    // Clear old markers
     markersRef.current.forEach((marker) => marker.remove());
     markersRef.current = [];
 
@@ -111,7 +110,6 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
       const bounds = new mapboxgl.LngLatBounds();
       let colorIdx = 0;
 
-      // 1. Draw the lines
       byTrip.forEach((tripSteps, tripId) => {
         const color = singleTrip ? ROUTE_COLOR : ROUTE_COLOR_ALT[colorIdx % ROUTE_COLOR_ALT.length];
         colorIdx += 1;
@@ -146,7 +144,6 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
         }
       });
 
-      // 2. Fetch the first photo for each step to create the thumbnail bubbles
       const stepIds = steps.filter((s) => s.latitude !== 0 && s.longitude !== 0).map((s) => s.id);
 
       if (stepIds.length > 0) {
@@ -155,7 +152,6 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
           .select("step_id, storage_path")
           .in("step_id", stepIds);
 
-        // Create a lookup map of step_id -> image URL
         const photoMap = new Map();
         if (photos) {
           for (const photo of photos) {
@@ -166,7 +162,6 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
           }
         }
 
-        // 3. Add Custom DOM Markers to the map
         steps.forEach((step) => {
           if (step.latitude === 0 || step.longitude === 0) return;
 
@@ -176,9 +171,8 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
           const imgUrl = photoMap.get(step.id);
           const displayName = step.location_name || "Unknown Location";
 
-          // The HTML for the Map Bubble
           el.innerHTML = `
-              <div class="bg-card text-foreground text-xs font-semibold px-3 py-1.5 rounded-full shadow-lg border border-border whitespace-nowrap mb-1 opacity-0 transition-opacity group-hover:opacity-100">
+              <div class="bg-card text-foreground text-xs font-semibold px-3 py-1.5 rounded-full shadow-lg border border-border whitespace-nowrap mb-1 opacity-0 transition-opacity group-hover:opacity-100 pointer-events-none">
                 ${displayName}
               </div>
               <div class="h-10 w-10 rounded-full border-2 border-white shadow-lg overflow-hidden bg-muted flex items-center justify-center">
