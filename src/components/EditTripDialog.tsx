@@ -163,13 +163,15 @@ export function EditTripDialog({ trip, tripCountries = [], onUpdated, trigger, e
 
   return (
     <Dialog open={open} onOpenChange={(nextOpen) => { setOpen(nextOpen); if (nextOpen) resetForm(); }}>
-      <DialogTrigger asChild>
-        {trigger ?? (
-          <Button type="button" variant="secondary" size="icon" className="rounded-xl">
-            <Pencil className="h-4 w-4" />
-          </Button>
-        )}
-      </DialogTrigger>
+      {externalOpen === undefined && (
+        <DialogTrigger asChild>
+          {trigger ?? (
+            <Button type="button" variant="secondary" size="icon" className="rounded-xl">
+              <Pencil className="h-4 w-4" />
+            </Button>
+          )}
+        </DialogTrigger>
+      )}
       <DialogContent className="max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Edit Trip</DialogTitle>
