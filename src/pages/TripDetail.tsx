@@ -489,12 +489,14 @@ const TripDetail = () => {
       {showPhotoImport && (
         <PhotoImport
           tripId={trip.id}
+          initialFiles={pendingImportFiles.length > 0 ? pendingImportFiles : undefined}
           onImportComplete={() => {
             void fetchData();
             setShowPhotoImport(false);
             setHasStagedFiles(false);
+            setPendingImportFiles([]);
           }}
-          onCancel={() => setShowPhotoImport(false)}
+          onCancel={() => { setShowPhotoImport(false); setPendingImportFiles([]); }}
           onProgressChange={setImportProgress}
           existingSteps={steps.map((s) => ({
             id: s.id,
