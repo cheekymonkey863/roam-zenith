@@ -1,6 +1,7 @@
 import { useCallback, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Plus, ChevronDown, ChevronUp, Image, FileText, Mail } from "lucide-react";
+import { format, parse } from "date-fns";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { parseTripCountriesInput } from "@/lib/tripManagement";
@@ -19,8 +20,23 @@ export function DashboardTripForm({ onTripAdded }: { onTripAdded?: () => void })
   const [trackInBackground, setTrackInBackground] = useState(false);
   const [creating, setCreating] = useState(false);
 
-  const createTrip = async (): Promise<string | null> => {
-    if (!user || !title.trim()) return null;
+  const generateTripTitle = (): string => {
+    const countries = parseTripCountriesInput(countriesText);
+    const countryPart = countries.length > 0 ? countries.join(", ") : "New Trip";
+    if (startDate) {
+      const startFormatted = format(new Date(startDate + "T00:00:00"), "MMM-yy");
+      const endFormatted = endDate ? format(new Date(endDate + "T00:00:00"), "MMM-yy") : startFormatted;
+      return startFormatted === endFormatted
+        ? `${countryPart} | ${startFormatted}`
+        : `${countryPart} | ${startFormatted} - ${endFormatted}`;
+    }
+    return countryPart;
+  };
+
+  const createTrip = async (forImport = false): Promise<string | null> => {
+    if (!user) return null;
+    const tripTitle = title.trim() || (forImport ? generateTripTitle() : "");
+    if (!tripTitle) return null;
     setCreating(true);
     try {
       const countries = parseTripCountriesInput(countriesText);
@@ -28,7 +44,7 @@ export function DashboardTripForm({ onTripAdded }: { onTripAdded?: () => void })
         .from("trips")
         .insert({
           user_id: user.id,
-          title: title.trim(),
+          title: tripTitle,
           start_date: startDate || null,
           end_date: endDate || null,
           is_active: trackInBackground,
@@ -39,6 +55,9 @@ export function DashboardTripForm({ onTripAdded }: { onTripAdded?: () => void })
       if (error) throw error;
       setIsOpen(false);
       setTitle("");
+      setCountriesText("");
+      setStartDate("");
+      setEndDate("");
       onTripAdded?.();
       return data.id;
     } catch {
@@ -59,11 +78,7 @@ export function DashboardTripForm({ onTripAdded }: { onTripAdded?: () => void })
   };
 
   const handleCreateAndImport = async (importType: "photos" | "document" | "inbox") => {
-    if (!title.trim()) {
-      toast.error("Please enter a trip name first");
-      return;
-    }
-    const id = await createTrip();
+    const id = await createTrip(true);
     if (id) {
       toast.success("Trip created!");
       navigate(`/trip/${id}?import=${importType}`);
