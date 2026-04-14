@@ -9,7 +9,6 @@ import { useAuth } from "@/hooks/useAuth";
 import { groupLocalFiles, getGroupRepresentativeCoordinates } from "@/lib/stagingGrouping";
 import { resumableUpload } from "@/lib/resumableUpload";
 import { queueVideoAnalysisJob } from "@/lib/videoAnalysisQueue";
-import { buildImportedStepDetails } from "@/lib/placeClassification";
 
 export interface LocalStagedFile {
   id: string;
@@ -45,6 +44,19 @@ interface PhotoImportProps {
     event_type: string;
     description: string | null;
   }>;
+}
+
+// Haversine formula to calculate distance between two coordinates in meters
+function getDistanceFromLatLonInM(lat1: number, lon1: number, lat2: number, lon2: number) {
+  const R = 6371e3; // Radius of the earth in meters
+  const dLat = (lat2 - lat1) * (Math.PI / 180);
+  const dLon = (lon2 - lon1) * (Math.PI / 180);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  const d = R * c; // Distance in meters
+  return d;
 }
 
 export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps = [] }: PhotoImportProps) {
@@ -228,26 +240,78 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
       if (coords) lastValidCoords = coords;
       else coords = lastValidCoords;
 
-      let fallbackName = `${coords.latitude.toFixed(4)}°, ${coords.longitude.toFixed(4)}°`;
-      try {
-        const res = await fetch(
-          `https://nominatim.openstreetmap.org/reverse?format=json&lat=${coords.latitude}&lon=${coords.longitude}&zoom=18&addressdetails=1`,
-        );
-        if (res.ok) {
-          const data = await res.json();
-          const addr = data?.address;
-          if (addr) {
-            const place = addr.amenity || addr.leisure || addr.tourism || addr.shop || addr.historic || addr.building;
-            const road = addr.road || addr.pedestrian || addr.path;
-            const city = addr.city || addr.town || addr.village || "";
-            const cc = addr.country_code ? addr.country_code.toUpperCase() : "";
+      // NEW LOGIC: Check if this group belongs to an existing step (within 10 meters)
+      let targetStepId: string | null = null;
+      let targetLocationName: string | null = null;
 
-            if (place && city) fallbackName = `${place} - ${city}, ${cc}`;
-            else if (road && city) fallbackName = `${road}, ${city}, ${cc}`;
-            else if (city && cc) fallbackName = `${city}, ${cc}`;
+      for (const step of existingSteps) {
+        if (step.latitude && step.longitude) {
+          const distance = getDistanceFromLatLonInM(coords.latitude, coords.longitude, step.latitude, step.longitude);
+          if (distance <= 10) {
+            // 10 meters tolerance
+            targetStepId = step.id;
+            targetLocationName = step.location_name;
+            break;
           }
         }
-      } catch (e) {}
+      }
+
+      // If it doesn't match an existing step, we need to create a new one.
+      if (!targetStepId) {
+        targetStepId = crypto.randomUUID();
+
+        let fallbackName = `${coords.latitude.toFixed(4)}°, ${coords.longitude.toFixed(4)}°`;
+        try {
+          const res = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${coords.latitude}&lon=${coords.longitude}&zoom=18&addressdetails=1`,
+          );
+          if (res.ok) {
+            const data = await res.json();
+            const addr = data?.address;
+            if (addr) {
+              const place = addr.amenity || addr.leisure || addr.tourism || addr.shop || addr.historic || addr.building;
+              const road = addr.road || addr.pedestrian || addr.path;
+              const city = addr.city || addr.town || addr.village || "";
+              const cc = addr.country_code ? addr.country_code.toUpperCase() : "";
+
+              if (place && city) fallbackName = `${place} - ${city}, ${cc}`;
+              else if (road && city) fallbackName = `${road}, ${city}, ${cc}`;
+              else if (city && cc) fallbackName = `${city}, ${cc}`;
+            }
+          }
+        } catch (e) {}
+
+        const earliest = group.earliestDate?.toISOString() ?? new Date().toISOString();
+        targetLocationName = fallbackName;
+
+        await supabase.from("trip_steps").insert({
+          id: targetStepId,
+          trip_id: tripId,
+          user_id: user.id,
+          latitude: coords.latitude,
+          longitude: coords.longitude,
+          recorded_at: earliest,
+          source: "photo_import",
+          event_type: "other",
+          is_confirmed: false,
+          location_name: fallbackName,
+          description: "null",
+        });
+
+        allNewStepIds.push(targetStepId);
+
+        // Add it to existingSteps immediately so subsequent groups can match to it
+        existingSteps.push({
+          id: targetStepId,
+          latitude: coords.latitude,
+          longitude: coords.longitude,
+          location_name: fallbackName,
+          country: null,
+          recorded_at: earliest,
+          event_type: "other",
+          description: null,
+        });
+      }
 
       const uploadedFiles = [];
       for (const f of group.files) {
@@ -266,26 +330,8 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
         setUploadState((p) => ({ ...p, current: completedUploads }));
       }
 
-      const earliest = group.earliestDate?.toISOString() ?? new Date().toISOString();
-      const stepId = crypto.randomUUID();
-
-      await supabase.from("trip_steps").insert({
-        id: stepId,
-        trip_id: tripId,
-        user_id: user.id,
-        latitude: coords.latitude,
-        longitude: coords.longitude,
-        recorded_at: earliest,
-        source: "photo_import",
-        event_type: "other",
-        is_confirmed: false,
-        location_name: fallbackName,
-        description: "null",
-      });
-      allNewStepIds.push(stepId);
-
       const photoRows = uploadedFiles.map(({ file, objectName }) => ({
-        step_id: stepId,
+        step_id: targetStepId,
         user_id: user.id,
         storage_path: objectName,
         file_name: file.fileName,
@@ -313,7 +359,7 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
             takenAt: file.takenAt?.toISOString() ?? null,
             latitude: coords.latitude,
             longitude: coords.longitude,
-            locationName: fallbackName,
+            locationName: targetLocationName || "",
             country: "",
             nearbyPlaces: [],
             itinerarySteps: [],
