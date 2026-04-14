@@ -167,7 +167,7 @@ export function AppNavigation() {
               <div className="grid grid-cols-3 gap-2">
                 <button
                   type="button"
-                  disabled={creating || !tripTitle.trim()}
+                  disabled={creating}
                   onClick={() => createAndImport("photos")}
                   className="flex flex-col items-center gap-1 rounded-lg border border-border bg-card p-2 text-xs hover:bg-secondary/40 transition-colors disabled:opacity-50"
                 >
@@ -176,7 +176,7 @@ export function AppNavigation() {
                 </button>
                 <button
                   type="button"
-                  disabled={creating || !tripTitle.trim()}
+                  disabled={creating}
                   onClick={() => createAndImport("document")}
                   className="flex flex-col items-center gap-1 rounded-lg border border-border bg-card p-2 text-xs hover:bg-secondary/40 transition-colors disabled:opacity-50"
                 >
@@ -185,7 +185,7 @@ export function AppNavigation() {
                 </button>
                 <button
                   type="button"
-                  disabled={creating || !tripTitle.trim()}
+                  disabled={creating}
                   onClick={() => createAndImport("inbox")}
                   className="flex flex-col items-center gap-1 rounded-lg border border-border bg-card p-2 text-xs hover:bg-secondary/40 transition-colors disabled:opacity-50"
                 >
@@ -198,7 +198,7 @@ export function AppNavigation() {
                 value={tripTitle}
                 onChange={(e) => setTripTitle(e.target.value)}
                 className="rounded-lg border border-border bg-card p-2 text-xs"
-                placeholder="Trip Name *"
+                placeholder="Trip Name (auto-generated if blank)"
               />
               <div className="grid grid-cols-2 gap-2">
                 <input type="date" value={tripStartDate} onChange={(e) => setTripStartDate(e.target.value)} className="rounded-lg border border-border bg-card p-2 text-xs" />
