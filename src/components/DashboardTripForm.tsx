@@ -1,18 +1,15 @@
 import { useCallback, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Upload, FileText, Image, Loader2, X, Plus, ChevronDown, ChevronUp } from "lucide-react";
+import { Plus, ChevronDown, ChevronUp, Image, FileText, Mail } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
-import { buildStoredMediaMetadata } from "@/lib/mediaMetadata"; // Corrected naming
-import { processImportedMediaFiles } from "@/lib/mediaImport";
 
 export function DashboardTripForm({ onTripAdded }: { onTripAdded?: () => void }) {
   const { user } = useAuth();
   const navigate = useNavigate();
 
-  // STAYS CLOSED ON START
   const [isOpen, setIsOpen] = useState(false);
   const [title, setTitle] = useState("");
   const [startDate, setStartDate] = useState("");
@@ -20,11 +17,9 @@ export function DashboardTripForm({ onTripAdded }: { onTripAdded?: () => void })
   const [trackInBackground, setTrackInBackground] = useState(false);
   const [creating, setCreating] = useState(false);
 
-  const handleCreate = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!user || !title.trim()) return;
+  const createTrip = async (): Promise<string | null> => {
+    if (!user || !title.trim()) return null;
     setCreating(true);
-
     try {
       const { data, error } = await supabase
         .from("trips")
@@ -37,16 +32,37 @@ export function DashboardTripForm({ onTripAdded }: { onTripAdded?: () => void })
         })
         .select()
         .single();
-
       if (error) throw error;
-      toast.success("Trip created!");
       setIsOpen(false);
       setTitle("");
-      if (onTripAdded) onTripAdded();
-    } catch (err) {
+      onTripAdded?.();
+      return data.id;
+    } catch {
       toast.error("Failed to create trip");
+      return null;
     } finally {
       setCreating(false);
+    }
+  };
+
+  const handleCreate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const id = await createTrip();
+    if (id) {
+      toast.success("Trip created!");
+      navigate(`/trip/${id}`);
+    }
+  };
+
+  const handleCreateAndImport = async (importType: "photos" | "document" | "inbox") => {
+    if (!title.trim()) {
+      toast.error("Please enter a trip name first");
+      return;
+    }
+    const id = await createTrip();
+    if (id) {
+      toast.success("Trip created!");
+      navigate(`/trip/${id}?import=${importType}`);
     }
   };
 
@@ -101,6 +117,41 @@ export function DashboardTripForm({ onTripAdded }: { onTripAdded?: () => void })
             <span className="text-sm font-medium">Track in background</span>
             <Switch checked={trackInBackground} onCheckedChange={setTrackInBackground} />
           </div>
+
+          {/* Import options */}
+          <div className="flex flex-col gap-2">
+            <label className="text-xs font-bold text-muted-foreground uppercase">Add stops from</label>
+            <div className="grid grid-cols-3 gap-3">
+              <button
+                type="button"
+                disabled={creating}
+                onClick={() => handleCreateAndImport("photos")}
+                className="flex flex-col items-center gap-2 rounded-xl border border-border bg-background p-4 text-sm font-medium hover:bg-secondary/40 transition-colors disabled:opacity-50"
+              >
+                <Image className="h-5 w-5 text-primary" />
+                <span>Photos</span>
+              </button>
+              <button
+                type="button"
+                disabled={creating}
+                onClick={() => handleCreateAndImport("document")}
+                className="flex flex-col items-center gap-2 rounded-xl border border-border bg-background p-4 text-sm font-medium hover:bg-secondary/40 transition-colors disabled:opacity-50"
+              >
+                <FileText className="h-5 w-5 text-primary" />
+                <span>Document</span>
+              </button>
+              <button
+                type="button"
+                disabled={creating}
+                onClick={() => handleCreateAndImport("inbox")}
+                className="flex flex-col items-center gap-2 rounded-xl border border-border bg-background p-4 text-sm font-medium hover:bg-secondary/40 transition-colors disabled:opacity-50"
+              >
+                <Mail className="h-5 w-5 text-primary" />
+                <span>Inbox</span>
+              </button>
+            </div>
+          </div>
+
           <button
             type="submit"
             disabled={creating}
