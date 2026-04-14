@@ -512,6 +512,15 @@ export function AppNavigation() {
                 ))}
             </div>
           ))}
+
+          {/* Countries TRKD */}
+          {renderLocationSection("Countries TRKD", showCountries, setShowCountries, tripsByCountry, "country")}
+
+          {/* Cities TRKD */}
+          {renderLocationSection("Cities TRKD", showCities, setShowCities, tripsByCity, "city")}
+
+          {/* Places TRKD */}
+          {renderLocationSection("Places TRKD", showPlaces, setShowPlaces, tripsByPlace, "place")}
         </div>
       </div>
     </>
