@@ -4,6 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { EditStepDialog } from "@/components/EditStepDialog";
 import { StepMediaGallery } from "@/components/StepMediaGallery";
 import { toast } from "sonner";
+import { WebImageSearch } from "@/components/WebImageSearch";
 import { inferStepVisualType, type StepVisualType } from "@/lib/stepVisuals";
 
 import {
@@ -91,11 +92,13 @@ export function TripTimeline({
   onUpdated,
   visualTypes = {},
   onStepInView,
+  tripId,
 }: {
   steps: TripStep[];
   onUpdated: () => void;
   visualTypes?: Record<string, StepVisualType>;
   onStepInView?: (stepId: string) => void;
+  tripId?: string;
 }) {
   const [photosByStep, setPhotosByStep] = useState<Record<string, StepPhoto[]>>({});
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -482,6 +485,19 @@ export function TripTimeline({
                     </>
                   )}
                 </div>
+
+                {!selectMode && tripId && (
+                  <div className="mt-3 flex justify-end">
+                    <WebImageSearch
+                      stepId={step.id}
+                      tripId={tripId}
+                      locationName={step.location_name}
+                      latitude={step.latitude}
+                      longitude={step.longitude}
+                      onPhotosAdded={onUpdated}
+                    />
+                  </div>
+                )}
               </div>
             </div>
           );

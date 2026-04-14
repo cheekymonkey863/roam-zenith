@@ -516,6 +516,7 @@ const TripDetail = () => {
               onUpdated={fetchData}
               visualTypes={visualTypes}
               onStepInView={handleStepInView}
+              tripId={trip.id}
             />
           </div>
         </div>
