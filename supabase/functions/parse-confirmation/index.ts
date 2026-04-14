@@ -54,15 +54,18 @@ Deno.serve(async (req) => {
 Extract:
 - eventType: MUST be one of: ${VALID_EVENT_TYPES.join(", ")}
   IMPORTANT: If the name contains "resort", use "resort". If it's a ski lodge/chalet, use "ski_lodge".
-- locationName: the specific venue/place name (hotel name, restaurant, airline + flight number, etc.)
-- country: the country
+- locationName: the specific venue/place name (hotel name, restaurant, etc.)
+  IMPORTANT FOR FLIGHTS: locationName MUST be formatted as "Origin Airport (IATA) → Destination Airport (IATA)"
+  Example: "Edinburgh Airport (EDI) → London Heathrow Airport (LHR)"
+  Example: "São Paulo Guarulhos (GRU) → Madrid Barajas (MAD)"
+- country: the country of the DESTINATION for flights, otherwise the country of the location
 - city: the city or area
-- latitude/longitude: your best coordinate estimate for the location
+- latitude/longitude: your best coordinate estimate for the DESTINATION location (for flights, use the arrival airport)
 - date: ISO date (YYYY-MM-DD) if found
-- time: time (HH:MM) if found
-- description: brief summary of the booking
-- notes: booking reference, confirmation number, address, phone, any useful details
-- activityName: a concise name for this event (e.g. "Hilton London Check-in", "BA 283 to Madrid")
+- time: time (HH:MM) of departure if found
+- description: brief summary of the booking. For flights include airline, flight number, departure time, arrival time.
+- notes: booking reference, confirmation number, seat numbers, address, phone, any useful details
+- activityName: a concise name for this event (e.g. "Hilton London Check-in", "BA 283 EDI → MAD")
 
 Be precise with eventType:
 - Hotel/resort booking = "hotel" or "resort" (if "resort" in name)
