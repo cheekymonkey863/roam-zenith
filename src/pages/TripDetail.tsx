@@ -160,6 +160,18 @@ const TripDetail = () => {
     };
   }, [authLoading, fetchData, id, user]);
 
+  // Auto-open import dialog from query param (e.g. ?import=photos)
+  useEffect(() => {
+    const importType = searchParams.get("import");
+    if (!importType || loading) return;
+    if (importType === "photos") setShowPhotoImport(true);
+    else if (importType === "document") setShowDocumentImport(true);
+    else if (importType === "inbox") setShowEmailImport(true);
+    // Clear the param so it doesn't re-trigger
+    searchParams.delete("import");
+    setSearchParams(searchParams, { replace: true });
+  }, [loading, searchParams, setSearchParams]);
+
   const handleStepInView = useCallback(
     (stepId: string) => {
       setActiveStepId(stepId);
