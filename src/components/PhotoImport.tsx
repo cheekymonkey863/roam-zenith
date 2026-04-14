@@ -98,6 +98,15 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, initialFiles, 
     loadFingerprints();
   }, [tripId]);
 
+  // Auto-start import if initialFiles are provided
+  const initialFilesProcessed = useRef(false);
+  useEffect(() => {
+    if (initialFiles && initialFiles.length > 0 && !initialFilesProcessed.current && existingFingerprints.current !== null) {
+      initialFilesProcessed.current = true;
+      handleFiles(initialFiles);
+    }
+  }, [initialFiles]);
+
   const generateVideoThumbnail = (file: File): Promise<string | null> => {
     return new Promise((resolve) => {
       const video = document.createElement("video");
