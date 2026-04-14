@@ -28,6 +28,7 @@ interface PhotoImportProps {
   tripId: string;
   onImportComplete: () => void;
   onCancel?: () => void;
+  initialFiles?: File[];
   onProgressChange?: (progress: {
     importing: boolean;
     current: number;
@@ -57,7 +58,7 @@ function getDistanceFromLatLonInM(lat1: number, lon1: number, lat2: number, lon2
   return R * c;
 }
 
-export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps = [] }: PhotoImportProps) {
+export function PhotoImport({ tripId, onImportComplete, onCancel, initialFiles, existingSteps = [] }: PhotoImportProps) {
   const { user } = useAuth();
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
