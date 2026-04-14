@@ -60,30 +60,30 @@ export function WebImageSearch({
       const host = document.createElement("div");
       const service = new google.maps.places.PlacesService(host);
 
-      const results = await new Promise<any[]>((resolve) => {
-        // Add timeout in case callback never fires
-        const timer = setTimeout(() => resolve([]), 10000);
-        service.textSearch(
+      // Use findPlaceFromQuery which is more widely available
+      const placeResults = await new Promise<any[]>((resolve) => {
+        const timer = setTimeout(() => resolve([]), 8000);
+        service.findPlaceFromQuery(
           {
             query: searchQuery,
-            location: new google.maps.LatLng(latitude, longitude),
-            radius: 50000,
+            fields: ["place_id", "name", "photos"],
+            locationBias: new google.maps.LatLng(latitude, longitude),
           },
           (res: any[] | null, status: string) => {
             clearTimeout(timer);
-            if (status !== "OK" || !res?.length) {
-              resolve([]);
-              return;
-            }
-            resolve(res);
+            if (status !== "OK" || !res?.length) resolve([]);
+            else resolve(res);
           }
         );
       });
 
+      // If first result has photos, use them directly
+      // Otherwise, try getDetails for more photos
       const allPhotos: PlacePhoto[] = [];
-      for (const result of results.slice(0, 3)) {
-        if (result.photos) {
-          for (const photo of result.photos) {
+
+      for (const place of placeResults.slice(0, 3)) {
+        if (place.photos?.length) {
+          for (const photo of place.photos) {
             allPhotos.push({
               url: photo.getUrl({ maxWidth: 800 }),
               attribution: photo.html_attributions?.[0] || "",
@@ -91,8 +91,32 @@ export function WebImageSearch({
               height: photo.height || 600,
             });
           }
+        } else if (place.place_id) {
+          // Fetch details for more photos
+          const details = await new Promise<any>((resolve) => {
+            const t = setTimeout(() => resolve(null), 5000);
+            service.getDetails(
+              { placeId: place.place_id, fields: ["photos"] },
+              (result: any, status: string) => {
+                clearTimeout(t);
+                if (status !== "OK" || !result) resolve(null);
+                else resolve(result);
+              }
+            );
+          });
+          if (details?.photos) {
+            for (const photo of details.photos) {
+              allPhotos.push({
+                url: photo.getUrl({ maxWidth: 800 }),
+                attribution: photo.html_attributions?.[0] || "",
+                width: photo.width || 800,
+                height: photo.height || 600,
+              });
+            }
+          }
         }
       }
+
       setPhotos(allPhotos);
       setLoading(false);
     } catch (err) {
