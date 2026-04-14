@@ -1,151 +1,230 @@
-import { useEffect, useRef, forwardRef, useImperativeHandle } from "react";
+import { useEffect, useRef, useImperativeHandle, forwardRef, useCallback, type CSSProperties } from "react";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
+import type { StepVisualType } from "@/lib/stepVisuals";
+import type { Tables } from "@/integrations/supabase/types";
+import { supabase } from "@/integrations/supabase/client";
+
+type TripStep = Tables<"trip_steps">;
+
+mapboxgl.accessToken = "pk.eyJ1IjoicnNvdXNhMzE1IiwiYSI6ImNtbmo2Z3lsNDA4ajMyc3M0ZW40a2R5dG8ifQ.VO0pQrXPDmIQWzKbpB3lUg";
+
+const ROUTE_COLOR = "#E74C5E";
+const ROUTE_COLOR_ALT = ["#E74C5E", "#3B82F6", "#10B981", "#F59E0B", "#8B5CF6"];
 
 export interface WorldMapHandle {
-  flyToStep: (step: { latitude: number; longitude: number }) => void;
-  highlightStep: (stepId: string) => void;
+flyToStep: (step: TripStep) => void;
+fitAllSteps: () => void;
+highlightStep: (stepId: string | null) => void;
 }
 
 interface WorldMapProps {
-  steps: any[];
-  singleTrip?: boolean;
-  visualTypes?: Record<string, string>;
-  activeStepId?: string | null;
-  className?: string;
-  style?: React.CSSProperties;
+steps: TripStep[];
+singleTrip?: boolean;
+visualTypes?: Record<string, StepVisualType>;
+activeStepId?: string | null;
+className?: string;
+style?: CSSProperties;
 }
 
-export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(
-  ({ steps, singleTrip = false, visualTypes, activeStepId, className, style }, ref) => {
-    const mapContainer = useRef<HTMLDivElement>(null);
-    const map = useRef<mapboxgl.Map | null>(null);
-    const markersRef = useRef<Map<string, mapboxgl.Marker>>(new Map());
+export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function WorldMap(
+{ steps, singleTrip = false, className, style },
+ref,
+) {
+const containerRef = useRef<HTMLDivElement>(null);
+const mapRef = useRef<mapboxgl.Map | null>(null);
+const stepsRef = useRef<TripStep[]>(steps);
+  const markersRef = useRef<mapboxgl.Marker[]>([]);
+stepsRef.current = steps;
 
-    // Filter out invalid coordinates (0,0 or null)
-    const validSteps = steps.filter(
-      (step) => step.latitude && step.longitude && Math.abs(step.latitude) > 0.1 && Math.abs(step.longitude) > 0.1,
-    );
+const flyToStep = useCallback((step: TripStep) => {
+const map = mapRef.current;
+if (!map || (step.latitude === 0 && step.longitude === 0)) return;
+map.flyTo({
+center: [step.longitude, step.latitude],
+zoom: Math.max(map.getZoom(), 10),
+duration: 1200,
+essential: true,
+});
+}, []);
 
-    useImperativeHandle(ref, () => ({
-      flyToStep: (step) => {
-        if (map.current && step.latitude && step.longitude) {
-          map.current.flyTo({
-            center: [Number(step.longitude), Number(step.latitude)],
-            zoom: 12,
-            duration: 1200,
-          });
-        }
-      },
-      highlightStep: (stepId) => {
-        markersRef.current.forEach((marker, id) => {
-          const el = marker.getElement();
-          if (id === stepId) {
-            el.classList.add("ring-2", "ring-white", "scale-125");
-          } else {
-            el.classList.remove("ring-2", "ring-white", "scale-125");
-          }
-        });
-      },
-    }));
+const fitAllSteps = useCallback(() => {
+const map = mapRef.current;
+if (!map || stepsRef.current.length === 0) return;
+const bounds = new mapboxgl.LngLatBounds();
+stepsRef.current.forEach((s) => {
+if (s.latitude !== 0 && s.longitude !== 0) {
+bounds.extend([s.longitude, s.latitude]);
+}
+});
+if (!bounds.isEmpty()) {
+map.fitBounds(bounds, { padding: 60, maxZoom: 14, duration: 800 });
+}
+}, []);
 
-    useEffect(() => {
-      if (!mapContainer.current) return;
+const highlightStep = useCallback((_stepId: string | null) => {}, []);
 
-      mapboxgl.accessToken = "pk.eyJ1IjoibG92YWJsZSIsImEiOiJjbHRreXJreXQwM3B3MmlwZndma3Z4eXN6In0.XN3R3_Yh7m6v6n6z6z6z6z";
+useImperativeHandle(ref, () => ({ flyToStep, fitAllSteps, highlightStep }), [flyToStep, fitAllSteps, highlightStep]);
 
-      map.current = new mapboxgl.Map({
-        container: mapContainer.current,
-        style: "mapbox://styles/mapbox/satellite-streets-v12",
-        projection: "globe" as any,
-        center: [0, 20],
-        zoom: 1.5,
-        attributionControl: false,
-        pitchWithRotate: false,
-        dragRotate: false,
-      });
+useEffect(() => {
+if (!containerRef.current) return;
 
-      map.current.on("style.load", () => {
-        if (!map.current) return;
+if (mapRef.current) {
+mapRef.current.remove();
+mapRef.current = null;
+}
 
-        map.current.setFog({
-          color: "rgb(186, 210, 245)",
-          "high-color": "rgb(36, 92, 223)",
-          "horizon-blend": 0.02,
-          "space-color": "rgb(11, 11, 25)",
-          "star-intensity": 0.6,
-        });
+    // Clear old markers
+    markersRef.current.forEach((marker) => marker.remove());
+    markersRef.current = [];
 
-        if (validSteps.length === 0) return;
+const map = new mapboxgl.Map({
+container: containerRef.current,
+style: "mapbox://styles/mapbox/satellite-streets-v12",
+center: [0, 20],
+zoom: 1.8,
+projection: "mercator",
+attributionControl: false,
+pitchWithRotate: false,
+dragRotate: false,
+touchPitch: false,
+});
 
-        const bounds = new mapboxgl.LngLatBounds();
+map.addControl(new mapboxgl.NavigationControl({ showCompass: false }), "bottom-right");
+mapRef.current = map;
 
-        markersRef.current.clear();
-        validSteps.forEach((step) => {
-          const coords: [number, number] = [Number(step.longitude), Number(step.latitude)];
-          bounds.extend(coords);
+const resizeObserver = new ResizeObserver(() => {
+map.resize();
+});
+resizeObserver.observe(containerRef.current);
 
-          const el = document.createElement("div");
-          el.className = "h-3 w-3 rounded-full bg-red-500 border-2 border-white shadow-lg shadow-red-500/50 transition-transform";
+    map.on("load", () => {
+    map.on("load", async () => {
+if (steps.length === 0) return;
 
-          const marker = new mapboxgl.Marker(el)
-            .setLngLat(coords)
-            .setPopup(
-              new mapboxgl.Popup({ offset: 25 }).setHTML(`<p class="text-xs font-bold p-1">${step.location_name || ""}</p>`),
-            )
-            .addTo(map.current!);
+const byTrip = new Map<string, TripStep[]>();
+steps.forEach((step) => {
+const tripSteps = byTrip.get(step.trip_id) || [];
+tripSteps.push(step);
+byTrip.set(step.trip_id, tripSteps);
+});
 
-          if (step.id) {
-            markersRef.current.set(step.id, marker);
-          }
-        });
+const bounds = new mapboxgl.LngLatBounds();
+let colorIdx = 0;
 
-        // Drawing the path for a single trip
-        if (singleTrip && validSteps.length > 1) {
-          const lineCoords = validSteps.map((s) => [Number(s.longitude), Number(s.latitude)]);
-          map.current.addSource("route", {
-            type: "geojson",
+      // 1. Draw the lines
+byTrip.forEach((tripSteps, tripId) => {
+const color = singleTrip ? ROUTE_COLOR : ROUTE_COLOR_ALT[colorIdx % ROUTE_COLOR_ALT.length];
+colorIdx += 1;
+
+const routeCoordinates = tripSteps
+.filter((step) => step.latitude !== 0 && step.longitude !== 0)
+.map((step) => [step.longitude, step.latitude] as [number, number]);
+
+routeCoordinates.forEach((coordinate) => bounds.extend(coordinate));
+
+if (routeCoordinates.length > 1) {
+map.addSource(`route-${tripId}`, {
+type: "geojson",
             data: {
               type: "Feature",
               properties: {},
-              geometry: { type: "LineString", coordinates: lineCoords },
+              geometry: { type: "LineString", coordinates: routeCoordinates },
             },
-          });
+            data: { type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: routeCoordinates } },
+});
 
-          map.current.addLayer({
-            id: "route",
-            type: "line",
-            source: "route",
-            layout: { "line-join": "round", "line-cap": "round" },
-            paint: {
-              "line-color": "#E74C5E",
-              "line-width": 2,
-              "line-dasharray": [2, 1],
-            },
-          });
+map.addLayer({
+id: `route-glow-${tripId}`,
+type: "line",
+source: `route-${tripId}`,
+layout: { "line-join": "round", "line-cap": "round" },
+paint: { "line-color": color, "line-width": singleTrip ? 6 : 5, "line-opacity": 0.2, "line-blur": 3 },
+});
+
+map.addLayer({
+id: `route-line-${tripId}`,
+type: "line",
+source: `route-${tripId}`,
+layout: { "line-join": "round", "line-cap": "round" },
+paint: { "line-color": color, "line-width": singleTrip ? 3.5 : 2.5, "line-opacity": 1 },
+});
+}
+});
+
+      // 2. Fetch the first photo for each step to create the thumbnail bubbles
+      const stepIds = steps.filter((s) => s.latitude !== 0 && s.longitude !== 0).map((s) => s.id);
+
+      if (stepIds.length > 0) {
+        const { data: photos } = await supabase
+          .from("step_photos")
+          .select("step_id, storage_path")
+          .in("step_id", stepIds);
+
+        // Create a lookup map of step_id -> image URL
+        const photoMap = new Map();
+        if (photos) {
+          for (const photo of photos) {
+            if (!photoMap.has(photo.step_id)) {
+              const { data: urlData } = supabase.storage.from("trip-photos").getPublicUrl(photo.storage_path);
+              photoMap.set(photo.step_id, urlData.publicUrl);
+            }
+          }
         }
 
-        map.current.fitBounds(bounds, {
-          padding: 50,
-          maxZoom: singleTrip ? 7 : 3,
-          duration: 1500,
+        // 3. Add Custom DOM Markers to the map
+        steps.forEach((step) => {
+          if (step.latitude === 0 || step.longitude === 0) return;
+
+          const el = document.createElement("div");
+          el.className = "custom-map-marker group relative cursor-pointer flex flex-col items-center";
+
+          const imgUrl = photoMap.get(step.id);
+          const displayName = step.location_name || "Unknown Location";
+
+          // The HTML for the Map Bubble
+          el.innerHTML = `
+              <div class="bg-card text-foreground text-xs font-semibold px-3 py-1.5 rounded-full shadow-lg border border-border whitespace-nowrap mb-1 opacity-0 transition-opacity group-hover:opacity-100">
+                ${displayName}
+              </div>
+              <div class="h-10 w-10 rounded-full border-2 border-white shadow-lg overflow-hidden bg-muted flex items-center justify-center">
+                ${
+                  imgUrl
+                    ? `<img src="${imgUrl}" class="h-full w-full object-cover" />`
+                    : `<div class="w-2.5 h-2.5 rounded-full bg-primary"></div>`
+                }
+              </div>
+            `;
+
+          const marker = new mapboxgl.Marker(el).setLngLat([step.longitude, step.latitude]).addTo(map);
+
+          markersRef.current.push(marker);
         });
-      });
+      }
 
-      return () => {
-        markersRef.current.clear();
-        if (map.current) {
-          map.current.remove();
-        }
-      };
-    }, [steps, singleTrip]);
+if (!bounds.isEmpty()) {
+map.fitBounds(bounds, {
+          padding: { top: 60, bottom: 60, left: 60, right: 60 },
+          padding: { top: 80, bottom: 80, left: 80, right: 80 },
+maxZoom: singleTrip ? 14 : 12,
+duration: 800,
+});
+}
+});
 
-    return (
-      <div className={className || "relative h-full w-full"} style={style}>
-        <div ref={mapContainer} className="h-full w-full" />
-      </div>
-    );
-  }
+return () => {
+resizeObserver.disconnect();
+      markersRef.current.forEach((marker) => marker.remove());
+map.remove();
+mapRef.current = null;
+};
+}, [steps, singleTrip]);
+
+return (
+<div
+ref={containerRef}
+className={className || "relative z-0 max-h-[40vh] mb-8 w-full overflow-hidden rounded-2xl shadow-card"}
+style={style || { minHeight: singleTrip ? 420 : 340 }}
+/>
 );
-
-WorldMap.displayName = "WorldMap";
+});
