@@ -345,194 +345,202 @@ export function TripTimeline({
         </div>
       )}
 
-      <div className="absolute left-5 top-0 h-full w-px bg-border hidden sm:block" />
-      <div className="flex flex-col gap-6">
-        {steps.map((step, index) => {
-          const photos = photosByStep[step.id] || [];
-          const visualType = visualTypes[step.id] || inferStepVisualType(step);
-          const config = VISUAL_CONFIG[visualType] || VISUAL_CONFIG.other;
-          const StepIcon = config.icon;
-          const isSelected = selectedIds.has(step.id);
-          const isDragOver = overIndex === index && dragIndex !== null && dragIndex !== index;
+      {groupStepsByDate(steps).map((group) => (
+        <div key={group.dateKey} className="flex flex-col gap-0">
+          {/* Date header bar */}
+          <div className="sticky top-0 z-10 rounded-lg bg-muted px-4 py-2 mb-4">
+            <span className="text-xs font-semibold tracking-wider text-muted-foreground">
+              {group.label}
+            </span>
+          </div>
 
-          const isPopulating =
-            step.description === null ||
-            step.description === undefined ||
-            step.description === "" ||
-            step.description === "null";
+          {/* Steps in this date group */}
+          <div className="relative flex flex-col gap-0">
+            {/* Vertical timeline line */}
+            <div className="absolute left-[72px] sm:left-[88px] top-0 bottom-0 w-0.5 bg-primary/30 hidden sm:block" />
 
-          const hasCoordinates = step.latitude !== 0 && step.longitude !== 0;
+            {group.steps.map((step, groupIndex) => {
+              const globalIndex = steps.indexOf(step);
+              const photos = photosByStep[step.id] || [];
+              const visualType = visualTypes[step.id] || inferStepVisualType(step);
+              const config = VISUAL_CONFIG[visualType] || VISUAL_CONFIG.other;
+              const StepIcon = config.icon;
+              const isSelected = selectedIds.has(step.id);
+              const isDragOver = overIndex === globalIndex && dragIndex !== null && dragIndex !== globalIndex;
 
-          const displayLocation =
-            step.location_name && !step.location_name.toLowerCase().includes("unknown")
-              ? step.location_name
-              : hasCoordinates
-                ? `${step.latitude.toFixed(4)}°, ${step.longitude.toFixed(4)}°`
-                : "Unknown Location";
+              const isPopulating =
+                step.description === null ||
+                step.description === undefined ||
+                step.description === "" ||
+                step.description === "null";
 
-          return (
-            <div
-              key={step.id}
-              data-step-id={step.id}
-              ref={(el) => {
-                if (el) stepRefs.current.set(step.id, el);
-              }}
-              draggable={!selectMode}
-              onDragStart={(e) => handleDragStart(e, index)}
-              onDragOver={(e) => handleDragOver(e, index)}
-              onDragEnd={handleDragEnd}
-              onDragLeave={() => setOverIndex(null)}
-              className={`relative flex flex-col sm:flex-row gap-4 sm:gap-5 transition-all ${
-                dragIndex === index ? "opacity-40" : ""
-              } ${isDragOver ? "translate-y-1" : ""}`}
-            >
-              {isDragOver && <div className="absolute -top-1 left-0 right-0 h-0.5 rounded-full bg-primary z-20" />}
+              const hasCoordinates = step.latitude !== 0 && step.longitude !== 0;
 
-              <div className="relative z-10 flex flex-row sm:flex-col items-center justify-between sm:justify-start gap-3 sm:gap-1 w-full sm:w-auto">
-                <div className="flex items-center gap-3">
-                  {selectMode ? (
-                    <button
-                      onClick={() => toggleSelect(step.id)}
-                      className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ring-4 ring-background transition-colors ${
-                        isSelected ? "bg-primary" : "bg-card border-2 border-border"
-                      }`}
-                    >
-                      {isSelected ? (
-                        <CheckSquare className="h-4 w-4 text-primary-foreground" />
-                      ) : (
-                        <Square className="h-4 w-4 text-muted-foreground" />
-                      )}
-                    </button>
-                  ) : (
-                    <div
-                      className={`group relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full shadow-card ring-4 ring-background ${config.bg} cursor-grab active:cursor-grabbing`}
-                    >
-                      <StepIcon className={`h-4 w-4 ${config.text} group-hover:hidden`} />
-                      <GripVertical className={`h-4 w-4 ${config.text} hidden group-hover:block`} />
-                    </div>
-                  )}
-                </div>
+              const displayLocation =
+                step.location_name && !step.location_name.toLowerCase().includes("unknown")
+                  ? step.location_name
+                  : hasCoordinates
+                    ? `${step.latitude.toFixed(4)}°, ${step.longitude.toFixed(4)}°`
+                    : "Unknown Location";
 
-                <span className="sm:hidden shrink-0 rounded-full bg-secondary px-3 py-1 text-xs font-medium text-secondary-foreground">
-                  {formatStepDate(step.recorded_at)}
-                </span>
-              </div>
+              const isLastInGroup = groupIndex === group.steps.length - 1;
 
-              <div
-                className={`relative z-10 flex flex-1 min-w-0 flex-col gap-3 rounded-2xl bg-card p-5 shadow-card transition-all break-words ${
-                  isSelected ? "ring-2 ring-primary" : ""
-                } ${selectMode ? "cursor-pointer" : ""}`}
-                onClick={selectMode ? () => toggleSelect(step.id) : undefined}
-              >
-                <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
-                  <div className="flex-1 min-w-0">
-                    <h4 className="font-display text-lg font-semibold text-foreground">{displayLocation}</h4>
-                    {step.country && !isPopulating && <p className="text-sm text-muted-foreground">{step.country}</p>}
+              return (
+                <div
+                  key={step.id}
+                  data-step-id={step.id}
+                  ref={(el) => {
+                    if (el) stepRefs.current.set(step.id, el);
+                  }}
+                  draggable={!selectMode}
+                  onDragStart={(e) => handleDragStart(e, globalIndex)}
+                  onDragOver={(e) => handleDragOver(e, globalIndex)}
+                  onDragEnd={handleDragEnd}
+                  onDragLeave={() => setOverIndex(null)}
+                  className={`relative flex gap-4 sm:gap-5 transition-all ${isLastInGroup ? "mb-6" : "mb-0"} ${
+                    dragIndex === globalIndex ? "opacity-40" : ""
+                  } ${isDragOver ? "translate-y-1" : ""}`}
+                >
+                  {isDragOver && <div className="absolute -top-1 left-0 right-0 h-0.5 rounded-full bg-primary z-20" />}
 
-                    {isPopulating ? (
-                      <div className="mt-3 flex flex-col gap-2">
-                        <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-                          <Loader2 className="h-4 w-4 animate-spin text-primary" />
-                          Populating stop details...
-                        </div>
-                        <div className="h-1.5 w-full max-w-sm overflow-hidden rounded-full bg-primary/10 relative">
-                          <div
-                            className="absolute top-0 left-0 h-full w-1/3 bg-primary rounded-full"
-                            style={{ animation: "scan 2s ease-in-out infinite" }}
-                          />
-                        </div>
-                      </div>
+                  {/* Time column (left side) */}
+                  <div className="flex flex-col items-end shrink-0 w-14 sm:w-[72px] pt-4">
+                    <span className="text-base sm:text-lg font-semibold text-foreground leading-tight">
+                      {formatStepTime(step.recorded_at)}
+                    </span>
+                    <span className="text-[10px] text-muted-foreground leading-tight">
+                      {formatStepTimezone(step.recorded_at)}
+                    </span>
+                  </div>
+
+                  {/* Icon node on the timeline */}
+                  <div className="relative z-10 flex flex-col items-center pt-3">
+                    {selectMode ? (
+                      <button
+                        onClick={() => toggleSelect(step.id)}
+                        className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ring-4 ring-background transition-colors ${
+                          isSelected ? "bg-primary" : "bg-card border-2 border-border"
+                        }`}
+                      >
+                        {isSelected ? (
+                          <CheckSquare className="h-4 w-4 text-primary-foreground" />
+                        ) : (
+                          <Square className="h-4 w-4 text-muted-foreground" />
+                        )}
+                      </button>
                     ) : (
-                      step.description !== "null" &&
-                      step.description !== "None" &&
-                      step.description && (
-                        <p className="text-sm leading-relaxed text-foreground/80 mt-2">{step.description}</p>
-                      )
+                      <div
+                        className={`group relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full shadow-card ring-4 ring-background ${config.bg} cursor-grab active:cursor-grabbing`}
+                      >
+                        <StepIcon className={`h-4 w-4 ${config.text} group-hover:hidden`} />
+                        <GripVertical className={`h-4 w-4 ${config.text} hidden group-hover:block`} />
+                      </div>
                     )}
                   </div>
 
-                  {!selectMode && (
-                    <div className="hidden sm:flex flex-wrap items-center justify-end gap-2 shrink-0">
-                      <span className="shrink-0 rounded-full bg-secondary px-3 py-1 text-xs font-medium text-secondary-foreground">
-                        {formatStepDate(step.recorded_at)}
-                      </span>
-                      <EditStepDialog step={step} onUpdated={onUpdated} />
-                      <button
-                        onClick={() => handleDelete(step.id)}
-                        disabled={deletingId === step.id}
-                        className="rounded-lg p-1 text-muted-foreground transition-colors hover:text-destructive disabled:opacity-50"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
+                  {/* Card content */}
+                  <div
+                    className={`relative z-10 flex flex-1 min-w-0 flex-col gap-3 rounded-2xl bg-card p-5 shadow-card transition-all break-words my-2 ${
+                      isSelected ? "ring-2 ring-primary" : ""
+                    } ${selectMode ? "cursor-pointer" : ""}`}
+                    onClick={selectMode ? () => toggleSelect(step.id) : undefined}
+                  >
+                    <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2">
+                      <div className="flex-1 min-w-0">
+                        <h4 className="font-display text-lg font-semibold text-foreground">{displayLocation}</h4>
+                        {step.country && !isPopulating && <p className="text-sm text-muted-foreground">{step.country}</p>}
+
+                        {isPopulating ? (
+                          <div className="mt-3 flex flex-col gap-2">
+                            <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                              <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                              Populating stop details...
+                            </div>
+                            <div className="h-1.5 w-full max-w-sm overflow-hidden rounded-full bg-primary/10 relative">
+                              <div
+                                className="absolute top-0 left-0 h-full w-1/3 bg-primary rounded-full"
+                                style={{ animation: "scan 2s ease-in-out infinite" }}
+                              />
+                            </div>
+                          </div>
+                        ) : (
+                          step.description !== "null" &&
+                          step.description !== "None" &&
+                          step.description && (
+                            <p className="text-sm leading-relaxed text-foreground/80 mt-2">{step.description}</p>
+                          )
+                        )}
+                      </div>
+
+                      {!selectMode && (
+                        <div className="flex items-center gap-2 shrink-0">
+                          <EditStepDialog step={step} onUpdated={onUpdated} />
+                          <button
+                            onClick={() => handleDelete(step.id)}
+                            disabled={deletingId === step.id}
+                            className="rounded-lg p-1 text-muted-foreground transition-colors hover:text-destructive disabled:opacity-50"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      )}
                     </div>
-                  )}
-                  {!selectMode && (
-                    <div className="sm:hidden flex items-center gap-2 mt-2">
-                      <EditStepDialog step={step} onUpdated={onUpdated} />
-                      <button
-                        onClick={() => handleDelete(step.id)}
-                        disabled={deletingId === step.id}
-                        className="rounded-lg p-1 text-muted-foreground transition-colors hover:text-destructive disabled:opacity-50"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                  )}
-                </div>
 
-                {step.notes && <p className="text-sm leading-relaxed text-muted-foreground mt-1">{step.notes}</p>}
+                    {step.notes && <p className="text-sm leading-relaxed text-muted-foreground mt-1">{step.notes}</p>}
 
-                {photos.length > 0 && (
-                  <div className="mt-3 w-full">
-                    <StepMediaGallery
-                      photos={photos}
-                      stepId={step.id}
-                      allSteps={steps.map((s) => ({ id: s.id, location_name: s.location_name }))}
-                      onUpdated={onUpdated}
-                    />
-                  </div>
-                )}
+                    {photos.length > 0 && (
+                      <div className="mt-3 w-full">
+                        <StepMediaGallery
+                          photos={photos}
+                          stepId={step.id}
+                          allSteps={steps.map((s) => ({ id: s.id, location_name: s.location_name }))}
+                          onUpdated={onUpdated}
+                        />
+                      </div>
+                    )}
 
-                <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground/60">
-                  <span>Stop {index + 1}</span>
-                  <span>·</span>
-                  {hasCoordinates && (
-                    <span>
-                      {step.latitude.toFixed(2)}°, {step.longitude.toFixed(2)}°
-                    </span>
-                  )}
-                  {hasCoordinates && <span>·</span>}
-                  <span className="rounded bg-secondary px-1.5 py-0.5 text-[10px] uppercase tracking-wider">
-                    {step.event_type}
-                  </span>
-                  {photos.length > 0 && (
-                    <>
-                      <span>·</span>
-                      <span className="flex items-center gap-1">
-                        <ImageIcon className="h-3 w-3" />
-                        {photos.length}
+                    <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground/60">
+                      <span className="rounded bg-secondary px-1.5 py-0.5 text-[10px] uppercase tracking-wider">
+                        {step.event_type}
                       </span>
-                    </>
-                  )}
-                </div>
+                      {hasCoordinates && (
+                        <>
+                          <span>·</span>
+                          <span>
+                            {step.latitude.toFixed(2)}°, {step.longitude.toFixed(2)}°
+                          </span>
+                        </>
+                      )}
+                      {photos.length > 0 && (
+                        <>
+                          <span>·</span>
+                          <span className="flex items-center gap-1">
+                            <ImageIcon className="h-3 w-3" />
+                            {photos.length}
+                          </span>
+                        </>
+                      )}
+                    </div>
 
-                {!selectMode && tripId && (
-                  <div className="mt-3 flex justify-end">
-                    <WebImageSearch
-                      stepId={step.id}
-                      tripId={tripId}
-                      locationName={step.location_name}
-                      latitude={step.latitude}
-                      longitude={step.longitude}
-                      onPhotosAdded={onUpdated}
-                    />
+                    {!selectMode && tripId && (
+                      <div className="mt-3 flex justify-end">
+                        <WebImageSearch
+                          stepId={step.id}
+                          tripId={tripId}
+                          locationName={step.location_name}
+                          latitude={step.latitude}
+                          longitude={step.longitude}
+                          onPhotosAdded={onUpdated}
+                        />
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
-            </div>
-          );
-        })}
-      </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
