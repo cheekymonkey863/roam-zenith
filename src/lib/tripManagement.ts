@@ -116,3 +116,44 @@ export async function deleteTripCascade(tripId: string): Promise<void> {
 
   if (tripError) throw tripError;
 }
+
+/**
+ * Merge all steps, photos, and location points from sourceTrip into targetTrip,
+ * then delete the source trip.
+ */
+export async function mergeTripInto(sourceTripId: string, targetTripId: string): Promise<void> {
+  // Move trip_steps
+  const { error: stepsErr } = await supabase
+    .from("trip_steps")
+    .update({ trip_id: targetTripId })
+    .eq("trip_id", sourceTripId);
+  if (stepsErr) throw stepsErr;
+
+  // Move location_points
+  const { error: pointsErr } = await supabase
+    .from("location_points")
+    .update({ trip_id: targetTripId })
+    .eq("trip_id", sourceTripId);
+  if (pointsErr) throw pointsErr;
+
+  // Move pending_media_imports
+  const { error: pendingErr } = await supabase
+    .from("pending_media_imports")
+    .update({ trip_id: targetTripId })
+    .eq("trip_id", sourceTripId);
+  if (pendingErr) throw pendingErr;
+
+  // Move video_analysis_jobs
+  const { error: videoErr } = await supabase
+    .from("video_analysis_jobs")
+    .update({ trip_id: targetTripId })
+    .eq("trip_id", sourceTripId);
+  if (videoErr) throw videoErr;
+
+  // Move trip_shares (or just delete them)
+  await supabase.from("trip_shares").delete().eq("trip_id", sourceTripId);
+
+  // Delete the now-empty source trip
+  const { error: tripErr } = await supabase.from("trips").delete().eq("id", sourceTripId);
+  if (tripErr) throw tripErr;
+}
