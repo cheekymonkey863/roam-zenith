@@ -165,7 +165,15 @@ export function ItineraryImport({ tripId, onImportComplete, onCancel, initialFil
     [parseDocument],
   );
 
-  const handleDrop = useCallback(
+  // Auto-start import if initialFiles are provided
+  useEffect(() => {
+    if (initialFiles && initialFiles.length > 0 && !initialFilesProcessed.current) {
+      initialFilesProcessed.current = true;
+      handleFiles(Array.from(initialFiles));
+    }
+  }, [initialFiles, handleFiles]);
+
+
     (e: React.DragEvent) => {
       e.preventDefault();
       setDragOver(false);
