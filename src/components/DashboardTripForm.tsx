@@ -117,6 +117,17 @@ export function DashboardTripForm({ onTripAdded }: { onTripAdded?: () => void })
               />
             </div>
           </div>
+          <div className="flex flex-col gap-2">
+            <label className="text-xs font-bold text-muted-foreground uppercase">Countries</label>
+            <input
+              type="text"
+              value={countriesText}
+              onChange={(e) => setCountriesText(e.target.value)}
+              className="rounded-xl border border-border bg-background p-3 text-sm"
+              placeholder="e.g. France, Italy, Spain"
+            />
+            <p className="text-xs text-muted-foreground">Comma-separated list of countries</p>
+          </div>
           <div className="flex items-center justify-between py-2">
             <span className="text-sm font-medium">Track in background</span>
             <Switch checked={trackInBackground} onCheckedChange={setTrackInBackground} />
