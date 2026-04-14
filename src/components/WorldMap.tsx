@@ -255,7 +255,7 @@ return (
 <div
 ref={containerRef}
 className={className || "relative z-0 mb-8 w-full max-w-4xl mx-auto overflow-hidden rounded-2xl shadow-card"}
-style={style || { height: singleTrip ? 500 : 420 }}
+style={style || { height: singleTrip ? 600 : 500 }}
 />
 );
 });
