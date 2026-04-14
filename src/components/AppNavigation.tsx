@@ -74,7 +74,7 @@ export function AppNavigation() {
             <X className="h-5 w-5" />
           </button>
           <Link to="/" onClick={() => setIsOpen(false)}>
-            <img src="/logo.png" alt="TravelTRKR" className="h-[54px] w-auto" />
+            <img src="/logo.png" alt="TravelTRKR" className="h-[81px] w-auto" />
           </Link>
         </div>
         <div className="p-4 overflow-y-auto h-[calc(100vh-100px)]">
