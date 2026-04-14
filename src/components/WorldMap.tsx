@@ -171,15 +171,30 @@ paint: { "line-color": color, "line-width": singleTrip ? 3.5 : 2.5, "line-opacit
 
       if (singleTrip) {
         // Trip detail: photo thumbnail bubbles with always-visible place names
-        // For flights: show plane icon + only the origin airport name at this location
+        // For flights: show plane icon + only the origin airport name
+        // For accommodations: show hotel icon + only the check-in entry (deduplicated by location)
         const FLIGHT_TYPES = new Set(["flight"]);
+        const ACCOMMODATION_TYPES = new Set(["hotel", "apartment_flat", "private_home", "villa", "safari", "glamping", "camping", "resort", "ski_lodge", "accommodation"]);
         const PLANE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.4-.1.9.3 1.1L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.2.4.7.5 1.1.3l.5-.3c.4-.2.6-.6.5-1.1z"/></svg>`;
+        const HOTEL_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2Z"/><path d="m9 16 .348-.24c1.465-1.013 3.84-1.013 5.304 0L15 16"/><path d="M8 7h.01"/><path d="M16 7h.01"/><path d="M12 7h.01"/><path d="M12 11h.01"/><path d="M16 11h.01"/><path d="M8 11h.01"/></svg>`;
 
-        validSteps.forEach((step) => {
+        // Deduplicate accommodations: only show the first (check-in) entry per location
+        const seenAccommodationLocations = new Set<string>();
+        const filteredSteps = validSteps.filter((step) => {
+          if (ACCOMMODATION_TYPES.has(step.event_type)) {
+            const locKey = `${step.latitude.toFixed(4)},${step.longitude.toFixed(4)}`;
+            if (seenAccommodationLocations.has(locKey)) return false;
+            seenAccommodationLocations.add(locKey);
+          }
+          return true;
+        });
+
+        filteredSteps.forEach((step) => {
           const el = document.createElement("div");
           el.className = "custom-map-marker group relative cursor-pointer flex flex-col items-center";
 
           const isFlight = FLIGHT_TYPES.has(step.event_type);
+          const isAccommodation = ACCOMMODATION_TYPES.has(step.event_type);
           const imgUrl = photoMap.get(step.id);
 
           // For flights: show the airport at THIS location (before →), not the full route
@@ -188,11 +203,16 @@ paint: { "line-color": color, "line-width": singleTrip ? 3.5 : 2.5, "line-opacit
             displayName = displayName.split("→")[0].trim();
           }
 
-          const bubble = isFlight
-            ? `<div class="h-10 w-10 rounded-full border-2 border-white shadow-lg overflow-hidden flex items-center justify-center" style="background:#3b82f6">${PLANE_SVG}</div>`
-            : `<div class="h-10 w-10 rounded-full border-2 border-white shadow-lg overflow-hidden bg-muted flex items-center justify-center">
+          let bubble: string;
+          if (isFlight) {
+            bubble = `<div class="h-10 w-10 rounded-full border-2 border-white shadow-lg overflow-hidden flex items-center justify-center" style="background:#3b82f6">${PLANE_SVG}</div>`;
+          } else if (isAccommodation) {
+            bubble = `<div class="h-10 w-10 rounded-full border-2 border-white shadow-lg overflow-hidden flex items-center justify-center" style="background:#8b5cf6">${HOTEL_SVG}</div>`;
+          } else {
+            bubble = `<div class="h-10 w-10 rounded-full border-2 border-white shadow-lg overflow-hidden bg-muted flex items-center justify-center">
                 ${imgUrl ? `<img src="${imgUrl}" class="h-full w-full object-cover" />` : `<div class="w-2.5 h-2.5 rounded-full bg-primary"></div>`}
               </div>`;
+          }
 
           el.innerHTML = `
             <div class="bg-card text-foreground text-xs font-semibold px-3 py-1.5 rounded-full shadow-lg border border-border whitespace-nowrap mb-1">
