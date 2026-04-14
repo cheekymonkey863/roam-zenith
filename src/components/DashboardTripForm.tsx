@@ -86,6 +86,40 @@ export function DashboardTripForm({ onTripAdded }: { onTripAdded?: () => void })
 
       {isOpen && (
         <form onSubmit={handleCreate} className="p-6 border-t border-border flex flex-col gap-6">
+          {/* Import options - at the top */}
+          <div className="flex flex-col gap-2">
+            <label className="text-xs font-bold text-muted-foreground uppercase">Add stops from</label>
+            <div className="grid grid-cols-3 gap-3">
+              <button
+                type="button"
+                disabled={creating}
+                onClick={() => handleCreateAndImport("photos")}
+                className="flex flex-col items-center gap-2 rounded-xl border border-border bg-background p-4 text-sm font-medium hover:bg-secondary/40 transition-colors disabled:opacity-50"
+              >
+                <Image className="h-5 w-5 text-primary" />
+                <span>Photos</span>
+              </button>
+              <button
+                type="button"
+                disabled={creating}
+                onClick={() => handleCreateAndImport("document")}
+                className="flex flex-col items-center gap-2 rounded-xl border border-border bg-background p-4 text-sm font-medium hover:bg-secondary/40 transition-colors disabled:opacity-50"
+              >
+                <FileText className="h-5 w-5 text-primary" />
+                <span>Document</span>
+              </button>
+              <button
+                type="button"
+                disabled={creating}
+                onClick={() => handleCreateAndImport("inbox")}
+                className="flex flex-col items-center gap-2 rounded-xl border border-border bg-background p-4 text-sm font-medium hover:bg-secondary/40 transition-colors disabled:opacity-50"
+              >
+                <Mail className="h-5 w-5 text-primary" />
+                <span>Inbox</span>
+              </button>
+            </div>
+          </div>
+
           <div className="flex flex-col gap-2">
             <label className="text-xs font-bold text-muted-foreground uppercase">Trip Name *</label>
             <input
@@ -131,40 +165,6 @@ export function DashboardTripForm({ onTripAdded }: { onTripAdded?: () => void })
           <div className="flex items-center justify-between py-2">
             <span className="text-sm font-medium">Track in background</span>
             <Switch checked={trackInBackground} onCheckedChange={setTrackInBackground} />
-          </div>
-
-          {/* Import options */}
-          <div className="flex flex-col gap-2">
-            <label className="text-xs font-bold text-muted-foreground uppercase">Add stops from</label>
-            <div className="grid grid-cols-3 gap-3">
-              <button
-                type="button"
-                disabled={creating}
-                onClick={() => handleCreateAndImport("photos")}
-                className="flex flex-col items-center gap-2 rounded-xl border border-border bg-background p-4 text-sm font-medium hover:bg-secondary/40 transition-colors disabled:opacity-50"
-              >
-                <Image className="h-5 w-5 text-primary" />
-                <span>Photos</span>
-              </button>
-              <button
-                type="button"
-                disabled={creating}
-                onClick={() => handleCreateAndImport("document")}
-                className="flex flex-col items-center gap-2 rounded-xl border border-border bg-background p-4 text-sm font-medium hover:bg-secondary/40 transition-colors disabled:opacity-50"
-              >
-                <FileText className="h-5 w-5 text-primary" />
-                <span>Document</span>
-              </button>
-              <button
-                type="button"
-                disabled={creating}
-                onClick={() => handleCreateAndImport("inbox")}
-                className="flex flex-col items-center gap-2 rounded-xl border border-border bg-background p-4 text-sm font-medium hover:bg-secondary/40 transition-colors disabled:opacity-50"
-              >
-                <Mail className="h-5 w-5 text-primary" />
-                <span>Inbox</span>
-              </button>
-            </div>
           </div>
 
           <button
