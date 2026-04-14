@@ -1,10 +1,15 @@
 import { useState, useCallback, useRef, useEffect } from "react";
-import { Upload, X, Loader2 } from "lucide-react";
+import { Upload, X, Loader2, Sparkles } from "lucide-react";
 import { extractExifFromFile } from "@/lib/exif";
-import { StagingInbox } from "@/components/StagingInbox";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import heic2any from "heic2any";
+import { cn } from "@/lib/utils";
+import { useAuth } from "@/hooks/useAuth";
+import { groupLocalFiles, getGroupRepresentativeCoordinates } from "@/lib/stagingGrouping";
+import { resumableUpload } from "@/lib/resumableUpload";
+import { queueVideoAnalysisJob } from "@/lib/videoAnalysisQueue";
+import { buildImportedStepDetails } from "@/lib/placeClassification";
 
 export interface LocalStagedFile {
   id: string;
@@ -42,19 +47,19 @@ interface PhotoImportProps {
   }>;
 }
 
-export function PhotoImport({
-  tripId,
-  onImportComplete,
-  onCancel,
-  onProgressChange,
-  existingSteps = [],
-}: PhotoImportProps) {
+export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps = [] }: PhotoImportProps) {
+  const { user } = useAuth();
   const [dragOver, setDragOver] = useState(false);
-  const [files, setFiles] = useState<LocalStagedFile[]>([]);
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [analysisProgress, setAnalysisProgress] = useState({ done: 0, total: 0 });
   const fileInputRef = useRef<HTMLInputElement>(null);
   const existingFingerprints = useRef<Set<string> | null>(null);
+
+  // The single, unified master state for the entire direct-upload pipeline
+  const [uploadState, setUploadState] = useState<{
+    phase: "idle" | "reading" | "uploading" | "finalizing";
+    current: number;
+    total: number;
+    message: string;
+  }>({ phase: "idle", current: 0, total: 0, message: "" });
 
   useEffect(() => {
     async function loadFingerprints() {
@@ -78,17 +83,10 @@ export function PhotoImport({
           }
         }
       }
-
       existingFingerprints.current = fps;
     }
     loadFingerprints();
   }, [tripId]);
-
-  useEffect(() => {
-    return () => {
-      files.forEach((f) => URL.revokeObjectURL(f.previewUrl));
-    };
-  }, [files]);
 
   const generateVideoThumbnail = (file: File): Promise<string | null> => {
     return new Promise((resolve) => {
@@ -102,7 +100,6 @@ export function PhotoImport({
       video.onloadeddata = () => {
         video.currentTime = 0.1;
       };
-
       video.onseeked = () => {
         const canvas = document.createElement("canvas");
         canvas.width = 400;
@@ -114,7 +111,6 @@ export function PhotoImport({
         video.remove();
         resolve(dataUrl);
       };
-
       video.onerror = () => {
         URL.revokeObjectURL(objectUrl);
         video.remove();
@@ -123,7 +119,9 @@ export function PhotoImport({
     });
   };
 
-  const handleFiles = useCallback(async (incoming: File[]) => {
+  const handleFiles = async (incoming: File[]) => {
+    if (!user) return;
+
     const mediaFiles = incoming.filter(
       (f) =>
         f.type.startsWith("image/") ||
@@ -142,21 +140,17 @@ export function PhotoImport({
       return true;
     });
 
-    if (skippedCount > 0) {
-      toast.info(`Skipped ${skippedCount} duplicate file${skippedCount !== 1 ? "s" : ""}`);
-    }
-
+    if (skippedCount > 0) toast.info(`Skipped ${skippedCount} duplicate files`);
     if (filtered.length === 0) return;
 
-    setIsAnalyzing(true);
-    setAnalysisProgress({ done: 0, total: filtered.length });
-
+    // --- PIPELINE START --- //
+    // 1. Read EXIF Data
+    setUploadState({ phase: "reading", current: 0, total: filtered.length, message: "Extracting GPS metadata..." });
     const processedFiles: LocalStagedFile[] = [];
 
     for (let i = 0; i < filtered.length; i++) {
       const file = filtered[i];
       let newPreviewUrl: string | null = null;
-
       const isVideo = file.type.startsWith("video/");
       const isHeic =
         file.name.toLowerCase().endsWith(".heic") ||
@@ -171,9 +165,7 @@ export function PhotoImport({
           const convertedBlob = await heic2any({ blob: file, toType: "image/jpeg", quality: 0.8 });
           const blob = Array.isArray(convertedBlob) ? convertedBlob[0] : convertedBlob;
           newPreviewUrl = URL.createObjectURL(blob);
-        } catch (heicErr) {
-          console.warn("HEIC conversion failed, keeping original:", heicErr);
-        }
+        } catch (e) {}
       }
 
       let exifResult = {
@@ -183,7 +175,6 @@ export function PhotoImport({
         cameraMake: null as string | null,
         cameraModel: null as string | null,
       };
-
       try {
         const exif = await extractExifFromFile(file);
         exifResult = {
@@ -193,9 +184,7 @@ export function PhotoImport({
           cameraMake: exif.cameraMake ?? null,
           cameraModel: exif.cameraModel ?? null,
         };
-      } catch {
-        // Fallback silently
-      }
+      } catch (e) {}
 
       processedFiles.push({
         id: crypto.randomUUID(),
@@ -207,18 +196,159 @@ export function PhotoImport({
         exifDone: true,
       });
 
-      setAnalysisProgress({ done: i + 1, total: filtered.length });
-      await new Promise((r) => setTimeout(r, 10));
+      setUploadState((p) => ({ ...p, current: i + 1 }));
+      await new Promise((r) => setTimeout(r, 10)); // Yield to browser
     }
 
-    setFiles((prev) => {
-      const existingKeys = new Set(prev.map((f) => `${f.fileName}::${f.file.size}`));
-      const uniqueNew = processedFiles.filter((f) => !existingKeys.has(`${f.fileName}::${f.file.size}`));
-      return [...prev, ...uniqueNew];
+    // 2. Group Files
+    setUploadState({
+      phase: "reading",
+      current: filtered.length,
+      total: filtered.length,
+      message: "Grouping media...",
     });
+    const rawGroups = groupLocalFiles(processedFiles);
 
-    setIsAnalyzing(false);
-  }, []);
+    // 3. Upload & Write to Database
+    setUploadState({
+      phase: "uploading",
+      current: 0,
+      total: processedFiles.length,
+      message: "Uploading directly to cloud...",
+    });
+    let completedUploads = 0;
+    const allNewStepIds: string[] = [];
+
+    // Setup inheritance tracker
+    let lastValidCoords =
+      existingSteps.length > 0
+        ? {
+            latitude: existingSteps[existingSteps.length - 1].latitude,
+            longitude: existingSteps[existingSteps.length - 1].longitude,
+          }
+        : { latitude: 0, longitude: 0 };
+
+    for (const group of rawGroups) {
+      // Coordinate Inheritance
+      const rawCoords = getGroupRepresentativeCoordinates(group);
+      let coords = rawCoords && (rawCoords.latitude !== 0 || rawCoords.longitude !== 0) ? rawCoords : null;
+      if (coords) lastValidCoords = coords;
+      else coords = lastValidCoords;
+
+      // Quick fallback Nominatim fetch (so it doesn't look terrible for the 10 seconds before AI kicks in)
+      let fallbackName = `${coords.latitude.toFixed(4)}°, ${coords.longitude.toFixed(4)}°`;
+      try {
+        const res = await fetch(
+          `https://nominatim.openstreetmap.org/reverse?format=json&lat=${coords.latitude}&lon=${coords.longitude}&zoom=18&addressdetails=1`,
+        );
+        if (res.ok) {
+          const data = await res.json();
+          const addr = data?.address;
+          if (addr) {
+            if (addr.house_number && addr.road)
+              fallbackName = `${addr.house_number} ${addr.road}, ${addr.city || addr.town || ""}`;
+            else
+              fallbackName =
+                addr.amenity ||
+                addr.leisure ||
+                addr.tourism ||
+                addr.shop ||
+                addr.historic ||
+                addr.building ||
+                addr.road ||
+                fallbackName;
+          }
+        }
+      } catch (e) {}
+
+      // Upload the actual media files for this group
+      const uploadedFiles = [];
+      for (const f of group.files) {
+        const ext = f.fileName.split(".").pop() || "jpg";
+        const objectName = `${user.id}/${tripId}/staging/${crypto.randomUUID()}.${ext}`;
+
+        await resumableUpload({
+          bucketName: "trip-photos",
+          objectName,
+          file: f.file,
+          contentType: f.mimeType || undefined,
+        });
+        uploadedFiles.push({ file: f, objectName });
+
+        completedUploads++;
+        setUploadState((p) => ({ ...p, current: completedUploads }));
+      }
+
+      // Create the Step in the database (CRITICAL: is_confirmed: false so AI takes over immediately)
+      const earliest = group.earliestDate?.toISOString() ?? new Date().toISOString();
+      const stepDetails = buildImportedStepDetails({ locationName: fallbackName, country: "" });
+      const stepId = crypto.randomUUID();
+
+      await supabase.from("trip_steps").insert({
+        id: stepId,
+        trip_id: tripId,
+        user_id: user.id,
+        latitude: coords.latitude,
+        longitude: coords.longitude,
+        recorded_at: earliest,
+        source: "photo_import",
+        event_type: stepDetails.eventType,
+        is_confirmed: false,
+        location_name: fallbackName,
+      });
+      allNewStepIds.push(stepId);
+
+      // Attach Photos to the Step
+      const photoRows = uploadedFiles.map(({ file, objectName }) => ({
+        step_id: stepId,
+        user_id: user.id,
+        storage_path: objectName,
+        file_name: file.fileName,
+        latitude: file.latitude ?? null,
+        longitude: file.longitude ?? null,
+        taken_at: file.takenAt?.toISOString() ?? null,
+        exif_data: {
+          latitude: file.latitude,
+          longitude: file.longitude,
+          cameraMake: file.cameraMake,
+          cameraModel: file.cameraModel,
+        },
+      }));
+      await supabase.from("step_photos").insert(photoRows);
+
+      // Queue Video Analysis
+      for (const { file, objectName } of uploadedFiles) {
+        if (file.mimeType.startsWith("video/")) {
+          queueVideoAnalysisJob({
+            captionId: file.id,
+            userId: user.id,
+            tripId,
+            storagePath: objectName,
+            fileName: file.fileName,
+            mimeType: file.mimeType,
+            takenAt: file.takenAt?.toISOString() ?? null,
+            latitude: coords.latitude,
+            longitude: coords.longitude,
+            locationName: fallbackName,
+            country: "",
+            nearbyPlaces: [],
+            itinerarySteps: [],
+          }).catch(() => {});
+        }
+      }
+    }
+
+    // 4. Trigger AI & Clean Up
+    setUploadState({ phase: "finalizing", current: 0, total: 0, message: "Activating AI verification..." });
+    if (allNewStepIds.length > 0) {
+      supabase.functions.invoke("process-trip-steps", { body: { step_ids: allNewStepIds } }).catch(() => {});
+    }
+
+    toast.success("Upload complete! AI is finalizing locations on the timeline.");
+    setTimeout(() => {
+      onImportComplete();
+    }, 1500);
+  };
 
   const handleDrop = useCallback(
     (e: React.DragEvent) => {
@@ -237,97 +367,81 @@ export function PhotoImport({
     [handleFiles],
   );
 
-  const deleteFiles = useCallback((ids: string[]) => {
-    setFiles((prev) => {
-      const idSet = new Set(ids);
-      const removed = prev.filter((f) => idSet.has(f.id));
-      removed.forEach((f) => URL.revokeObjectURL(f.previewUrl));
-      return prev.filter((f) => !idSet.has(f.id));
-    });
-  }, []);
+  // If we are processing, show the unified pipeline screen
+  if (uploadState.phase !== "idle") {
+    const percent = uploadState.total > 0 ? Math.round((uploadState.current / uploadState.total) * 100) : 100;
+    return (
+      <div className="relative z-20 w-full bg-background border border-border shadow-xl rounded-2xl p-10 mb-8 flex flex-col items-center justify-center text-center">
+        {uploadState.phase === "finalizing" ? (
+          <Sparkles className="h-10 w-10 animate-pulse text-blue-500 mb-4" />
+        ) : (
+          <Loader2 className="h-10 w-10 animate-spin text-primary mb-4" />
+        )}
+        <h3 className="font-display text-xl font-semibold text-foreground mb-2">{uploadState.message}</h3>
+        {uploadState.phase !== "finalizing" && (
+          <p className="text-sm text-muted-foreground max-w-sm mb-6">
+            {uploadState.phase === "reading"
+              ? `Reading GPS data from file ${uploadState.current} of ${uploadState.total}...`
+              : `Securing ${uploadState.current} of ${uploadState.total} files in the cloud...`}
+          </p>
+        )}
+        <div className="h-3 w-full max-w-md overflow-hidden rounded-full bg-muted border border-border">
+          <div
+            className={cn(
+              "h-full rounded-full transition-all duration-300",
+              uploadState.phase === "finalizing" ? "bg-blue-500" : "bg-primary",
+            )}
+            style={{ width: `${Math.max(percent, 5)}%` }}
+          />
+        </div>
+        {uploadState.phase === "uploading" && (
+          <p className="text-xs font-medium text-amber-600 mt-4">
+            ⚠️ Do not switch tabs. Backgrounding this page may pause the upload.
+          </p>
+        )}
+      </div>
+    );
+  }
 
-  const analysisPercent =
-    analysisProgress.total > 0 ? Math.round((analysisProgress.done / analysisProgress.total) * 100) : 0;
-
+  // Initial Dropzone State
   return (
     <div className="relative z-20 w-full bg-background border border-border shadow-xl rounded-2xl p-6 mb-8">
-      {isAnalyzing ? (
-        <div className="flex flex-col gap-2 rounded-xl p-8 text-center items-center justify-center">
-          <Loader2 className="h-8 w-8 animate-spin text-primary mb-4" />
-          <h3 className="font-display text-lg font-semibold text-foreground">Reading image data...</h3>
-          <p className="text-sm text-muted-foreground max-w-sm mt-1">
-            Processing {analysisProgress.done} of {analysisProgress.total} files.
-          </p>
-          <div className="h-3 w-full max-w-md overflow-hidden rounded-full bg-muted mt-6 border border-border">
-            <div
-              className="h-full rounded-full transition-all duration-300 bg-primary"
-              style={{ width: `${Math.max(analysisPercent, 2)}%` }}
-            />
+      <div className="flex flex-col gap-3">
+        <label
+          onDragOver={(e) => {
+            e.preventDefault();
+            setDragOver(true);
+          }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={handleDrop}
+          className={`flex cursor-pointer flex-col items-center gap-4 rounded-2xl border-2 border-dashed p-12 transition-colors ${dragOver ? "border-primary bg-primary/5" : "border-border hover:border-primary/50"}`}
+        >
+          <Upload className="h-10 w-10 text-muted-foreground" />
+          <div className="text-center">
+            <p className="font-medium text-foreground">Drop photos & videos here</p>
+            <p className="text-sm text-muted-foreground">Files will instantly upload and be analyzed by AI</p>
           </div>
-        </div>
-      ) : files.length > 0 ? (
-        <StagingInbox
-          tripId={tripId}
-          localFiles={files}
-          onDeleteFiles={deleteFiles}
-          onImportComplete={onImportComplete}
-          onCancel={onCancel}
-          onAddMore={() => fileInputRef.current?.click()}
-          onProgressChange={onProgressChange}
-          existingSteps={existingSteps}
-        />
-      ) : (
-        <div className="flex flex-col gap-3">
-          <label
-            onDragOver={(e) => {
-              e.preventDefault();
-              setDragOver(true);
-            }}
-            onDragLeave={() => setDragOver(false)}
-            onDrop={handleDrop}
-            className={`flex cursor-pointer flex-col items-center gap-4 rounded-2xl border-2 border-dashed p-12 transition-colors ${
-              dragOver ? "border-primary bg-primary/5" : "border-border hover:border-primary/50"
-            }`}
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            accept="image/*,video/*"
+            onChange={handleFileSelect}
+            className="hidden"
+          />
+          <span className="rounded-xl bg-primary px-6 py-2.5 text-sm font-semibold text-primary-foreground shadow-md">
+            Browse Files
+          </span>
+        </label>
+        {onCancel && (
+          <button
+            onClick={onCancel}
+            className="self-end flex items-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors mt-2"
           >
-            <Upload className="h-10 w-10 text-muted-foreground" />
-            <div className="text-center">
-              <p className="font-medium text-foreground">Drop photos & videos here</p>
-              <p className="text-sm text-muted-foreground">Files stay local until you click Import</p>
-            </div>
-            <input
-              ref={fileInputRef}
-              type="file"
-              multiple
-              accept="image/*,video/*"
-              onChange={handleFileSelect}
-              className="hidden"
-            />
-            <span className="rounded-xl bg-primary px-4 py-2 text-sm font-medium text-primary-foreground">
-              Browse Files
-            </span>
-          </label>
-          {onCancel && (
-            <button
-              onClick={onCancel}
-              className="self-end flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
-            >
-              <X className="h-4 w-4" />
-              Cancel
-            </button>
-          )}
-        </div>
-      )}
-
-      {!isAnalyzing && files.length > 0 && (
-        <input
-          ref={fileInputRef}
-          type="file"
-          multiple
-          accept="image/*,video/*"
-          onChange={handleFileSelect}
-          className="hidden"
-        />
-      )}
+            <X className="h-4 w-4" /> Cancel
+          </button>
+        )}
+      </div>
     </div>
   );
 }
