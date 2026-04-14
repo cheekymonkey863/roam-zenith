@@ -256,8 +256,8 @@ paint: { "line-color": color, "line-width": singleTrip ? 3.5 : 2.5, "line-opacit
 
 if (!bounds.isEmpty()) {
 map.fitBounds(bounds, {
-          padding: { top: 120, bottom: 120, left: 120, right: 120 },
-maxZoom: singleTrip ? 10 : 12,
+          padding: { top: 200, bottom: 200, left: 200, right: 200 },
+maxZoom: singleTrip ? 6 : 7,
 duration: 800,
 });
 }
