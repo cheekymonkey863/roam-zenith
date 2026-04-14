@@ -51,33 +51,61 @@ export function WebImageSearch({
     try {
       await ensureGoogleMapsLoaded();
       const google = (window as any).google;
-      if (!google?.maps?.places) {
-        toast.error("Google Maps not available");
+      if (!google?.maps?.places?.PlacesService) {
+        toast.error("Google Maps Places not available");
         setLoading(false);
         return;
       }
 
-      const mapDiv = document.createElement("div");
-      const service = new google.maps.places.PlacesService(mapDiv);
+      const host = document.createElement("div");
+      const service = new google.maps.places.PlacesService(host);
 
-      const request: any = {
-        query: searchQuery,
-        location: new google.maps.LatLng(latitude, longitude),
-        radius: 5000,
-      };
+      // Use findPlaceFromQuery which is more widely available
+      const placeResults = await new Promise<any[]>((resolve) => {
+        const timer = setTimeout(() => resolve([]), 8000);
+        service.findPlaceFromQuery(
+          {
+            query: searchQuery,
+            fields: ["place_id", "name", "photos"],
+            locationBias: new google.maps.LatLng(latitude, longitude),
+          },
+          (res: any[] | null, status: string) => {
+            clearTimeout(timer);
+            if (status !== "OK" || !res?.length) resolve([]);
+            else resolve(res);
+          }
+        );
+      });
 
-      service.textSearch(request, (results: any[], status: string) => {
-        if (status !== "OK" || !results?.length) {
-          setPhotos([]);
-          setLoading(false);
-          return;
-        }
+      // If first result has photos, use them directly
+      // Otherwise, try getDetails for more photos
+      const allPhotos: PlacePhoto[] = [];
 
-        // Get the first result with photos, or try multiple results
-        const allPhotos: PlacePhoto[] = [];
-        for (const result of results.slice(0, 3)) {
-          if (result.photos) {
-            for (const photo of result.photos) {
+      for (const place of placeResults.slice(0, 3)) {
+        if (place.photos?.length) {
+          for (const photo of place.photos) {
+            allPhotos.push({
+              url: photo.getUrl({ maxWidth: 800 }),
+              attribution: photo.html_attributions?.[0] || "",
+              width: photo.width || 800,
+              height: photo.height || 600,
+            });
+          }
+        } else if (place.place_id) {
+          // Fetch details for more photos
+          const details = await new Promise<any>((resolve) => {
+            const t = setTimeout(() => resolve(null), 5000);
+            service.getDetails(
+              { placeId: place.place_id, fields: ["photos"] },
+              (result: any, status: string) => {
+                clearTimeout(t);
+                if (status !== "OK" || !result) resolve(null);
+                else resolve(result);
+              }
+            );
+          });
+          if (details?.photos) {
+            for (const photo of details.photos) {
               allPhotos.push({
                 url: photo.getUrl({ maxWidth: 800 }),
                 attribution: photo.html_attributions?.[0] || "",
@@ -87,9 +115,10 @@ export function WebImageSearch({
             }
           }
         }
-        setPhotos(allPhotos);
-        setLoading(false);
-      });
+      }
+
+      setPhotos(allPhotos);
+      setLoading(false);
     } catch (err) {
       console.error("Place photo search error:", err);
       toast.error("Failed to search for photos");
