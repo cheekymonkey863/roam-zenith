@@ -43,7 +43,7 @@ export default function Dashboard() {
     <div className="min-h-screen bg-background pb-20 pt-24 px-6 sm:px-10 lg:px-16">
       <div className="mx-auto max-w-7xl">
         <div className="mb-10 flex flex-col items-start">
-          <img src="/logo.png" alt="TravelTRKR" className="h-14 w-auto object-contain" />
+          <img src="/logo.png" alt="TravelTRKR" className="h-[168px] w-auto object-contain" />
           <p className="mt-1 text-xs text-muted-foreground">Track every journey, remember every moment.</p>
         </div>
 
