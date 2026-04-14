@@ -12,18 +12,8 @@ import { processImportedMediaFiles } from "@/lib/mediaImport";
 import { getEventType } from "@/lib/eventTypes";
 
 const MONTHS = [
-  "January",
-  "February",
-  "March",
-  "April",
-  "May",
-  "June",
-  "July",
-  "August",
-  "September",
-  "October",
-  "November",
-  "December",
+  "January","February","March","April","May","June",
+  "July","August","September","October","November","December",
 ];
 
 export function AppNavigation() {
@@ -51,17 +41,49 @@ export function AppNavigation() {
   const navPhotoInputRef = useRef<HTMLInputElement>(null);
   const navDocInputRef = useRef<HTMLInputElement>(null);
 
+  const fetchTrips = async () => {
+    if (!user) return;
+    const { data } = await supabase
+      .from("trips")
+      .select("*")
+      .eq("user_id", user.id)
+      .order("start_date", { ascending: false });
+    if (!data) return;
+
+    const grouped: any = {};
+    data.forEach((trip) => {
+      if (!trip.start_date) return;
+      const start = new Date(trip.start_date);
+      const end = trip.end_date ? new Date(trip.end_date) : start;
+      const cursor = new Date(start.getFullYear(), start.getMonth(), 1);
+      const endMonth = new Date(end.getFullYear(), end.getMonth(), 1);
+      while (cursor <= endMonth) {
+        const year = cursor.getFullYear().toString();
+        const month = MONTHS[cursor.getMonth()];
+        if (!grouped[year]) grouped[year] = {};
+        if (!grouped[year][month]) grouped[year][month] = [];
+        if (!grouped[year][month].some((t: any) => t.id === trip.id)) {
+          grouped[year][month].push(trip);
+        }
+        cursor.setMonth(cursor.getMonth() + 1);
+      }
+    });
+    setGroupedTrips(grouped);
+  };
+
+  useEffect(() => { fetchTrips(); }, [user]);
+
+  const years = Object.keys(groupedTrips).sort((a, b) => b.localeCompare(a));
+
   const generateNavTripTitle = (countries?: string[], sDate?: string, eDate?: string): string => {
     const c = countries ?? parseTripCountriesInput(tripCountries);
     const countryPart = c.length > 0 ? c.join(", ") : "New Trip";
     const sd = sDate ?? tripStartDate;
     const ed = eDate ?? tripEndDate;
     if (sd) {
-      const startFormatted = format(new Date(sd + "T00:00:00"), "MMM-yy");
-      const endFormatted = ed ? format(new Date(ed + "T00:00:00"), "MMM-yy") : startFormatted;
-      return startFormatted === endFormatted
-        ? `${countryPart} | ${startFormatted}`
-        : `${countryPart} | ${startFormatted} - ${endFormatted}`;
+      const startF = format(new Date(sd + "T00:00:00"), "MMM-yy");
+      const endF = ed ? format(new Date(ed + "T00:00:00"), "MMM-yy") : startF;
+      return startF === endF ? `${countryPart} | ${startF}` : `${countryPart} | ${startF} - ${endF}`;
     }
     return countryPart;
   };
@@ -92,14 +114,11 @@ export function AppNavigation() {
     try {
       const result = await processImportedMediaFiles(files);
       const stops: PendingStop[] = result.steps.map((s) => ({
-        locationName: s.locationName,
-        country: s.country,
-        latitude: s.latitude,
-        longitude: s.longitude,
+        locationName: s.locationName, country: s.country,
+        latitude: s.latitude, longitude: s.longitude,
         eventType: s.eventType,
         date: s.earliestDate ? s.earliestDate.toISOString() : null,
-        description: s.description,
-        notes: "",
+        description: s.description, notes: "",
       }));
       setNavImportedStops(stops);
       autoFillNavFromStops(stops);
@@ -133,12 +152,9 @@ export function AppNavigation() {
       const stops: PendingStop[] = (data?.activities || []).map((a: any) => ({
         locationName: a.locationName || a.activityName || "Unknown Location",
         country: [a.city, a.country].filter(Boolean).join(", "),
-        latitude: a.latitude ?? null,
-        longitude: a.longitude ?? null,
-        eventType: a.eventType || "other",
-        date: a.date || null,
-        description: a.description || "",
-        notes: a.notes || "",
+        latitude: a.latitude ?? null, longitude: a.longitude ?? null,
+        eventType: a.eventType || "other", date: a.date || null,
+        description: a.description || "", notes: a.notes || "",
       }));
       setNavImportedStops(stops);
       autoFillNavFromStops(stops);
@@ -172,35 +188,24 @@ export function AppNavigation() {
       const { data, error } = await supabase
         .from("trips")
         .insert({
-          user_id: user.id,
-          title: finalTitle,
-          start_date: tripStartDate || null,
-          end_date: tripEndDate || null,
-          is_active: tripTrackBg,
-          countries,
+          user_id: user.id, title: finalTitle,
+          start_date: tripStartDate || null, end_date: tripEndDate || null,
+          is_active: tripTrackBg, countries,
         } as any)
-        .select()
-        .single();
+        .select().single();
       if (error) throw error;
 
       if (navImportType && navPendingFiles.length > 0) {
         setPendingImport({
-          type: navImportType,
-          files: navPendingFiles,
-          stops: navImportedStops,
-          countries,
-          startDate: tripStartDate || null,
-          endDate: tripEndDate || null,
+          type: navImportType, files: navPendingFiles, stops: navImportedStops,
+          countries, startDate: tripStartDate || null, endDate: tripEndDate || null,
         });
       }
 
       toast.success("Trip created!");
       setShowAddTrip(false);
-      setTripTitle("");
-      setTripStartDate("");
-      setTripEndDate("");
-      setTripCountries("");
-      setTripTrackBg(false);
+      setTripTitle(""); setTripStartDate(""); setTripEndDate("");
+      setTripCountries(""); setTripTrackBg(false);
       clearNavImport();
       setIsOpen(false);
       fetchTrips();
@@ -235,6 +240,7 @@ export function AppNavigation() {
           </Link>
         </div>
         <div className="p-4 overflow-y-auto h-[calc(100vh-100px)]">
+          {/* Add a Trip */}
           <button
             onClick={() => setShowAddTrip(!showAddTrip)}
             className="flex w-full items-center gap-3 rounded-xl bg-primary/10 p-3 font-display text-sm font-semibold mb-2 hover:bg-primary/20 transition-colors"
@@ -245,66 +251,98 @@ export function AppNavigation() {
           </button>
           {showAddTrip && (
             <div className="mb-4 flex flex-col gap-3 rounded-xl border border-border bg-background p-3">
+              {/* Import buttons */}
               <div className="grid grid-cols-3 gap-2">
-                <button
-                  type="button"
-                  disabled={creating}
-                  onClick={() => createAndImport("photos")}
-                  className="flex flex-col items-center gap-1 rounded-lg border border-border bg-card p-2 text-xs hover:bg-secondary/40 transition-colors disabled:opacity-50"
-                >
-                  <Image className="h-4 w-4 text-primary" />
-                  Photos
+                <button type="button" disabled={navExtracting || creating}
+                  onClick={() => navPhotoInputRef.current?.click()}
+                  className="flex flex-col items-center gap-1 rounded-lg border border-border bg-card p-2 text-xs hover:bg-secondary/40 transition-colors disabled:opacity-50">
+                  <Image className="h-4 w-4 text-primary" /> Photos
                 </button>
-                <button
-                  type="button"
-                  disabled={creating}
-                  onClick={() => createAndImport("document")}
-                  className="flex flex-col items-center gap-1 rounded-lg border border-border bg-card p-2 text-xs hover:bg-secondary/40 transition-colors disabled:opacity-50"
-                >
-                  <FileText className="h-4 w-4 text-primary" />
-                  Document
+                <button type="button" disabled={navExtracting || creating}
+                  onClick={() => navDocInputRef.current?.click()}
+                  className="flex flex-col items-center gap-1 rounded-lg border border-border bg-card p-2 text-xs hover:bg-secondary/40 transition-colors disabled:opacity-50">
+                  <FileText className="h-4 w-4 text-primary" /> Document
                 </button>
-                <button
-                  type="button"
-                  disabled={creating}
-                  onClick={() => createAndImport("inbox")}
-                  className="flex flex-col items-center gap-1 rounded-lg border border-border bg-card p-2 text-xs hover:bg-secondary/40 transition-colors disabled:opacity-50"
-                >
-                  <Mail className="h-4 w-4 text-primary" />
-                  Inbox
+                <button type="button" disabled={navExtracting || creating}
+                  onClick={() => {
+                    if (!user) return;
+                    const inboxTitle = tripTitle.trim() || "New Trip";
+                    setCreating(true);
+                    supabase.from("trips").insert({
+                      user_id: user.id, title: inboxTitle,
+                      start_date: tripStartDate || null, end_date: tripEndDate || null,
+                      is_active: tripTrackBg, countries: parseTripCountriesInput(tripCountries),
+                    } as any).select().single().then(({ data, error }) => {
+                      setCreating(false);
+                      if (error || !data) { toast.error("Failed to create trip"); return; }
+                      toast.success("Trip created!");
+                      setShowAddTrip(false); setIsOpen(false); fetchTrips();
+                      navigate(`/trip/${data.id}?import=inbox`);
+                    });
+                  }}
+                  className="flex flex-col items-center gap-1 rounded-lg border border-border bg-card p-2 text-xs hover:bg-secondary/40 transition-colors disabled:opacity-50">
+                  <Mail className="h-4 w-4 text-primary" /> Inbox
                 </button>
               </div>
-              <input
-                type="text"
-                value={tripTitle}
-                onChange={(e) => setTripTitle(e.target.value)}
+              <input ref={navPhotoInputRef} type="file" accept="image/*,video/*,.heic,.heif" multiple className="hidden"
+                onChange={(e) => { const f = Array.from(e.target.files || []); if (f.length > 0) handleNavPhotoFiles(f); e.target.value = ""; }} />
+              <input ref={navDocInputRef} type="file" accept=".pdf,.docx,.txt,.md" className="hidden"
+                onChange={(e) => { const f = Array.from(e.target.files || []); if (f.length > 0) handleNavDocFiles(f); e.target.value = ""; }} />
+
+              {/* Extracting indicator */}
+              {navExtracting && (
+                <div className="flex items-center gap-2 rounded-lg border border-border bg-secondary/20 p-2">
+                  <Loader2 className="h-3 w-3 animate-spin text-primary" />
+                  <span className="text-xs text-muted-foreground">Extracting...</span>
+                </div>
+              )}
+
+              {/* Stop preview */}
+              {navImportedStops.length > 0 && (
+                <div className="flex flex-col gap-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold text-muted-foreground uppercase">Stops ({navImportedStops.length})</span>
+                    <button type="button" onClick={clearNavImport} className="text-muted-foreground hover:text-foreground"><X className="h-3 w-3" /></button>
+                  </div>
+                  <div className="max-h-32 overflow-y-auto rounded-lg border border-border bg-card">
+                    {navImportedStops.map((stop, i) => {
+                      const evtType = getEventType(stop.eventType);
+                      const Icon = evtType?.icon || MapPin;
+                      return (
+                        <div key={i} className="flex items-center gap-2 px-2 py-1.5 border-b border-border last:border-0">
+                          <Icon className="h-3 w-3 text-primary shrink-0" />
+                          <span className="text-[11px] truncate">{stop.locationName}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              <input type="text" value={tripTitle} onChange={(e) => setTripTitle(e.target.value)}
                 className="rounded-lg border border-border bg-card p-2 text-xs"
-                placeholder="Trip Name (auto-generated if blank)"
-              />
+                placeholder={navImportedStops.length > 0 ? "Auto-generated" : "Trip Name"} />
               <div className="grid grid-cols-2 gap-2">
                 <input type="date" value={tripStartDate} onChange={(e) => setTripStartDate(e.target.value)} className="rounded-lg border border-border bg-card p-2 text-xs" />
                 <input type="date" value={tripEndDate} onChange={(e) => setTripEndDate(e.target.value)} className="rounded-lg border border-border bg-card p-2 text-xs" />
               </div>
-              <input
-                type="text"
-                value={tripCountries}
-                onChange={(e) => setTripCountries(e.target.value)}
-                className="rounded-lg border border-border bg-card p-2 text-xs"
-                placeholder="Countries (e.g. France, Italy)"
-              />
+              <input type="text" value={tripCountries} onChange={(e) => setTripCountries(e.target.value)}
+                className="rounded-lg border border-border bg-card p-2 text-xs" placeholder="Countries (e.g. France, Italy)" />
               <div className="flex items-center justify-between">
                 <span className="text-xs">Track in background</span>
                 <Switch checked={tripTrackBg} onCheckedChange={setTripTrackBg} />
               </div>
               <button
-                disabled={creating || !tripTitle.trim()}
-                onClick={() => createAndImport(null)}
+                disabled={creating || navExtracting || (!tripTitle.trim() && navImportedStops.length === 0)}
+                onClick={createNavTrip}
                 className="rounded-lg bg-primary py-2 text-xs font-bold text-primary-foreground hover:bg-primary/90 transition-all disabled:opacity-50"
               >
                 {creating ? "Creating..." : "Add Trip"}
               </button>
             </div>
           )}
+
+          {/* Trips TRKD */}
           <button
             onClick={() => setShowTrips(!showTrips)}
             className="flex w-full items-center gap-3 rounded-xl bg-primary/10 p-3 font-display text-sm font-semibold mb-2 hover:bg-primary/20 transition-colors"
@@ -316,13 +354,11 @@ export function AppNavigation() {
           {showTrips && years.map((year) => (
             <div key={year} className="mb-2">
               <button
-                onClick={() =>
-                  setExpandedYears((prev) => {
-                    const n = new Set(prev);
-                    n.has(year) ? n.delete(year) : n.add(year);
-                    return n;
-                  })
-                }
+                onClick={() => setExpandedYears((prev) => {
+                  const n = new Set(prev);
+                  n.has(year) ? n.delete(year) : n.add(year);
+                  return n;
+                })}
                 className="flex w-full items-center justify-between p-2 text-sm font-bold hover:bg-secondary rounded-lg transition-colors"
               >
                 {year}{" "}
@@ -332,14 +368,12 @@ export function AppNavigation() {
                 Object.keys(groupedTrips[year]).map((month) => (
                   <div key={month} className="ml-4">
                     <button
-                      onClick={() =>
-                        setExpandedMonths((prev) => {
-                          const n = new Set(prev);
-                          const k = `${year}-${month}`;
-                          n.has(k) ? n.delete(k) : n.add(k);
-                          return n;
-                        })
-                      }
+                      onClick={() => setExpandedMonths((prev) => {
+                        const n = new Set(prev);
+                        const k = `${year}-${month}`;
+                        n.has(k) ? n.delete(k) : n.add(k);
+                        return n;
+                      })}
                       className="flex w-full items-center justify-between p-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
                     >
                       {month}{" "}
