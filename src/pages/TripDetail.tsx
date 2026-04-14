@@ -1,4 +1,4 @@
-import { useParams, Link, useNavigate } from "react-router-dom";
+import { useParams, Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useEffect, useState, useRef, useCallback } from "react";
 import {
   ArrowLeft,
@@ -41,6 +41,7 @@ type TripStep = Tables<"trip_steps">;
 const TripDetail = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { user, loading: authLoading } = useAuth();
   const isMobile = useIsMobile();
   const [trip, setTrip] = useState<Trip | null>(null);
@@ -158,6 +159,18 @@ const TripDetail = () => {
       supabase.removeChannel(channel);
     };
   }, [authLoading, fetchData, id, user]);
+
+  // Auto-open import dialog from query param (e.g. ?import=photos)
+  useEffect(() => {
+    const importType = searchParams.get("import");
+    if (!importType || loading) return;
+    if (importType === "photos") setShowPhotoImport(true);
+    else if (importType === "document") setShowDocumentImport(true);
+    else if (importType === "inbox") setShowEmailImport(true);
+    // Clear the param so it doesn't re-trigger
+    searchParams.delete("import");
+    setSearchParams(searchParams, { replace: true });
+  }, [loading, searchParams, setSearchParams]);
 
   const handleStepInView = useCallback(
     (stepId: string) => {
