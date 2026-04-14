@@ -144,7 +144,6 @@ export function DashboardTripForm({ onTripAdded }: { onTripAdded?: () => void })
               className="rounded-xl border border-border bg-background p-3 text-sm"
               placeholder="Trip Name (auto-generated if importing)"
             />
-            />
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="flex flex-col gap-2">
