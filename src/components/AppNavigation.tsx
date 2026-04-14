@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Menu, X, Plus, ChevronRight, ChevronDown, Plane } from "lucide-react";
+import { Menu, X, Plus, ChevronRight, ChevronDown } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 
@@ -59,7 +59,7 @@ export function AppNavigation() {
     <>
       <button
         onClick={() => setIsOpen(true)}
-        className="fixed top-6 left-6 z-40 flex h-11 w-11 items-center justify-center rounded-xl bg-card border border-border shadow-md"
+        className="fixed top-6 left-6 z-40 flex h-11 w-11 items-center justify-center rounded-xl bg-card border border-border shadow-md hover:bg-secondary transition-colors"
       >
         <Menu className="h-5 w-5" />
       </button>
@@ -71,9 +71,9 @@ export function AppNavigation() {
       >
         <div className="flex items-center justify-between p-6 border-b border-border">
           <Link to="/" onClick={() => setIsOpen(false)}>
-            <img src="/logo.png" alt="Logo" className="h-10 w-auto" />
+            <img src="/logo.png" alt="TravelTRKR" className="h-10 w-auto" />
           </Link>
-          <button onClick={() => setIsOpen(false)}>
+          <button onClick={() => setIsOpen(false)} className="p-2 hover:bg-secondary rounded-lg">
             <X className="h-5 w-5" />
           </button>
         </div>
@@ -83,7 +83,7 @@ export function AppNavigation() {
               navigate("/");
               setIsOpen(false);
             }}
-            className="flex w-full items-center gap-3 rounded-xl bg-primary/10 p-3 text-sm font-medium text-primary mb-4"
+            className="flex w-full items-center gap-3 rounded-xl bg-primary/10 p-3 text-sm font-medium text-primary mb-4 hover:bg-primary/20 transition-colors"
           >
             <Plus className="h-4 w-4" /> Add a Trip
           </button>
@@ -97,7 +97,7 @@ export function AppNavigation() {
                     return n;
                   })
                 }
-                className="flex w-full items-center justify-between p-2 text-sm font-bold"
+                className="flex w-full items-center justify-between p-2 text-sm font-bold hover:bg-secondary rounded-lg transition-colors"
               >
                 {year}{" "}
                 {expandedYears.has(year) ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
@@ -114,7 +114,7 @@ export function AppNavigation() {
                           return n;
                         })
                       }
-                      className="flex w-full items-center justify-between p-1 text-sm text-muted-foreground"
+                      className="flex w-full items-center justify-between p-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
                     >
                       {month}{" "}
                       {expandedMonths.has(`${year}-${month}`) ? (
@@ -129,7 +129,7 @@ export function AppNavigation() {
                           key={trip.id}
                           to={`/trip/${trip.id}`}
                           onClick={() => setIsOpen(false)}
-                          className="block p-1 pl-4 text-xs hover:text-primary truncate"
+                          className="block p-1 pl-4 text-xs font-medium text-muted-foreground hover:text-primary transition-colors truncate"
                         >
                           {trip.title}
                         </Link>
