@@ -151,9 +151,9 @@ paint: { "line-color": color, "line-width": singleTrip ? 3.5 : 2.5, "line-opacit
       const validSteps = steps.filter((s) => s.latitude !== 0 && s.longitude !== 0);
       const stepIds = validSteps.map((s) => s.id);
 
-      // Fetch photos only for trip detail view
+      // Fetch photos for markers
       const photoMap = new Map<string, string>();
-      if (singleTrip && stepIds.length > 0) {
+      if (stepIds.length > 0) {
         const { data: photos } = await supabase
           .from("step_photos")
           .select("step_id, storage_path")
@@ -225,28 +225,29 @@ paint: { "line-color": color, "line-width": singleTrip ? 3.5 : 2.5, "line-opacit
           markersRef.current.push(marker);
         });
       } else {
-        // Dashboard: deduplicated city-name labels only
-        const citySet = new Map<string, { lng: number; lat: number }>();
+        // Dashboard: deduplicated city-name labels with photo thumbnails
+        const citySet = new Map<string, { lng: number; lat: number; stepId: string }>();
         validSteps.forEach((step) => {
-          // Extract city: use the first comma-separated segment, or fall back to location_name
           const raw = step.location_name || step.country || "Unknown";
           const parts = raw.split(",").map((p) => p.trim());
-          // For "Place, City, Country" take the city (2nd part), otherwise use first part
           const cityName = parts.length >= 2 ? parts[parts.length - 2] : parts[0];
           if (!citySet.has(cityName)) {
-            citySet.set(cityName, { lng: step.longitude, lat: step.latitude });
+            citySet.set(cityName, { lng: step.longitude, lat: step.latitude, stepId: step.id });
           }
         });
 
         citySet.forEach((coords, cityName) => {
           const el = document.createElement("div");
           el.className = "custom-map-marker flex flex-col items-center";
+          const imgUrl = photoMap.get(coords.stepId);
 
           el.innerHTML = `
             <div class="bg-card/90 text-foreground text-xs font-semibold px-3 py-1.5 rounded-full shadow-lg border border-border whitespace-nowrap mb-1">
               ${cityName}
             </div>
-            <div class="w-2.5 h-2.5 rounded-full bg-primary shadow-md"></div>
+            <div class="h-10 w-10 rounded-full border-2 border-white shadow-lg overflow-hidden bg-muted flex items-center justify-center">
+              ${imgUrl ? `<img src="${imgUrl}" class="h-full w-full object-cover" />` : `<div class="w-2.5 h-2.5 rounded-full bg-primary"></div>`}
+            </div>
           `;
 
           const marker = new mapboxgl.Marker({ element: el, anchor: "bottom" }).setLngLat([coords.lng, coords.lat]).addTo(map);
