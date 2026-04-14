@@ -1,227 +1,537 @@
-import { useState, useEffect } from "react";
-import { useParams, useNavigate } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useParams, Link, useNavigate } from "react-router-dom";
+import { useEffect, useState, useRef, useCallback } from "react";
+import {
+  ArrowLeft,
+  Calendar,
+  MapPin,
+  Route,
+  Navigation,
+  Image as ImageIcon,
+  FileText,
+  Trash2,
+  Loader2,
+  Video,
+  XCircle,
+  Plus,
+  Mail,
+  X,
+} from "lucide-react";
+import { getTripStatus, getTripStatusLabel, getTripStatusStyle, formatTripDateRange } from "@/lib/tripStatus";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
-import { Loader2, ChevronLeft, Plus, Calendar, Map as MapIcon, FileText, Settings, Share2 } from "lucide-react";
+import { useStepVisualTypes } from "@/hooks/useStepVisualTypes";
+import { supabase as supabaseClient } from "@/integrations/supabase/client";
+import { TripTimeline } from "@/components/TripTimeline";
 import { toast } from "sonner";
 
-// Components
-import { TripTimeline } from "@/components/TripTimeline";
-import { WorldMap } from "@/components/WorldMap";
-import { AddEventForm } from "@/components/AddEventForm";
+import { PhotoImport } from "@/components/PhotoImport";
 import { ItineraryImport } from "@/components/ItineraryImport";
+import { WorldMap, type WorldMapHandle } from "@/components/WorldMap";
+import { AddEventForm } from "@/components/AddEventForm";
 import { EditTripDialog } from "@/components/EditTripDialog";
+import { DeleteTripDialog } from "@/components/DeleteTripDialog";
+import { ShareTripDialog } from "@/components/ShareTripDialog";
+import { Button } from "@/components/ui/button";
+import { useIsMobile } from "@/hooks/use-mobile";
+import type { Tables } from "@/integrations/supabase/types";
 
-export default function TripDetail() {
-  const { id } = useParams();
+type Trip = Tables<"trips">;
+type TripStep = Tables<"trip_steps">;
+
+const TripDetail = () => {
+  const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
+  const isMobile = useIsMobile();
+  const [trip, setTrip] = useState<Trip | null>(null);
+  const [steps, setSteps] = useState<TripStep[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const [activeTab, setActiveTab] = useState<"timeline" | "map">("timeline");
-  const [isAddEventOpen, setIsAddEventOpen] = useState(false);
-  const [isImportOpen, setIsImportOpen] = useState(false);
-
-  // Fetch Trip Details
-  const {
-    data: trip,
-    isLoading: isTripLoading,
-    refetch: refetchTrip,
-  } = useQuery({
-    queryKey: ["trip", id],
-    queryFn: async () => {
-      const { data, error } = await supabase.from("trips").select("*").eq("id", id).single();
-      if (error) throw error;
-      return data;
-    },
-    enabled: !!id,
+  const [isOwner, setIsOwner] = useState(false);
+  const [showPhotoImport, setShowPhotoImport] = useState(false);
+  const [showDocumentImport, setShowDocumentImport] = useState(false);
+  const [showEmailImport, setShowEmailImport] = useState(false);
+  const [showAddEvent, setShowAddEvent] = useState(false);
+  const [activeStepId, setActiveStepId] = useState<string | null>(null);
+  const [pendingVideoJobs, setPendingVideoJobs] = useState(0);
+  const [importProgress, setImportProgress] = useState({
+    importing: false,
+    current: 0,
+    total: 0,
+    phase: "upload" as "upload" | "sorting",
   });
+  const [hasStagedFiles, setHasStagedFiles] = useState(false);
+  const visualTypes = useStepVisualTypes(steps);
+  const mapRef = useRef<WorldMapHandle>(null);
 
-  // Fetch Trip Stops (Steps)
-  const {
-    data: steps,
-    isLoading: isStepsLoading,
-    refetch: refetchSteps,
-  } = useQuery({
-    queryKey: ["trip_steps", id],
-    queryFn: async () => {
-      const { data, error } = await supabase
+  const fetchData = useCallback(async () => {
+    if (!id || !user) {
+      setTrip(null);
+      setSteps([]);
+      setIsOwner(false);
+      setLoading(false);
+      return;
+    }
+
+    const [tripRes, stepsRes] = await Promise.all([
+      supabase.from("trips").select("*").eq("id", id).single(),
+      supabase
         .from("trip_steps")
         .select("*")
         .eq("trip_id", id)
-        .order("recorded_at", { ascending: true });
-      if (error) throw error;
-      return data;
-    },
-    enabled: !!id,
-  });
+        .order("sort_order", { ascending: true })
+        .order("recorded_at", { ascending: true }),
+    ]);
 
-  if (isTripLoading || isStepsLoading) {
+    if (tripRes.error) {
+      setTrip(null);
+      setSteps([]);
+      setIsOwner(false);
+      setLoading(false);
+      return;
+    }
+
+    if (!stepsRes.error) setSteps(stepsRes.data || []);
+
+    setTrip(tripRes.data);
+    setIsOwner(tripRes.data.user_id === user.id);
+    setLoading(false);
+  }, [id, user]);
+
+  const fetchPendingJobs = useCallback(async () => {
+    if (authLoading || !user || !id) return;
+    const { count } = await supabase
+      .from("video_analysis_jobs")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", user.id)
+      .eq("trip_id", id) // FIX: Locked to ONLY show videos for this specific trip
+      .in("status", ["pending", "processing"]);
+    setPendingVideoJobs(count ?? 0);
+  }, [authLoading, id, user]);
+
+  useEffect(() => {
+    if (authLoading) return;
+    void fetchData();
+    void fetchPendingJobs();
+
+    if (user && id) {
+      supabaseClient
+        .from("pending_media_imports")
+        .select("id", { count: "exact", head: true })
+        .eq("trip_id", id)
+        .eq("user_id", user.id)
+        .then(({ count }) => {
+          if (count && count > 0) {
+            setHasStagedFiles(true);
+            setShowPhotoImport(true);
+          }
+        });
+    }
+  }, [authLoading, fetchData, fetchPendingJobs, user, id]);
+
+  useEffect(() => {
+    if (authLoading || !user || !id) return;
+    const channel = supabase
+      .channel(`video-jobs-${id}`)
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "video_analysis_jobs" }, (payload) => {
+        const newStatus = (payload.new as { status: string }).status;
+        if (newStatus === "complete" || newStatus === "failed") {
+          void fetchPendingJobs();
+          if (newStatus === "complete") void fetchData();
+        }
+      })
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [authLoading, fetchData, fetchPendingJobs, id, user]);
+
+  useEffect(() => {
+    if (authLoading || !user || !id) return;
+    const channel = supabase
+      .channel(`trip-steps-${id}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "trip_steps", filter: `trip_id=eq.${id}` }, () => {
+        void fetchData();
+      })
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [authLoading, fetchData, id, user]);
+
+  const handleStepInView = useCallback(
+    (stepId: string) => {
+      setActiveStepId(stepId);
+      const step = steps.find((s) => s.id === stepId);
+      if (step && mapRef.current) {
+        mapRef.current.flyToStep(step);
+        mapRef.current.highlightStep(stepId);
+      }
+    },
+    [steps],
+  );
+
+  const handleCancelVideoJobs = useCallback(async () => {
+    if (!id || !user) return;
+    await supabase
+      .from("video_analysis_jobs")
+      .update({ status: "failed", error: "Cancelled by user" })
+      .eq("trip_id", id)
+      .in("status", ["pending", "processing"]);
+    setPendingVideoJobs(0);
+    toast.success("Video analysis stopped");
+  }, [id, user]);
+
+  const handleClearAllSteps = useCallback(async () => {
+    if (!id || !user) return;
+    if (!confirm(`Delete all ${steps.length} stops and their photos from this trip? This cannot be undone.`)) return;
+
+    const stepIds = steps.map((s) => s.id);
+    if (stepIds.length === 0) return;
+
+    try {
+      await supabase
+        .from("video_analysis_jobs")
+        .update({ status: "failed", error: "Cleared by user" })
+        .eq("trip_id", id)
+        .in("status", ["pending", "processing"]);
+      await supabase.from("step_photos").delete().in("step_id", stepIds);
+      await supabase.from("trip_steps").delete().in("id", stepIds);
+
+      setPendingVideoJobs(0);
+      toast.success("All stops cleared");
+      void fetchData();
+    } catch (err) {
+      toast.error("Failed to clear stops");
+    }
+  }, [id, user, steps, fetchData]);
+
+  if (authLoading || loading)
     return (
-      <div className="flex h-screen items-center justify-center bg-background">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      <div className="py-20 text-center text-muted-foreground flex justify-center">
+        <Loader2 className="h-6 w-6 animate-spin" />
       </div>
     );
-  }
 
   if (!trip) {
     return (
-      <div className="flex flex-col items-center justify-center h-screen gap-4">
-        <p className="text-muted-foreground font-medium">Trip not found</p>
-        <button onClick={() => navigate("/")} className="text-primary hover:underline">
-          Return to Dashboard
-        </button>
+      <div className="flex flex-col items-center gap-4 py-20 text-center">
+        <h2 className="font-display text-2xl font-semibold text-foreground">Trip not found</h2>
+        <Link to="/" className="text-primary hover:underline">
+          Back to dashboard
+        </Link>
       </div>
     );
   }
 
+  const uniqueCountries = new Set<string>();
+  const uniqueCities = new Set<string>();
+
+  steps.forEach((step) => {
+    if (step.country) {
+      uniqueCountries.add(step.country);
+    } else if (step.location_name) {
+      const locUpper = step.location_name.toUpperCase();
+      if (
+        locUpper.includes("GB") ||
+        locUpper.includes("UK") ||
+        locUpper.includes("SCOTLAND") ||
+        locUpper.includes("UNITED KINGDOM")
+      ) {
+        uniqueCountries.add("United Kingdom");
+      }
+    }
+
+    if (step.location_name) {
+      const locLower = step.location_name.toLowerCase();
+      let city = "";
+
+      if (locLower.includes("edinburgh")) {
+        city = "Edinburgh";
+      } else if (locLower.includes("glasgow")) {
+        city = "Glasgow";
+      } else {
+        const parts = step.location_name.split(",");
+        if (parts.length > 1) {
+          city = parts[parts.length - 2].split("-").pop() || parts[0];
+        } else {
+          city = step.location_name;
+        }
+      }
+
+      if (city) {
+        uniqueCities.add(city.replace(/City of /gi, "").trim());
+      }
+    }
+  });
+
+  const displayCityCount = uniqueCities.size;
+  const displayCountries = Array.from(uniqueCountries);
+
+  const hasStops = steps.length > 0;
+  const timelineLabel = "Journey Timeline";
+
   return (
-    <div className="min-h-screen bg-background pb-20 pt-24 px-4 sm:px-10">
-      <div className="mx-auto max-w-5xl">
-        {/* Navigation & Header */}
-        <div className="mb-8">
+    <div className="flex flex-col gap-8 py-8 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto w-full">
+      <div className="flex flex-col gap-4">
+        <Link
+          to="/"
+          className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors w-fit"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Back to dashboard
+        </Link>
+
+        <div className="rounded-2xl bg-gradient-to-br from-primary/15 via-accent/10 to-secondary p-6 sm:p-8">
+          <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+            <h1 className="font-display text-3xl sm:text-4xl font-semibold text-foreground break-words">
+              {trip.title}
+            </h1>
+            <div className="flex shrink-0 items-center gap-2 self-start">
+              <span
+                className={`rounded-full px-3 py-1 text-xs font-medium ${getTripStatusStyle(getTripStatus(trip.start_date, trip.end_date))}`}
+              >
+                {getTripStatusLabel(getTripStatus(trip.start_date, trip.end_date))}
+              </span>
+              {isOwner && <ShareTripDialog tripId={trip.id} tripTitle={trip.title} />}
+              {isOwner && <EditTripDialog trip={trip} tripCountries={displayCountries} onUpdated={fetchData} />}
+              {isOwner && (
+                <DeleteTripDialog
+                  tripId={trip.id}
+                  tripTitle={trip.title}
+                  onDeleted={() => navigate("/")}
+                  trigger={
+                    <Button type="button" variant="secondary" size="icon" className="rounded-xl">
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  }
+                />
+              )}
+            </div>
+          </div>
+
+          <div className="mt-6 flex flex-wrap items-center gap-x-6 gap-y-3 text-sm text-muted-foreground">
+            <span className="flex items-center gap-1.5">
+              <Calendar className="h-4 w-4 text-primary/70" />
+              {formatTripDateRange(trip.start_date, trip.end_date)}
+            </span>
+            {displayCountries.length > 0 && (
+              <span className="flex items-center gap-1.5">
+                <MapPin className="h-4 w-4 text-primary/70" />
+                {displayCountries.join(", ")}
+              </span>
+            )}
+            {displayCityCount > 0 && (
+              <span className="flex items-center gap-1.5">
+                <Route className="h-4 w-4 text-primary/70" />
+                {displayCityCount} {displayCityCount === 1 ? "city" : "cities"}
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {pendingVideoJobs > 0 && (
+        <div className="flex items-center gap-3 rounded-xl border border-primary/20 bg-primary/5 px-4 py-3 text-sm">
+          <Loader2 className="h-4 w-4 animate-spin text-primary" />
+          <Video className="h-4 w-4 text-primary" />
+          <span className="text-foreground flex-1">
+            <strong>{pendingVideoJobs}</strong> video{pendingVideoJobs === 1 ? "" : "s"} being analyzed in the
+            background.
+          </span>
           <button
-            onClick={() => navigate("/")}
-            className="group mb-6 flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
+            onClick={handleCancelVideoJobs}
+            className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
           >
-            <ChevronLeft className="h-4 w-4 transition-transform group-hover:-translate-x-1" />
-            Back to Dashboard
+            <XCircle className="h-3 w-3" />
+            Stop Analysis
           </button>
-
-          <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
-            <div>
-              <h1 className="text-4xl font-display font-bold text-foreground mb-2">{trip.title}</h1>
-              <div className="flex items-center gap-4 text-muted-foreground">
-                <div className="flex items-center gap-1.5 text-sm">
-                  <Calendar className="h-4 w-4" />
-                  <span>
-                    {new Date(trip.start_date).toLocaleDateString()} — {new Date(trip.end_date).toLocaleDateString()}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <EditTripDialog trip={trip} onUpdated={() => { refetchTrip(); }} />
-              <button className="flex items-center gap-2 rounded-xl bg-secondary px-4 py-2.5 text-sm font-medium hover:bg-secondary/80 transition-colors">
-                <Share2 className="h-4 w-4" /> Share
-              </button>
-            </div>
-          </div>
         </div>
+      )}
 
-        {/* View Toggles & Actions */}
-        <div className="mb-8 flex flex-col sm:flex-row items-center justify-between gap-4 border-b border-border pb-4">
-          <div className="flex p-1 bg-muted rounded-xl">
-            <button
-              onClick={() => setActiveTab("timeline")}
-              className={`flex items-center gap-2 px-4 py-1.5 text-sm font-medium rounded-lg transition-all ${activeTab === "timeline" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"}`}
-            >
-              <FileText className="h-4 w-4" /> Timeline
-            </button>
-            <button
-              onClick={() => setActiveTab("map")}
-              className={`flex items-center gap-2 px-4 py-1.5 text-sm font-medium rounded-lg transition-all ${activeTab === "map" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"}`}
-            >
-              <MapIcon className="h-4 w-4" /> Map
-            </button>
-          </div>
+      {/* Action Buttons */}
+      <div className="flex flex-wrap gap-3 overflow-x-auto pb-2 scrollbar-hide">
+        <button
+          onClick={() => {
+            setShowAddEvent(!showAddEvent);
+            if (!showAddEvent) {
+              setShowPhotoImport(false);
+              setShowDocumentImport(false);
+              setShowEmailImport(false);
+            }
+          }}
+          className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition-colors whitespace-nowrap ${
+            showAddEvent
+              ? "bg-secondary/80 text-secondary-foreground ring-2 ring-primary/20"
+              : "bg-secondary text-secondary-foreground hover:bg-secondary/80"
+          }`}
+        >
+          <Plus className="h-4 w-4" />
+          Add Trip Stop
+        </button>
+        <button
+          onClick={() => {
+            setShowPhotoImport(!showPhotoImport);
+            if (!showPhotoImport) {
+              setShowDocumentImport(false);
+              setShowAddEvent(false);
+              setShowEmailImport(false);
+            }
+          }}
+          className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition-colors whitespace-nowrap ${
+            showPhotoImport
+              ? "bg-secondary/80 text-secondary-foreground ring-2 ring-primary/20"
+              : "bg-secondary text-secondary-foreground hover:bg-secondary/80"
+          }`}
+        >
+          <ImageIcon className="h-4 w-4" />
+          Add from Photo / Video
+        </button>
+        <button
+          onClick={() => {
+            setShowDocumentImport(!showDocumentImport);
+            if (!showDocumentImport) {
+              setShowPhotoImport(false);
+              setShowAddEvent(false);
+              setShowEmailImport(false);
+            }
+          }}
+          className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition-colors whitespace-nowrap ${
+            showDocumentImport
+              ? "bg-secondary/80 text-secondary-foreground ring-2 ring-primary/20"
+              : "bg-secondary text-secondary-foreground hover:bg-secondary/80"
+          }`}
+        >
+          <FileText className="h-4 w-4" />
+          Add from Document
+        </button>
+        <button
+          onClick={() => {
+            setShowEmailImport(!showEmailImport);
+            if (!showEmailImport) {
+              setShowPhotoImport(false);
+              setShowAddEvent(false);
+              setShowDocumentImport(false);
+            }
+          }}
+          className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition-colors whitespace-nowrap ${
+            showEmailImport
+              ? "bg-secondary/80 text-secondary-foreground ring-2 ring-primary/20"
+              : "bg-secondary text-secondary-foreground hover:bg-secondary/80"
+          }`}
+        >
+          <Mail className="h-4 w-4" />
+          Add from Email
+        </button>
+      </div>
 
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => setIsImportOpen(!isImportOpen)}
-              className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-secondary/50 rounded-xl transition-all"
-            >
-              <Plus className="h-4 w-4" /> Import Itinerary
-            </button>
-            <button
-              onClick={() => setIsAddEventOpen(true)}
-              className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-xl text-sm font-medium hover:bg-primary/90 transition-all shadow-sm"
-            >
-              <Plus className="h-4 w-4" /> Add Stop
-            </button>
+      {showAddEvent && (
+        <AddEventForm
+          tripId={trip.id}
+          onEventAdded={() => {
+            fetchData();
+            setShowAddEvent(false);
+          }}
+          isOpen
+          onClose={() => setShowAddEvent(false)}
+        />
+      )}
+
+      {showPhotoImport && (
+        <PhotoImport
+          tripId={trip.id}
+          onImportComplete={() => {
+            void fetchData();
+            setShowPhotoImport(false);
+            setHasStagedFiles(false);
+          }}
+          onCancel={() => setShowPhotoImport(false)}
+          onProgressChange={setImportProgress}
+          existingSteps={steps.map((s) => ({
+            id: s.id,
+            latitude: s.latitude,
+            longitude: s.longitude,
+            location_name: s.location_name,
+            country: s.country,
+            recorded_at: s.recorded_at,
+            event_type: s.event_type,
+            description: s.description,
+          }))}
+        />
+      )}
+
+      {showDocumentImport && (
+        <ItineraryImport tripId={trip.id} onImportComplete={fetchData} onCancel={() => setShowDocumentImport(false)} />
+      )}
+
+      {showEmailImport && (
+        <div className="relative z-20 w-full bg-background border border-border shadow-xl rounded-2xl p-6 mb-8 flex items-center justify-between">
+          <div>
+            <h3 className="font-display text-lg font-semibold text-foreground">Confirmation Inbox</h3>
+            <p className="text-sm text-muted-foreground mt-1">
+              Send booking emails to:{" "}
+              <strong className="text-foreground select-all">add+{trip.id.split("-")[0]}@trips.domain.com</strong>
+            </p>
           </div>
+          <button
+            onClick={() => setShowEmailImport(false)}
+            className="text-muted-foreground hover:text-foreground p-2 rounded-full hover:bg-secondary transition-colors"
+          >
+            <X className="w-5 h-5" />
+          </button>
         </div>
+      )}
 
-        {/* Conditional Sections: Import & Add Event */}
-        {isImportOpen && (
-          <div className="mb-8 animate-in fade-in slide-in-from-top-4 duration-300">
-            <div className="rounded-2xl border border-primary/20 bg-primary/5 p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="font-semibold text-foreground">Import from Document</h3>
-                <button onClick={() => setIsImportOpen(false)}>
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-              <ItineraryImport
-                tripId={trip.id}
-                onImportComplete={() => {
-                  setIsImportOpen(false);
-                  refetchSteps();
-                }}
+      {hasStops ? (
+        <div className="relative flex flex-col w-full gap-8">
+          <div className="sticky top-0 z-30 w-full bg-background/95 backdrop-blur-md pb-4 pt-2 -mx-4 px-4 sm:mx-0 sm:px-0">
+            <div className="relative z-0 h-[35vh] sm:h-[40vh] min-h-[300px] w-full rounded-2xl overflow-hidden shadow-sm border border-border">
+              <WorldMap
+                ref={mapRef}
+                steps={steps}
+                singleTrip
+                visualTypes={visualTypes}
+                activeStepId={activeStepId}
+                className="absolute inset-0 h-full w-full"
+                style={{ height: "100%" }}
               />
             </div>
           </div>
-        )}
 
-        <AddEventForm
-          tripId={trip.id}
-          isOpen={isAddEventOpen}
-          onClose={() => setIsAddEventOpen(false)}
-          onEventAdded={refetchSteps}
-        />
-
-        {/* Main Content Area */}
-        <div className="space-y-8">
-          {activeTab === "timeline" ? (
-            <TripTimeline steps={steps || []} onUpdated={refetchSteps} />
-          ) : (
-            <div className="h-[600px] w-full overflow-hidden rounded-3xl border border-border shadow-card">
-              <WorldMap steps={steps || []} singleTrip={true} />
-            </div>
-          )}
-        </div>
-
-        {steps?.length === 0 && !isImportOpen && !isAddEventOpen && (
-          <div className="mt-12 text-center py-20 rounded-3xl border-2 border-dashed border-border">
-            <MapIcon className="h-12 w-12 text-muted-foreground/20 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-foreground">No stops yet</h3>
-            <p className="text-muted-foreground mb-6">
-              Add your first stop or import an itinerary to start your timeline.
-            </p>
-            <div className="flex justify-center gap-4">
-              <button onClick={() => setIsAddEventOpen(true)} className="text-primary font-medium">
-                Add Manual Stop
-              </button>
-              <span className="text-muted-foreground">•</span>
-              <button onClick={() => setIsImportOpen(true)} className="text-primary font-medium">
-                Import Document
+          <div className="relative z-10 flex flex-col gap-6 w-full max-w-3xl mx-auto">
+            <div className="flex items-center justify-between px-2">
+              <h2 className="font-display text-2xl font-semibold text-foreground">{timelineLabel}</h2>
+              <button
+                onClick={handleClearAllSteps}
+                className="flex items-center gap-1.5 sm:gap-2 rounded-xl px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium text-destructive bg-destructive/10 hover:bg-destructive/20 transition-colors"
+              >
+                <Trash2 className="h-4 w-4" />
+                <span className="hidden sm:inline">Clear All Stops</span>
+                <span className="sm:hidden">Clear All</span>
               </button>
             </div>
+
+            <TripTimeline
+              steps={steps}
+              onUpdated={fetchData}
+              visualTypes={visualTypes}
+              onStepInView={handleStepInView}
+            />
           </div>
-        )}
-      </div>
+        </div>
+      ) : (
+        <div className="flex flex-col gap-4 mt-8">
+          <h2 className="font-display text-2xl font-semibold text-foreground">{timelineLabel}</h2>
+          <div className="flex flex-col items-center gap-3 rounded-2xl bg-card p-12 shadow-sm border border-border border-dashed text-center">
+            <Navigation className="h-8 w-8 text-muted-foreground/50" />
+            <p className="text-muted-foreground">
+              No stops yet. Start tracking or import photos to auto-detect locations.
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   );
-}
+};
 
-// Add this helper for the close button in the import section
-function X({ className }: { className?: string }) {
-  return (
-    <svg
-      xmlns="http://www.w3.org/2000/svg"
-      width="24"
-      height="24"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className={className}
-    >
-      <path d="M18 6 6 18" />
-      <path d="m6 6 12 12" />
-    </svg>
-  );
-}
+export default TripDetail;
