@@ -42,7 +42,7 @@ const map = mapRef.current;
 if (!map || (step.latitude === 0 && step.longitude === 0)) return;
 map.flyTo({
 center: [step.longitude, step.latitude],
-zoom: Math.max(map.getZoom(), 10),
+zoom: Math.max(map.getZoom(), 7),
 duration: 1200,
 essential: true,
 });
