@@ -41,6 +41,7 @@ type TripStep = Tables<"trip_steps">;
 const TripDetail = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { user, loading: authLoading } = useAuth();
   const isMobile = useIsMobile();
   const [trip, setTrip] = useState<Trip | null>(null);
