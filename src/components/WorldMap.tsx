@@ -3,6 +3,7 @@ import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 import type { StepVisualType } from "@/lib/stepVisuals";
 import type { Tables } from "@/integrations/supabase/types";
+import { supabase } from "@/integrations/supabase/client";
 
 type TripStep = Tables<"trip_steps">;
 
@@ -33,6 +34,7 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
   const stepsRef = useRef<TripStep[]>(steps);
+  const markersRef = useRef<mapboxgl.Marker[]>([]);
   stepsRef.current = steps;
 
   const flyToStep = useCallback((step: TripStep) => {
@@ -72,6 +74,10 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
       mapRef.current = null;
     }
 
+    // Clear old markers
+    markersRef.current.forEach((marker) => marker.remove());
+    markersRef.current = [];
+
     const map = new mapboxgl.Map({
       container: containerRef.current,
       style: "mapbox://styles/mapbox/satellite-streets-v12",
@@ -92,7 +98,7 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
     });
     resizeObserver.observe(containerRef.current);
 
-    map.on("load", () => {
+    map.on("load", async () => {
       if (steps.length === 0) return;
 
       const byTrip = new Map<string, TripStep[]>();
@@ -105,6 +111,7 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
       const bounds = new mapboxgl.LngLatBounds();
       let colorIdx = 0;
 
+      // 1. Draw the lines
       byTrip.forEach((tripSteps, tripId) => {
         const color = singleTrip ? ROUTE_COLOR : ROUTE_COLOR_ALT[colorIdx % ROUTE_COLOR_ALT.length];
         colorIdx += 1;
@@ -118,11 +125,7 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
         if (routeCoordinates.length > 1) {
           map.addSource(`route-${tripId}`, {
             type: "geojson",
-            data: {
-              type: "Feature",
-              properties: {},
-              geometry: { type: "LineString", coordinates: routeCoordinates },
-            },
+            data: { type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: routeCoordinates } },
           });
 
           map.addLayer({
@@ -143,9 +146,59 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
         }
       });
 
+      // 2. Fetch the first photo for each step to create the thumbnail bubbles
+      const stepIds = steps.filter((s) => s.latitude !== 0 && s.longitude !== 0).map((s) => s.id);
+
+      if (stepIds.length > 0) {
+        const { data: photos } = await supabase
+          .from("step_photos")
+          .select("step_id, storage_path")
+          .in("step_id", stepIds);
+
+        // Create a lookup map of step_id -> image URL
+        const photoMap = new Map();
+        if (photos) {
+          for (const photo of photos) {
+            if (!photoMap.has(photo.step_id)) {
+              const { data: urlData } = supabase.storage.from("trip-photos").getPublicUrl(photo.storage_path);
+              photoMap.set(photo.step_id, urlData.publicUrl);
+            }
+          }
+        }
+
+        // 3. Add Custom DOM Markers to the map
+        steps.forEach((step) => {
+          if (step.latitude === 0 || step.longitude === 0) return;
+
+          const el = document.createElement("div");
+          el.className = "custom-map-marker group relative cursor-pointer flex flex-col items-center";
+
+          const imgUrl = photoMap.get(step.id);
+          const displayName = step.location_name || "Unknown Location";
+
+          // The HTML for the Map Bubble
+          el.innerHTML = `
+              <div class="bg-card text-foreground text-xs font-semibold px-3 py-1.5 rounded-full shadow-lg border border-border whitespace-nowrap mb-1 opacity-0 transition-opacity group-hover:opacity-100">
+                ${displayName}
+              </div>
+              <div class="h-10 w-10 rounded-full border-2 border-white shadow-lg overflow-hidden bg-muted flex items-center justify-center">
+                ${
+                  imgUrl
+                    ? `<img src="${imgUrl}" class="h-full w-full object-cover" />`
+                    : `<div class="w-2.5 h-2.5 rounded-full bg-primary"></div>`
+                }
+              </div>
+            `;
+
+          const marker = new mapboxgl.Marker(el).setLngLat([step.longitude, step.latitude]).addTo(map);
+
+          markersRef.current.push(marker);
+        });
+      }
+
       if (!bounds.isEmpty()) {
         map.fitBounds(bounds, {
-          padding: { top: 60, bottom: 60, left: 60, right: 60 },
+          padding: { top: 80, bottom: 80, left: 80, right: 80 },
           maxZoom: singleTrip ? 14 : 12,
           duration: 800,
         });
@@ -154,6 +207,7 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
 
     return () => {
       resizeObserver.disconnect();
+      markersRef.current.forEach((marker) => marker.remove());
       map.remove();
       mapRef.current = null;
     };
