@@ -110,42 +110,47 @@ byTrip.set(step.trip_id, tripSteps);
 });
 
 const bounds = new mapboxgl.LngLatBounds();
-let colorIdx = 0;
 
-      // 1. Draw the lines
-byTrip.forEach((tripSteps, tripId) => {
-const color = singleTrip ? ROUTE_COLOR : ROUTE_COLOR_ALT[colorIdx % ROUTE_COLOR_ALT.length];
-colorIdx += 1;
+      // 1. Draw route lines (trip detail only, not dashboard)
+      if (singleTrip) {
+        let colorIdx = 0;
+        byTrip.forEach((tripSteps, tripId) => {
+          const color = ROUTE_COLOR;
+          colorIdx += 1;
 
-const routeCoordinates = tripSteps
-.filter((step) => step.latitude !== 0 && step.longitude !== 0)
-.map((step) => [step.longitude, step.latitude] as [number, number]);
+          const routeCoordinates = tripSteps
+            .filter((step) => step.latitude !== 0 && step.longitude !== 0)
+            .map((step) => [step.longitude, step.latitude] as [number, number]);
 
-routeCoordinates.forEach((coordinate) => bounds.extend(coordinate));
+          routeCoordinates.forEach((coordinate) => bounds.extend(coordinate));
 
-if (routeCoordinates.length > 1) {
-map.addSource(`route-${tripId}`, {
-type: "geojson",
-            data: { type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: routeCoordinates } },
-});
+          if (routeCoordinates.length > 1) {
+            map.addSource(`route-${tripId}`, {
+              type: "geojson",
+              data: { type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: routeCoordinates } },
+            });
 
-map.addLayer({
-id: `route-glow-${tripId}`,
-type: "line",
-source: `route-${tripId}`,
-layout: { "line-join": "round", "line-cap": "round" },
-paint: { "line-color": color, "line-width": singleTrip ? 6 : 5, "line-opacity": 0.2, "line-blur": 3 },
-});
+            map.addLayer({
+              id: `route-glow-${tripId}`,
+              type: "line",
+              source: `route-${tripId}`,
+              layout: { "line-join": "round", "line-cap": "round" },
+              paint: { "line-color": color, "line-width": 6, "line-opacity": 0.2, "line-blur": 3 },
+            });
 
-map.addLayer({
-id: `route-line-${tripId}`,
-type: "line",
-source: `route-${tripId}`,
-layout: { "line-join": "round", "line-cap": "round" },
-paint: { "line-color": color, "line-width": singleTrip ? 3.5 : 2.5, "line-opacity": 1 },
-});
-}
-});
+            map.addLayer({
+              id: `route-line-${tripId}`,
+              type: "line",
+              source: `route-${tripId}`,
+              layout: { "line-join": "round", "line-cap": "round" },
+              paint: { "line-color": color, "line-width": 3.5, "line-opacity": 1 },
+            });
+          }
+        });
+      } else {
+        // Dashboard: just extend bounds, no lines
+        validSteps.forEach((s) => bounds.extend([s.longitude, s.latitude]));
+      }
 
       // 2. Build markers — photo thumbnails + full names on trip page, city labels on dashboard
       const validSteps = steps.filter((s) => s.latitude !== 0 && s.longitude !== 0);
@@ -234,10 +239,28 @@ paint: { "line-color": color, "line-width": singleTrip ? 3.5 : 2.5, "line-opacit
 
         const citySet = new Map<string, { lng: number; lat: number; stepId: string }>();
         relevantSteps.forEach((step) => {
-          const raw = step.location_name || step.country || "Unknown";
-          const parts = raw.split(",").map((p) => p.trim());
-          // Extract city: prefer second-to-last segment (city in "Place, City, Country")
-          const cityName = parts.length >= 2 ? parts[parts.length - 2] : parts[0];
+          // Use the country field as the city source, or extract from location_name
+          // location_name is often "Place Name, City, Country" — we want just the city
+          let cityName = "Unknown";
+          if (step.country) {
+            // country field often has just the country; try location_name for city
+            const raw = step.location_name || "";
+            const parts = raw.split(",").map((p) => p.trim()).filter(Boolean);
+            if (parts.length >= 3) {
+              // "Place, City, Country" → take City
+              cityName = parts[parts.length - 2];
+            } else if (parts.length === 2) {
+              // "City, Country" → take City
+              cityName = parts[0];
+            } else {
+              // Single name — likely the city itself or a place name; use country as fallback
+              cityName = step.country || parts[0] || "Unknown";
+            }
+          } else {
+            const raw = step.location_name || "Unknown";
+            const parts = raw.split(",").map((p) => p.trim()).filter(Boolean);
+            cityName = parts.length >= 2 ? parts[parts.length - 2] : parts[0];
+          }
           if (!citySet.has(cityName)) {
             citySet.set(cityName, { lng: step.longitude, lat: step.latitude, stepId: step.id });
           }
