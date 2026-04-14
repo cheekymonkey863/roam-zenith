@@ -180,7 +180,7 @@ export function AppNavigation() {
             >
               <div className="flex items-center gap-2">
                 <Plane className="h-4 w-4 text-muted-foreground" />
-                TRKR Trips
+                TRKD Trips
               </div>
               {expandedTrkd ? (
                 <ChevronDown className="h-4 w-4 text-muted-foreground" />
