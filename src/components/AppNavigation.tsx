@@ -14,8 +14,18 @@ type Trip = {
 type GroupedTrips = Record<string, Record<string, Trip[]>>;
 
 const MONTHS = [
-  "January", "February", "March", "April", "May", "June",
-  "July", "August", "September", "October", "November", "December"
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
 ];
 
 function getTripMonths(startDateStr: string, endDateStr: string) {
@@ -41,7 +51,7 @@ export function AppNavigation() {
   const navigate = useNavigate();
   const [isOpen, setIsOpen] = useState(false);
   const [groupedTrips, setGroupedTrips] = useState<GroupedTrips>({});
-  
+
   const [expandedTrkd, setExpandedTrkd] = useState(true);
   const [expandedYears, setExpandedYears] = useState<Set<string>>(new Set());
   const [expandedMonths, setExpandedMonths] = useState<Set<string>>(new Set());
@@ -65,14 +75,14 @@ export function AppNavigation() {
         spannedMonths.forEach(({ year, month }) => {
           if (!grouped[year]) grouped[year] = {};
           if (!grouped[year][month]) grouped[year][month] = [];
-          if (!grouped[year][month].find(t => t.id === trip.id)) {
+          if (!grouped[year][month].find((t) => t.id === trip.id)) {
             grouped[year][month].push(trip);
           }
         });
       });
 
       setGroupedTrips(grouped);
-      
+
       const years = Object.keys(grouped).sort((a, b) => b.localeCompare(a));
       if (years.length > 0) {
         setExpandedYears(new Set([years[0]]));
@@ -82,8 +92,12 @@ export function AppNavigation() {
     fetchTrips();
 
     const channel = supabase
-      .channel('public:trips-nav')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'trips', filter: `user_id=eq.${user.id}` }, fetchTrips)
+      .channel("public:trips-nav")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "trips", filter: `user_id=eq.${user.id}` },
+        fetchTrips,
+      )
       .subscribe();
 
     return () => {
@@ -92,7 +106,7 @@ export function AppNavigation() {
   }, [user]);
 
   const toggleYear = (year: string) => {
-    setExpandedYears(prev => {
+    setExpandedYears((prev) => {
       const next = new Set(prev);
       if (next.has(year)) next.delete(year);
       else next.add(year);
@@ -101,7 +115,7 @@ export function AppNavigation() {
   };
 
   const toggleMonth = (yearMonthKey: string) => {
-    setExpandedMonths(prev => {
+    setExpandedMonths((prev) => {
       const next = new Set(prev);
       if (next.has(yearMonthKey)) next.delete(yearMonthKey);
       else next.add(yearMonthKey);
@@ -112,7 +126,7 @@ export function AppNavigation() {
   const handleAddTrip = () => {
     setIsOpen(false);
     navigate("/");
-    window.scrollTo({ top: 0, behavior: "smooth" }); 
+    window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
   const years = Object.keys(groupedTrips).sort((a, b) => b.localeCompare(a));
@@ -127,27 +141,22 @@ export function AppNavigation() {
       </button>
 
       {isOpen && (
-        <div 
+        <div
           className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm transition-opacity"
           onClick={() => setIsOpen(false)}
         />
       )}
 
-      <div 
+      <div
         className={`fixed top-0 left-0 bottom-0 z-50 w-80 bg-card border-r border-border shadow-2xl transition-transform duration-300 ease-in-out ${
           isOpen ? "translate-x-0" : "-translate-x-full"
         } flex flex-col overflow-hidden`}
       >
-        {/* Header with Updated Logo */}
         <div className="flex items-center justify-between p-6 border-b border-border">
           <Link to="/" onClick={() => setIsOpen(false)} className="flex items-center">
-            <img 
-              src="/logo.png" 
-              alt="TravelTRKR" 
-              className="h-10 w-auto object-contain"
-            />
+            <img src="/logo.png" alt="TravelTRKR" className="h-10 w-auto object-contain" />
           </Link>
-          <button 
+          <button
             onClick={() => setIsOpen(false)}
             className="rounded-lg p-2 text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
           >
@@ -156,7 +165,7 @@ export function AppNavigation() {
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-2">
-          <button 
+          <button
             onClick={handleAddTrip}
             className="flex items-center gap-3 w-full rounded-xl px-4 py-3 text-sm font-medium text-primary bg-primary/10 hover:bg-primary/20 transition-colors mb-2"
           >
@@ -165,7 +174,7 @@ export function AppNavigation() {
           </button>
 
           <div className="flex flex-col">
-            <button 
+            <button
               onClick={() => setExpandedTrkd(!expandedTrkd)}
               className="flex items-center justify-between w-full rounded-lg px-3 py-2 text-sm font-semibold text-foreground hover:bg-secondary transition-colors"
             >
@@ -173,7 +182,11 @@ export function AppNavigation() {
                 <Plane className="h-4 w-4 text-muted-foreground" />
                 TRKR Trips
               </div>
-              {expandedTrkd ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
+              {expandedTrkd ? (
+                <ChevronDown className="h-4 w-4 text-muted-foreground" />
+              ) : (
+                <ChevronRight className="h-4 w-4 text-muted-foreground" />
+              )}
             </button>
 
             {expandedTrkd && (
@@ -181,42 +194,52 @@ export function AppNavigation() {
                 {years.length === 0 ? (
                   <p className="text-xs text-muted-foreground px-3 py-2 italic">No trips found.</p>
                 ) : (
-                  years.map(year => {
+                  years.map((year) => {
                     const isYearExpanded = expandedYears.has(year);
-                    const months = Object.keys(groupedTrips[year]).sort((a, b) => MONTHS.indexOf(a) - MONTHS.indexOf(b));
+                    const months = Object.keys(groupedTrips[year]).sort(
+                      (a, b) => MONTHS.indexOf(a) - MONTHS.indexOf(b),
+                    );
 
                     return (
                       <div key={year} className="flex flex-col">
-                        <button 
+                        <button
                           onClick={() => toggleYear(year)}
                           className="flex items-center justify-between w-full rounded-lg px-3 py-2 text-sm font-medium text-foreground/90 hover:bg-secondary transition-colors"
                         >
                           {year}
-                          {isYearExpanded ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" /> : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />}
+                          {isYearExpanded ? (
+                            <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+                          ) : (
+                            <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+                          )}
                         </button>
 
                         {isYearExpanded && (
                           <div className="flex flex-col mt-0.5 pl-4 border-l border-border/50 ml-3">
-                            {months.map(month => {
+                            {months.map((month) => {
                               const yearMonthKey = `${year}-${month}`;
                               const isMonthExpanded = expandedMonths.has(yearMonthKey);
                               const tripsInMonth = groupedTrips[year][month];
 
                               return (
                                 <div key={month} className="flex flex-col">
-                                  <button 
+                                  <button
                                     onClick={() => toggleMonth(yearMonthKey)}
                                     className="flex items-center justify-between w-full rounded-lg px-3 py-1.5 text-sm text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
                                   >
                                     {month}
-                                    {isMonthExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                                    {isMonthExpanded ? (
+                                      <ChevronDown className="h-3.5 w-3.5" />
+                                    ) : (
+                                      <ChevronRight className="h-3.5 w-3.5" />
+                                    )}
                                   </button>
 
                                   {isMonthExpanded && (
                                     <div className="flex flex-col mt-0.5 pl-4 border-l border-border/50 ml-3 pb-1 gap-0.5">
-                                      {tripsInMonth.map(trip => (
-                                        <Link 
-                                          key={trip.id} 
+                                      {tripsInMonth.map((trip) => (
+                                        <Link
+                                          key={trip.id}
                                           to={`/trip/${trip.id}`}
                                           onClick={() => setIsOpen(false)}
                                           className="block truncate rounded-lg px-3 py-1.5 text-xs font-medium text-foreground/80 hover:bg-primary/10 hover:text-primary transition-colors"
@@ -228,3 +251,19 @@ export function AppNavigation() {
                                     </div>
                                   )}
                                 </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
