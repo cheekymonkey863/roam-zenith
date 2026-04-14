@@ -27,6 +27,7 @@ import { toast } from "sonner";
 
 import { PhotoImport } from "@/components/PhotoImport";
 import { ItineraryImport } from "@/components/ItineraryImport";
+import { consumePendingImport } from "@/lib/pendingImportStore";
 import { WorldMap, type WorldMapHandle } from "@/components/WorldMap";
 import { AddEventForm } from "@/components/AddEventForm";
 import { EditTripDialog } from "@/components/EditTripDialog";
