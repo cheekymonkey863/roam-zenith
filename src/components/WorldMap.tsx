@@ -81,12 +81,14 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
       container: containerRef.current,
       style: "mapbox://styles/mapbox/satellite-streets-v12",
       center: [0, 20],
-      zoom: 1.8,
+      zoom: singleTrip ? 1.8 : 1.2,
       projection: "mercator",
       attributionControl: false,
       pitchWithRotate: false,
       dragRotate: false,
       touchPitch: false,
+      // FIX: Prevents the map from duplicating the globe infinitely horizontally
+      renderWorldCopies: false,
     });
 
     map.addControl(new mapboxgl.NavigationControl({ showCompass: false }), "bottom-right");
@@ -146,9 +148,11 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
 
       const validSteps = steps.filter((s) => s.latitude !== 0 && s.longitude !== 0);
       const stepIds = validSteps.map((s) => s.id);
+
       const photoMap = new Map<string, string[]>();
 
-      if (stepIds.length > 0) {
+      // FIX: Only fetch photos if we are on a single trip page. Dashboard doesn't need them!
+      if (singleTrip && stepIds.length > 0) {
         const { data: photos } = await supabase
           .from("step_photos")
           .select("step_id, storage_path")
@@ -170,30 +174,46 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
         const el = document.createElement("div");
         el.className = "custom-map-marker group relative cursor-pointer flex flex-col items-center";
 
-        const urls = photoMap.get(step.id) || [];
-        const displayName = step.location_name || "Unknown Location";
+        if (singleTrip) {
+          // --- DETAILED BUBBLE (Trip Page) ---
+          const urls = photoMap.get(step.id) || [];
+          const displayName = step.location_name || "Unknown Location";
 
-        let innerImageHtml = "";
+          let innerImageHtml = "";
+          if (urls.length === 0) {
+            innerImageHtml = `<div class="h-4 w-4 rounded-full border-2 border-white shadow-lg bg-primary"></div>`;
+          } else if (urls.length === 1) {
+            innerImageHtml = `<img src="${urls[0]}" class="h-10 w-10 rounded-full object-cover border-2 border-white shadow-lg" />`;
+          } else {
+            const gridCells = urls.map((u) => `<img src="${u}" class="h-full w-full object-cover" />`).join("");
+            innerImageHtml = `
+                  <div class="h-12 w-12 rounded-full border-2 border-white shadow-lg overflow-hidden grid grid-cols-2 grid-rows-2 bg-muted">
+                    ${gridCells}
+                  </div>
+               `;
+          }
 
-        if (urls.length === 0) {
-          innerImageHtml = `<div class="h-4 w-4 rounded-full border-2 border-white shadow-lg bg-primary"></div>`;
-        } else if (urls.length === 1) {
-          innerImageHtml = `<img src="${urls[0]}" class="h-10 w-10 rounded-full object-cover border-2 border-white shadow-lg" />`;
+          el.innerHTML = `
+              <div class="bg-card text-foreground text-xs font-semibold px-3 py-1.5 rounded-full shadow-lg border border-border whitespace-nowrap mb-1">
+                ${displayName}
+              </div>
+              ${innerImageHtml}
+            `;
         } else {
-          const gridCells = urls.map((u) => `<img src="${u}" class="h-full w-full object-cover" />`).join("");
-          innerImageHtml = `
-                <div class="h-12 w-12 rounded-full border-2 border-white shadow-lg overflow-hidden grid grid-cols-2 grid-rows-2 bg-muted">
-                  ${gridCells}
-                </div>
-             `;
-        }
+          // --- COMPACT BUBBLE (Dashboard Page) ---
+          // Fallback to splitting the location name if the country column is empty
+          const fallbackCity = step.location_name
+            ? step.location_name.split(",").slice(-2).join(",").trim()
+            : "Unknown";
+          const shortName = step.country || fallbackCity;
 
-        el.innerHTML = `
-            <div class="bg-card text-foreground text-xs font-semibold px-3 py-1.5 rounded-full shadow-lg border border-border whitespace-nowrap mb-1">
-              ${displayName}
-            </div>
-            ${innerImageHtml}
-          `;
+          el.innerHTML = `
+              <div class="bg-card text-foreground text-[10px] font-semibold px-2 py-1 rounded-full shadow border border-border whitespace-nowrap mb-1 opacity-90">
+                ${shortName}
+              </div>
+              <div class="h-3 w-3 rounded-full border-2 border-white shadow bg-primary"></div>
+            `;
+        }
 
         const marker = new mapboxgl.Marker(el).setLngLat([step.longitude, step.latitude]).addTo(map);
 
