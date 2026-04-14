@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Upload, FileText, Image, Loader2, X, Plus, ChevronDown, ChevronUp } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
@@ -109,6 +109,65 @@ export function DashboardTripForm({ onTripAdded }: { onTripAdded?: () => void })
             {creating ? "Creating..." : "Add Trip"}
           </button>
         </form>
+      )}
+    </div>
+  );
+}
+
+export default function Dashboard() {
+  const { user } = useAuth();
+  const [trips, setTrips] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetchTrips = useCallback(async () => {
+    if (!user) return;
+    setLoading(true);
+    const { data } = await supabase
+      .from("trips")
+      .select("*")
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false });
+    setTrips(data || []);
+    setLoading(false);
+  }, [user]);
+
+  useEffect(() => {
+    fetchTrips();
+  }, [fetchTrips]);
+
+  if (!user) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <p className="text-muted-foreground">Please sign in to view your trips.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="max-w-3xl mx-auto px-4 py-10 space-y-6">
+      <h1 className="text-2xl font-bold text-foreground">Your Trips</h1>
+      <DashboardTripForm onTripAdded={fetchTrips} />
+      {loading ? (
+        <p className="text-muted-foreground text-sm">Loading trips...</p>
+      ) : trips.length === 0 ? (
+        <p className="text-muted-foreground text-sm">No trips yet. Create your first one above!</p>
+      ) : (
+        <div className="space-y-3">
+          {trips.map((trip) => (
+            <a
+              key={trip.id}
+              href={`/trip/${trip.id}`}
+              className="block rounded-xl border border-border bg-card p-4 hover:bg-secondary/30 transition-colors"
+            >
+              <p className="font-semibold text-foreground">{trip.title}</p>
+              {trip.start_date && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  {trip.start_date}{trip.end_date ? ` → ${trip.end_date}` : ""}
+                </p>
+              )}
+            </a>
+          ))}
+        </div>
       )}
     </div>
   );
