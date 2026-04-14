@@ -1,12 +1,15 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Menu, X, Plus, ChevronRight, ChevronDown, Image, FileText, Mail } from "lucide-react";
+import { Menu, X, Plus, ChevronRight, ChevronDown, Image, FileText, Mail, Loader2, MapPin } from "lucide-react";
 import { format } from "date-fns";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 import { parseTripCountriesInput } from "@/lib/tripManagement";
+import { setPendingImport, type PendingStop } from "@/lib/pendingImportStore";
+import { processImportedMediaFiles } from "@/lib/mediaImport";
+import { getEventType } from "@/lib/eventTypes";
 
 const MONTHS = [
   "January",
