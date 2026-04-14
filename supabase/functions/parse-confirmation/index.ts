@@ -58,9 +58,9 @@ Extract:
   IMPORTANT FOR FLIGHTS: locationName MUST be formatted as "Origin Airport (IATA) → Destination Airport (IATA)"
   Example: "Edinburgh Airport (EDI) → London Heathrow Airport (LHR)"
   Example: "São Paulo Guarulhos (GRU) → Madrid Barajas (MAD)"
-- country: the country of the DESTINATION for flights, otherwise the country of the location
-- city: the city or area
-- latitude/longitude: your best coordinate estimate for the DESTINATION location (for flights, use the arrival airport)
+- country: the country of the ORIGIN/DEPARTURE location for flights and trains, otherwise the country of the location
+- city: the city of the ORIGIN/DEPARTURE airport/station for flights and trains, otherwise the city of the location
+- latitude/longitude: your best coordinate estimate for the ORIGIN/DEPARTURE location (for flights, use the departure airport; for trains, use the departure station)
 - date: ISO date (YYYY-MM-DD) if found
 - time: time (HH:MM) of departure if found
 - description: brief summary of the booking. For flights include airline, flight number, departure time, arrival time.

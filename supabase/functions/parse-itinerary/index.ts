@@ -69,8 +69,8 @@ For each item determine:
   Example: "Edinburgh Airport (EDI) → London Heathrow Airport (LHR)"
   Example: "São Paulo Guarulhos (GRU) → Madrid Barajas (MAD)"
   For trains: "Origin Station → Destination Station" (e.g. "London St Pancras → Paris Gare du Nord")
-- country: country name
-- latitude/longitude: your best estimate of coordinates (use your knowledge of the location). For flights/trains, use the ARRIVAL/DESTINATION coordinates.
+- country: country name. For flights/trains, use the ORIGIN/DEPARTURE country.
+- latitude/longitude: your best estimate of coordinates (use your knowledge of the location). For flights/trains, use the ORIGIN/DEPARTURE coordinates (departure airport/station).
 - eventType: MUST be one of these exact values:
 
   TRANSPORT types (for any movement between places):
