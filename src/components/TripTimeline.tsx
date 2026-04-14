@@ -88,11 +88,6 @@ function formatStepDate(dateStr: string) {
 
 const VIDEO_EXTENSIONS = new Set(["mp4", "mov", "webm", "mkv", "avi", "m4v", "qt", "3gp"]);
 
-function isVideoFile(fileName: string): boolean {
-  const ext = fileName.split(".").pop()?.toLowerCase() ?? "";
-  return VIDEO_EXTENSIONS.has(ext);
-}
-
 export function TripTimeline({
   steps,
   onUpdated,
@@ -272,6 +267,14 @@ export function TripTimeline({
 
   return (
     <div className="relative w-full">
+      {/* We add the style block for the scanning animation here globally */}
+      <style>{`
+        @keyframes scan {
+          0% { transform: translateX(-100%); }
+          100% { transform: translateX(300%); }
+        }
+      `}</style>
+
       {steps.length > 1 && (
         <div className="mb-4 flex items-center gap-2">
           {!selectMode ? (
@@ -323,7 +326,6 @@ export function TripTimeline({
           const isSelected = selectedIds.has(step.id);
           const isDragOver = overIndex === index && dragIndex !== null && dragIndex !== index;
 
-          // Strict Populating Check
           const isPopulating =
             step.description === null ||
             step.description === undefined ||
@@ -331,8 +333,11 @@ export function TripTimeline({
             step.description === "null";
 
           const hasCoordinates = step.latitude !== 0 && step.longitude !== 0;
-          const displayLocation =
-            step.location_name && !step.location_name.toLowerCase().includes("unknown")
+
+          // FIX: If it is populating, explicitly hide the generic name.
+          const displayLocation = isPopulating
+            ? "Pinpointing location..."
+            : step.location_name && !step.location_name.toLowerCase().includes("unknown")
               ? step.location_name
               : hasCoordinates
                 ? `${step.latitude.toFixed(4)}°, ${step.longitude.toFixed(4)}°`
@@ -381,7 +386,6 @@ export function TripTimeline({
                   )}
                 </div>
 
-                {/* Mobile-only date display */}
                 <span className="sm:hidden shrink-0 rounded-full bg-secondary px-3 py-1 text-xs font-medium text-secondary-foreground">
                   {formatStepDate(step.recorded_at)}
                 </span>
@@ -396,17 +400,20 @@ export function TripTimeline({
                 <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
                   <div className="flex-1 min-w-0">
                     <h4 className="font-display text-lg font-semibold text-foreground">{displayLocation}</h4>
-                    {step.country && <p className="text-sm text-muted-foreground">{step.country}</p>}
+                    {step.country && !isPopulating && <p className="text-sm text-muted-foreground">{step.country}</p>}
 
-                    {/* Simplified, continuous progress bar */}
+                    {/* FIX: Simplified scanning progress bar */}
                     {isPopulating ? (
                       <div className="mt-3 flex flex-col gap-2">
                         <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
                           <Loader2 className="h-4 w-4 animate-spin text-primary" />
                           Populating stop details...
                         </div>
-                        <div className="h-1.5 w-full max-w-sm overflow-hidden rounded-full bg-primary/10">
-                          <div className="h-full w-full bg-primary animate-pulse rounded-full" />
+                        <div className="h-1.5 w-full max-w-sm overflow-hidden rounded-full bg-primary/10 relative">
+                          <div
+                            className="absolute top-0 left-0 h-full w-1/3 bg-primary rounded-full"
+                            style={{ animation: "scan 2s ease-in-out infinite" }}
+                          />
                         </div>
                       </div>
                     ) : (
@@ -418,7 +425,6 @@ export function TripTimeline({
                     )}
                   </div>
 
-                  {/* Header Actions (Desktop) */}
                   {!selectMode && (
                     <div className="hidden sm:flex flex-wrap items-center justify-end gap-2 shrink-0">
                       <span className="shrink-0 rounded-full bg-secondary px-3 py-1 text-xs font-medium text-secondary-foreground">
@@ -434,7 +440,6 @@ export function TripTimeline({
                       </button>
                     </div>
                   )}
-                  {/* Actions for Mobile */}
                   {!selectMode && (
                     <div className="sm:hidden flex items-center gap-2 mt-2">
                       <EditStepDialog step={step} onUpdated={onUpdated} />
@@ -451,7 +456,6 @@ export function TripTimeline({
 
                 {step.notes && <p className="text-sm leading-relaxed text-muted-foreground mt-1">{step.notes}</p>}
 
-                {/* Displaying media directly within the stop card if there are multiple images, this acts as the "grid" */}
                 {photos.length > 0 && (
                   <div className="mt-3 w-full">
                     <StepMediaGallery
