@@ -1,231 +1,477 @@
-import { useEffect, useRef, useImperativeHandle, forwardRef, useCallback, type CSSProperties } from "react";
-import mapboxgl from "mapbox-gl";
-import "mapbox-gl/dist/mapbox-gl.css";
-import type { StepVisualType } from "@/lib/stepVisuals";
-import type { Tables } from "@/integrations/supabase/types";
+import { useState, useCallback, useRef, useEffect } from "react";
+import { Upload, X, Loader2, Sparkles } from "lucide-react";
+import { extractExifFromFile } from "@/lib/exif";
 import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
+import heic2any from "heic2any";
+import { cn } from "@/lib/utils";
+import { useAuth } from "@/hooks/useAuth";
+import { groupLocalFiles, getGroupRepresentativeCoordinates } from "@/lib/stagingGrouping";
+import { resumableUpload } from "@/lib/resumableUpload";
+import { queueVideoAnalysisJob } from "@/lib/videoAnalysisQueue";
 
-type TripStep = Tables<"trip_steps">;
-
-mapboxgl.accessToken = "pk.eyJ1IjoicnNvdXNhMzE1IiwiYSI6ImNtbmo2Z3lsNDA4ajMyc3M0ZW40a2R5dG8ifQ.VO0pQrXPDmIQWzKbpB3lUg";
-
-const ROUTE_COLOR = "#E74C5E";
-const ROUTE_COLOR_ALT = ["#E74C5E", "#3B82F6", "#10B981", "#F59E0B", "#8B5CF6"];
-
-export interface WorldMapHandle {
-  flyToStep: (step: TripStep) => void;
-  fitAllSteps: () => void;
-  highlightStep: (stepId: string | null) => void;
+export interface LocalStagedFile {
+  id: string;
+  file: File;
+  previewUrl: string;
+  mimeType: string;
+  fileName: string;
+  latitude: number | null;
+  longitude: number | null;
+  takenAt: Date | null;
+  cameraMake: string | null;
+  cameraModel: string | null;
+  exifDone: boolean;
 }
 
-interface WorldMapProps {
-  steps: TripStep[];
-  singleTrip?: boolean;
-  visualTypes?: Record<string, StepVisualType>;
-  activeStepId?: string | null;
-  className?: string;
-  style?: CSSProperties;
+interface PhotoImportProps {
+  tripId: string;
+  onImportComplete: () => void;
+  onCancel?: () => void;
+  onProgressChange?: (progress: {
+    importing: boolean;
+    current: number;
+    total: number;
+    phase: "upload" | "sorting";
+  }) => void;
+  existingSteps?: Array<{
+    id: string;
+    latitude: number;
+    longitude: number;
+    location_name: string | null;
+    country: string | null;
+    recorded_at: string;
+    event_type: string;
+    description: string | null;
+  }>;
 }
 
-export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function WorldMap(
-  { steps, singleTrip = false, className, style },
-  ref,
-) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const mapRef = useRef<mapboxgl.Map | null>(null);
-  const stepsRef = useRef<TripStep[]>(steps);
-  const markersRef = useRef<mapboxgl.Marker[]>([]);
-  stepsRef.current = steps;
+function getDistanceFromLatLonInM(lat1: number, lon1: number, lat2: number, lon2: number) {
+  const R = 6371e3;
+  const dLat = (lat2 - lat1) * (Math.PI / 180);
+  const dLon = (lon2 - lon1) * (Math.PI / 180);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
 
-  const flyToStep = useCallback((step: TripStep) => {
-    const map = mapRef.current;
-    if (!map || (step.latitude === 0 && step.longitude === 0)) return;
-    map.flyTo({
-      center: [step.longitude, step.latitude],
-      zoom: Math.max(map.getZoom(), 10),
-      duration: 1200,
-      essential: true,
-    });
-  }, []);
+export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps = [] }: PhotoImportProps) {
+  const { user } = useAuth();
+  const [dragOver, setDragOver] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const existingFingerprints = useRef<Set<string> | null>(null);
 
-  const fitAllSteps = useCallback(() => {
-    const map = mapRef.current;
-    if (!map || stepsRef.current.length === 0) return;
-    const bounds = new mapboxgl.LngLatBounds();
-    stepsRef.current.forEach((s) => {
-      if (s.latitude !== 0 && s.longitude !== 0) {
-        bounds.extend([s.longitude, s.latitude]);
-      }
-    });
-    if (!bounds.isEmpty()) {
-      map.fitBounds(bounds, { padding: 60, maxZoom: 14, duration: 800 });
-    }
-  }, []);
-
-  const highlightStep = useCallback((_stepId: string | null) => {}, []);
-
-  useImperativeHandle(ref, () => ({ flyToStep, fitAllSteps, highlightStep }), [flyToStep, fitAllSteps, highlightStep]);
+  const [uploadState, setUploadState] = useState<{
+    phase: "idle" | "reading" | "uploading" | "finalizing";
+    current: number;
+    total: number;
+    message: string;
+  }>({ phase: "idle", current: 0, total: 0, message: "" });
 
   useEffect(() => {
-    if (!containerRef.current) return;
+    async function loadFingerprints() {
+      const { data } = await supabase
+        .from("step_photos")
+        .select("file_name, exif_data")
+        .eq("user_id", (await supabase.auth.getUser()).data.user?.id ?? "");
 
-    if (mapRef.current) {
-      mapRef.current.remove();
-      mapRef.current = null;
+      const { data: stepData } = await supabase.from("trip_steps").select("id").eq("trip_id", tripId);
+      const stepIds = new Set((stepData || []).map((s) => s.id));
+      const fps = new Set<string>();
+
+      if (stepIds.size > 0) {
+        const { data: tripPhotos } = await supabase
+          .from("step_photos")
+          .select("file_name")
+          .in("step_id", Array.from(stepIds).slice(0, 100));
+        if (tripPhotos) {
+          for (const p of tripPhotos) {
+            fps.add(p.file_name);
+          }
+        }
+      }
+      existingFingerprints.current = fps;
+    }
+    loadFingerprints();
+  }, [tripId]);
+
+  const generateVideoThumbnail = (file: File): Promise<string | null> => {
+    return new Promise((resolve) => {
+      const video = document.createElement("video");
+      video.preload = "metadata";
+      video.muted = true;
+      video.playsInline = true;
+      const objectUrl = URL.createObjectURL(file);
+      video.src = objectUrl;
+
+      video.onloadeddata = () => {
+        video.currentTime = 0.1;
+      };
+      video.onseeked = () => {
+        const canvas = document.createElement("canvas");
+        canvas.width = 400;
+        canvas.height = (video.videoHeight / video.videoWidth) * 400 || 400;
+        const ctx = canvas.getContext("2d");
+        ctx?.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const dataUrl = canvas.toDataURL("image/jpeg", 0.6);
+        URL.revokeObjectURL(objectUrl);
+        video.remove();
+        resolve(dataUrl);
+      };
+      video.onerror = () => {
+        URL.revokeObjectURL(objectUrl);
+        video.remove();
+        resolve(null);
+      };
+    });
+  };
+
+  const handleFiles = async (incoming: File[]) => {
+    if (!user) return;
+
+    const mediaFiles = incoming.filter(
+      (f) =>
+        f.type.startsWith("image/") ||
+        f.type.startsWith("video/") ||
+        f.name.toLowerCase().endsWith(".heic") ||
+        f.name.toLowerCase().endsWith(".heif"),
+    );
+    if (mediaFiles.length === 0) return;
+
+    let skippedCount = 0;
+    const filtered = mediaFiles.filter((f) => {
+      if (existingFingerprints.current?.has(f.name)) {
+        skippedCount++;
+        return false;
+      }
+      return true;
+    });
+
+    if (skippedCount > 0) toast.info(`Skipped ${skippedCount} duplicate files`);
+    if (filtered.length === 0) return;
+
+    setUploadState({ phase: "reading", current: 0, total: filtered.length, message: "Reading EXIF data..." });
+    const processedFiles: LocalStagedFile[] = [];
+
+    for (let i = 0; i < filtered.length; i++) {
+      const file = filtered[i];
+      let newPreviewUrl: string | null = null;
+      const isVideo = file.type.startsWith("video/");
+      const isHeic =
+        file.name.toLowerCase().endsWith(".heic") ||
+        file.name.toLowerCase().endsWith(".heif") ||
+        file.type === "image/heic";
+
+      if (isVideo) {
+        const snapshot = await generateVideoThumbnail(file);
+        if (snapshot) newPreviewUrl = snapshot;
+      } else if (isHeic) {
+        try {
+          const convertedBlob = await heic2any({ blob: file, toType: "image/jpeg", quality: 0.8 });
+          const blob = Array.isArray(convertedBlob) ? convertedBlob[0] : convertedBlob;
+          newPreviewUrl = URL.createObjectURL(blob);
+        } catch (e) {}
+      }
+
+      let exifResult = {
+        latitude: null as number | null,
+        longitude: null as number | null,
+        takenAt: null as Date | null,
+        cameraMake: null as string | null,
+        cameraModel: null as string | null,
+      };
+      try {
+        const exif = await extractExifFromFile(file);
+        exifResult = {
+          latitude: exif.latitude,
+          longitude: exif.longitude,
+          takenAt: exif.takenAt,
+          cameraMake: exif.cameraMake ?? null,
+          cameraModel: exif.cameraModel ?? null,
+        };
+      } catch (e) {}
+
+      processedFiles.push({
+        id: crypto.randomUUID(),
+        file,
+        previewUrl: newPreviewUrl || URL.createObjectURL(file),
+        mimeType: file.type,
+        fileName: file.name,
+        ...exifResult,
+        exifDone: true,
+      });
+
+      setUploadState((p) => ({ ...p, current: i + 1 }));
+      await new Promise((r) => setTimeout(r, 10));
     }
 
-    markersRef.current.forEach((marker) => marker.remove());
-    markersRef.current = [];
-
-    const map = new mapboxgl.Map({
-      container: containerRef.current,
-      style: "mapbox://styles/mapbox/satellite-streets-v12",
-      center: [0, 20],
-      zoom: 1.8,
-      projection: "mercator",
-      attributionControl: false,
-      pitchWithRotate: false,
-      dragRotate: false,
-      touchPitch: false,
+    setUploadState({
+      phase: "reading",
+      current: filtered.length,
+      total: filtered.length,
+      message: "Grouping media...",
     });
+    const rawGroups = groupLocalFiles(processedFiles);
 
-    map.addControl(new mapboxgl.NavigationControl({ showCompass: false }), "bottom-right");
-    mapRef.current = map;
-
-    const resizeObserver = new ResizeObserver(() => {
-      map.resize();
+    setUploadState({
+      phase: "uploading",
+      current: 0,
+      total: processedFiles.length,
+      message: "Uploading directly to cloud...",
     });
-    resizeObserver.observe(containerRef.current);
+    let completedUploads = 0;
+    const allNewStepIds: string[] = [];
 
-    map.on("load", async () => {
-      if (steps.length === 0) return;
+    let lastValidCoords =
+      existingSteps.length > 0
+        ? {
+            latitude: existingSteps[existingSteps.length - 1].latitude,
+            longitude: existingSteps[existingSteps.length - 1].longitude,
+          }
+        : { latitude: 0, longitude: 0 };
 
-      const byTrip = new Map<string, TripStep[]>();
-      steps.forEach((step) => {
-        const tripSteps = byTrip.get(step.trip_id) || [];
-        tripSteps.push(step);
-        byTrip.set(step.trip_id, tripSteps);
-      });
+    for (const group of rawGroups) {
+      const rawCoords = getGroupRepresentativeCoordinates(group);
+      let coords = rawCoords && (rawCoords.latitude !== 0 || rawCoords.longitude !== 0) ? rawCoords : null;
+      if (coords) lastValidCoords = coords;
+      else coords = lastValidCoords;
 
-      const bounds = new mapboxgl.LngLatBounds();
-      let colorIdx = 0;
+      let targetStepId: string | null = null;
 
-      byTrip.forEach((tripSteps, tripId) => {
-        const color = singleTrip ? ROUTE_COLOR : ROUTE_COLOR_ALT[colorIdx % ROUTE_COLOR_ALT.length];
-        colorIdx += 1;
-
-        const routeCoordinates = tripSteps
-          .filter((step) => step.latitude !== 0 && step.longitude !== 0)
-          .map((step) => [step.longitude, step.latitude] as [number, number]);
-
-        routeCoordinates.forEach((coordinate) => bounds.extend(coordinate));
-
-        if (routeCoordinates.length > 1) {
-          map.addSource(`route-${tripId}`, {
-            type: "geojson",
-            data: { type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: routeCoordinates } },
-          });
-
-          map.addLayer({
-            id: `route-glow-${tripId}`,
-            type: "line",
-            source: `route-${tripId}`,
-            layout: { "line-join": "round", "line-cap": "round" },
-            paint: { "line-color": color, "line-width": singleTrip ? 6 : 5, "line-opacity": 0.2, "line-blur": 3 },
-          });
-
-          map.addLayer({
-            id: `route-line-${tripId}`,
-            type: "line",
-            source: `route-${tripId}`,
-            layout: { "line-join": "round", "line-cap": "round" },
-            paint: { "line-color": color, "line-width": singleTrip ? 3.5 : 2.5, "line-opacity": 1 },
-          });
-        }
-      });
-
-      // FIX: Ensure ALL valid stops get a marker, even if they have no photos
-      const validSteps = steps.filter((s) => s.latitude !== 0 && s.longitude !== 0);
-      const stepIds = validSteps.map((s) => s.id);
-
-      const photoMap = new Map<string, string[]>();
-
-      if (stepIds.length > 0) {
-        const { data: photos } = await supabase
-          .from("step_photos")
-          .select("step_id, storage_path")
-          .in("step_id", stepIds);
-
-        if (photos) {
-          for (const photo of photos) {
-            const { data: urlData } = supabase.storage.from("trip-photos").getPublicUrl(photo.storage_path);
-            const list = photoMap.get(photo.step_id) || [];
-            if (list.length < 4) {
-              // keep up to 4 images for the grid
-              list.push(urlData.publicUrl);
-            }
-            photoMap.set(photo.step_id, list);
+      for (const step of existingSteps) {
+        if (step.latitude && step.longitude) {
+          const distance = getDistanceFromLatLonInM(coords.latitude, coords.longitude, step.latitude, step.longitude);
+          if (distance <= 10) {
+            targetStepId = step.id;
+            break;
           }
         }
       }
 
-      validSteps.forEach((step) => {
-        const el = document.createElement("div");
-        el.className = "custom-map-marker group relative cursor-pointer flex flex-col items-center";
+      if (!targetStepId) {
+        targetStepId = crypto.randomUUID();
 
-        const urls = photoMap.get(step.id) || [];
-        const displayName = step.location_name || "Unknown Location";
+        // FIX: Strict Formatting - Place on top, City/Country on bottom
+        let fallbackName = `${coords.latitude.toFixed(4)}°, ${coords.longitude.toFixed(4)}°`;
+        let fallbackCountry = "";
 
-        let innerImageHtml = "";
+        try {
+          const res = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${coords.latitude}&lon=${coords.longitude}&zoom=18&addressdetails=1`,
+          );
+          if (res.ok) {
+            const data = await res.json();
+            const addr = data?.address;
+            if (addr) {
+              const place = addr.amenity || addr.leisure || addr.tourism || addr.shop || addr.historic || addr.building;
+              const road = addr.road || addr.pedestrian || addr.path;
+              const city = addr.city || addr.town || addr.village || "";
+              const cc = addr.country || (addr.country_code ? addr.country_code.toUpperCase() : "");
 
-        // Render logic for 0, 1, or 2-4 images (Grid)
-        if (urls.length === 0) {
-          innerImageHtml = `<div class="h-4 w-4 rounded-full border-2 border-white shadow-lg bg-primary"></div>`;
-        } else if (urls.length === 1) {
-          innerImageHtml = `<img src="${urls[0]}" class="h-10 w-10 rounded-full object-cover border-2 border-white shadow-lg" />`;
-        } else {
-          const gridCells = urls.map((u) => `<img src="${u}" class="h-full w-full object-cover" />`).join("");
-          innerImageHtml = `
-                <div class="h-12 w-12 rounded-full border-2 border-white shadow-lg overflow-hidden grid grid-cols-2 grid-rows-2 bg-muted">
-                  ${gridCells}
-                </div>
-             `;
-        }
+              if (place) {
+                fallbackName = place;
+                fallbackCountry = [city, cc].filter(Boolean).join(", ");
+              } else if (road) {
+                fallbackName = road;
+                fallbackCountry = [city, cc].filter(Boolean).join(", ");
+              } else if (city) {
+                fallbackName = city;
+                fallbackCountry = cc;
+              }
+            }
+          }
+        } catch (e) {}
 
-        el.innerHTML = `
-            <div class="bg-card text-foreground text-xs font-semibold px-3 py-1.5 rounded-full shadow-lg border border-border whitespace-nowrap mb-1 opacity-0 transition-opacity group-hover:opacity-100 pointer-events-none">
-              ${displayName}
-            </div>
-            ${innerImageHtml}
-          `;
+        const earliest = group.earliestDate?.toISOString() ?? new Date().toISOString();
 
-        const marker = new mapboxgl.Marker(el).setLngLat([step.longitude, step.latitude]).addTo(map);
+        await supabase.from("trip_steps").insert({
+          id: targetStepId,
+          trip_id: tripId,
+          user_id: user.id,
+          latitude: coords.latitude,
+          longitude: coords.longitude,
+          recorded_at: earliest,
+          source: "photo_import",
+          event_type: "other",
+          is_confirmed: false,
+          location_name: fallbackName,
+          country: fallbackCountry || null,
+          description: "null",
+        });
 
-        markersRef.current.push(marker);
-      });
-
-      if (!bounds.isEmpty()) {
-        map.fitBounds(bounds, {
-          padding: { top: 80, bottom: 80, left: 80, right: 80 },
-          maxZoom: singleTrip ? 14 : 12,
-          duration: 800,
+        allNewStepIds.push(targetStepId);
+        existingSteps.push({
+          id: targetStepId,
+          latitude: coords.latitude,
+          longitude: coords.longitude,
+          location_name: fallbackName,
+          country: fallbackCountry || null,
+          recorded_at: earliest,
+          event_type: "other",
+          description: null,
         });
       }
-    });
 
-    return () => {
-      resizeObserver.disconnect();
-      markersRef.current.forEach((marker) => marker.remove());
-      map.remove();
-      mapRef.current = null;
-    };
-  }, [steps, singleTrip]);
+      const uploadedFiles = [];
+      for (const f of group.files) {
+        const ext = f.fileName.split(".").pop() || "jpg";
+        const objectName = `${user.id}/${tripId}/staging/${crypto.randomUUID()}.${ext}`;
+
+        await resumableUpload({
+          bucketName: "trip-photos",
+          objectName,
+          file: f.file,
+          contentType: f.mimeType || undefined,
+        });
+        uploadedFiles.push({ file: f, objectName });
+
+        completedUploads++;
+        setUploadState((p) => ({ ...p, current: completedUploads }));
+      }
+
+      const photoRows = uploadedFiles.map(({ file, objectName }) => ({
+        step_id: targetStepId,
+        user_id: user.id,
+        storage_path: objectName,
+        file_name: file.fileName,
+        latitude: file.latitude ?? null,
+        longitude: file.longitude ?? null,
+        taken_at: file.takenAt?.toISOString() ?? null,
+        exif_data: {
+          latitude: file.latitude,
+          longitude: file.longitude,
+          cameraMake: file.cameraMake,
+          cameraModel: file.cameraModel,
+        },
+      }));
+      await supabase.from("step_photos").insert(photoRows);
+
+      for (const { file, objectName } of uploadedFiles) {
+        if (file.mimeType.startsWith("video/")) {
+          queueVideoAnalysisJob({
+            captionId: file.id,
+            userId: user.id,
+            tripId,
+            storagePath: objectName,
+            fileName: file.fileName,
+            mimeType: file.mimeType,
+            takenAt: file.takenAt?.toISOString() ?? null,
+            latitude: coords.latitude,
+            longitude: coords.longitude,
+            locationName: "",
+            country: "",
+            nearbyPlaces: [],
+            itinerarySteps: [],
+          }).catch(() => {});
+        }
+      }
+    }
+
+    setUploadState({ phase: "finalizing", current: 0, total: 0, message: "Initiating AI visual recognition..." });
+    if (allNewStepIds.length > 0) {
+      supabase.functions.invoke("process-trip-steps", { body: { step_ids: allNewStepIds } }).catch(() => {});
+    }
+
+    toast.success("Upload complete! AI is finalizing locations.");
+    setTimeout(() => {
+      onImportComplete();
+    }, 1500);
+  };
+
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      setDragOver(false);
+      void handleFiles(Array.from(e.dataTransfer.files));
+    },
+    [handleFiles],
+  );
+
+  const handleFileSelect = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      void handleFiles(Array.from(e.target.files || []));
+      if (e.target) e.target.value = "";
+    },
+    [handleFiles],
+  );
+
+  if (uploadState.phase !== "idle") {
+    const percent = uploadState.total > 0 ? Math.round((uploadState.current / uploadState.total) * 100) : 100;
+    return (
+      <div className="relative z-20 w-full bg-background border border-border shadow-xl rounded-2xl p-10 mb-8 flex flex-col items-center justify-center text-center">
+        {uploadState.phase === "finalizing" ? (
+          <Sparkles className="h-10 w-10 animate-pulse text-blue-500 mb-4" />
+        ) : (
+          <Loader2 className="h-10 w-10 animate-spin text-primary mb-4" />
+        )}
+        <h3 className="font-display text-xl font-semibold text-foreground mb-2">
+          {uploadState.phase === "reading" ? "Trip Media" : "Uploading directly to cloud..."}
+        </h3>
+        {uploadState.phase !== "finalizing" && (
+          <p className="text-sm text-muted-foreground max-w-sm mb-6">
+            {uploadState.phase === "reading"
+              ? `Reading GPS data from file ${uploadState.current} of ${uploadState.total}...`
+              : `Securing ${uploadState.current} of ${uploadState.total} files in the cloud...`}
+          </p>
+        )}
+        <div className="h-3 w-full max-w-md overflow-hidden rounded-full bg-muted border border-border relative">
+          <div
+            className={cn(
+              "h-full rounded-full transition-all duration-300",
+              uploadState.phase === "finalizing" ? "bg-blue-500" : "bg-primary",
+            )}
+            style={{ width: `${Math.max(percent, 5)}%` }}
+          />
+        </div>
+        {uploadState.phase === "uploading" && (
+          <p className="text-xs font-medium text-amber-600 mt-4">
+            ⚠️ Do not switch tabs. Backgrounding this page may pause the upload.
+          </p>
+        )}
+      </div>
+    );
+  }
 
   return (
-    <div
-      ref={containerRef}
-      className={className || "relative z-0 max-h-[40vh] mb-8 w-full overflow-hidden rounded-2xl shadow-card"}
-      style={style || { minHeight: singleTrip ? 420 : 340 }}
-    />
+    <div className="relative z-20 w-full bg-background border border-border shadow-xl rounded-2xl p-6 mb-8">
+      <div className="flex flex-col gap-3">
+        <label
+          onDragOver={(e) => {
+            e.preventDefault();
+            setDragOver(true);
+          }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={handleDrop}
+          className={`flex cursor-pointer flex-col items-center gap-4 rounded-2xl border-2 border-dashed p-12 transition-colors ${dragOver ? "border-primary bg-primary/5" : "border-border hover:border-primary/50"}`}
+        >
+          <Upload className="h-10 w-10 text-muted-foreground" />
+          <div className="text-center">
+            <p className="font-medium text-foreground">Drop photos & videos here</p>
+            <p className="text-sm text-muted-foreground">Files will instantly upload and be analyzed by AI</p>
+          </div>
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            accept="image/*,video/*"
+            onChange={handleFileSelect}
+            className="hidden"
+          />
+          <span className="rounded-xl bg-primary px-6 py-2.5 text-sm font-semibold text-primary-foreground shadow-md">
+            Browse Files
+          </span>
+        </label>
+        {onCancel && (
+          <button
+            onClick={onCancel}
+            className="self-end flex items-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors mt-2"
+          >
+            <X className="h-4 w-4" /> Cancel
+          </button>
+        )}
+      </div>
+    </div>
   );
-});
+}
