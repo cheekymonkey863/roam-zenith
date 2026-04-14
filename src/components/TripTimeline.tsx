@@ -79,12 +79,42 @@ const VISUAL_CONFIG: Record<StepVisualType, { icon: React.ElementType; bg: strin
   other: { icon: CircleDot, bg: "bg-muted", text: "text-muted-foreground" },
 };
 
-function formatStepDate(dateStr: string) {
+function formatDateHeader(dateStr: string) {
   return new Date(dateStr).toLocaleDateString("en-US", {
-    weekday: "short",
-    month: "short",
+    weekday: "long",
     day: "numeric",
+    month: "long",
+    year: "numeric",
+  }).toUpperCase();
+}
+
+function formatStepTime(dateStr: string) {
+  const d = new Date(dateStr);
+  return d.toLocaleTimeString("en-US", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
   });
+}
+
+function formatStepTimezone(dateStr: string) {
+  const d = new Date(dateStr);
+  return d.toLocaleDateString("en-US", { timeZoneName: "short" }).split(", ").pop() || "";
+}
+
+function groupStepsByDate(steps: TripStep[]): { dateKey: string; label: string; steps: TripStep[] }[] {
+  const groups: Map<string, TripStep[]> = new Map();
+  for (const step of steps) {
+    const d = new Date(step.recorded_at);
+    const key = d.toLocaleDateString("en-CA"); // YYYY-MM-DD in local tz
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key)!.push(step);
+  }
+  return Array.from(groups.entries()).map(([dateKey, steps]) => ({
+    dateKey,
+    label: formatDateHeader(steps[0].recorded_at),
+    steps,
+  }));
 }
 
 export function TripTimeline({
