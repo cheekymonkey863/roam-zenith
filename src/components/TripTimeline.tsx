@@ -173,13 +173,13 @@ export function TripTimeline({
   }, [steps]);
 
   const handleDelete = async (stepId: string) => {
-    if (!confirm("Delete this activity? This cannot be undone.")) return;
+    if (!confirm("Delete this stop? This cannot be undone.")) return;
     setDeletingId(stepId);
     const { error } = await supabase.from("trip_steps").delete().eq("id", stepId);
     if (error) {
-      toast.error("Failed to delete activity");
+      toast.error("Failed to delete stop");
     } else {
-      toast.success("Activity deleted");
+      toast.success("Stop deleted");
       onUpdated();
     }
     setDeletingId(null);
@@ -201,15 +201,14 @@ export function TripTimeline({
 
   const handleBulkDelete = async () => {
     if (selectedIds.size === 0) return;
-    if (!confirm(`Delete ${selectedIds.size} activit${selectedIds.size === 1 ? "y" : "ies"}? This cannot be undone.`))
-      return;
+    if (!confirm(`Delete ${selectedIds.size} stop${selectedIds.size === 1 ? "" : "s"}? This cannot be undone.`)) return;
     setBulkDeleting(true);
     const ids = Array.from(selectedIds);
     const { error } = await supabase.from("trip_steps").delete().in("id", ids);
     if (error) {
-      toast.error("Failed to delete activities");
+      toast.error("Failed to delete stops");
     } else {
-      toast.success(`${ids.length} activit${ids.length === 1 ? "y" : "ies"} deleted`);
+      toast.success(`${ids.length} stop${ids.length === 1 ? "" : "s"} deleted`);
       exitSelectMode();
       onUpdated();
     }
@@ -331,7 +330,6 @@ export function TripTimeline({
 
           const hasCoordinates = step.latitude !== 0 && step.longitude !== 0;
 
-          // FIX: Show the GPS/Map data immediately. Never mask it with "Pinpointing location".
           const displayLocation =
             step.location_name && !step.location_name.toLowerCase().includes("unknown")
               ? step.location_name
