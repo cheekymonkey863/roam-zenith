@@ -7,9 +7,21 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { DeleteTripDialog } from "@/components/DeleteTripDialog";
 import { MergeTripDialog } from "@/components/MergeTripDialog";
 import { Button } from "@/components/ui/button";
+import { deleteTripCascade } from "@/lib/tripManagement";
+import { toast } from "sonner";
+import { Loader2 } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 interface TripCardProps {
   trip: any;
@@ -20,10 +32,26 @@ interface TripCardProps {
 export function TripCard({ trip, allTrips = [], onUpdated }: TripCardProps) {
   const [showMerge, setShowMerge] = useState(false);
   const [showDelete, setShowDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const startDate = trip.start_date
     ? new Date(trip.start_date).toLocaleDateString("en-US", { month: "short", year: "numeric" })
     : "TBD";
+
+  const handleDelete = async () => {
+    setDeleting(true);
+    try {
+      await deleteTripCascade(trip.id);
+      toast.success("Trip deleted");
+      setShowDelete(false);
+      onUpdated?.();
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to delete trip");
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   return (
     <>
@@ -91,16 +119,34 @@ export function TripCard({ trip, allTrips = [], onUpdated }: TripCardProps) {
         </Link>
       </div>
 
-      {/* Dialogs rendered outside the card */}
-      <DeleteTripDialog
-        tripId={trip.id}
-        tripTitle={trip.title}
-        onDeleted={onUpdated}
-        trigger={<span ref={(el) => {
-          if (el && showDelete) el.click();
-        }} className="hidden" />}
-      />
+      {/* Delete confirmation dialog */}
+      <AlertDialog open={showDelete} onOpenChange={setShowDelete}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete trip?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This permanently removes <span className="font-medium text-foreground">{trip.title}</span> and its
+              trip steps, media, and sharing links.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={deleting}
+              onClick={(e) => {
+                e.preventDefault();
+                void handleDelete();
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleting && <Loader2 className="h-4 w-4 animate-spin mr-1" />}
+              {deleting ? "Deleting…" : "Delete trip"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
+      {/* Merge dialog */}
       {showMerge && (
         <MergeTripDialog
           sourceTrip={{ id: trip.id, title: trip.title }}
