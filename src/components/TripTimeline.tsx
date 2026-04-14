@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { MapPin, Image as ImageIcon, Trash2, GripVertical, CheckSquare, Square, X } from "lucide-react";
+import { MapPin, Image as ImageIcon, Trash2, GripVertical, CheckSquare, Square, X, Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { EditStepDialog } from "@/components/EditStepDialog";
 import { StepMediaGallery } from "@/components/StepMediaGallery";
@@ -391,15 +391,15 @@ export function TripTimeline({
                     <h4 className="font-display text-lg font-semibold text-foreground">{displayLocation}</h4>
                     {step.country && <p className="text-sm text-muted-foreground">{step.country}</p>}
 
-                    {/* The new animated AI Progress Bar for this specific stop */}
+                    {/* The new simplified Populating Progress Bar */}
                     {isPopulating ? (
-                      <div className="mt-3 flex flex-col gap-2 bg-primary/5 border border-primary/10 rounded-xl p-3">
-                        <div className="flex items-center gap-2 text-xs font-semibold text-primary">
-                          <Sparkles className="h-3.5 w-3.5 animate-pulse" />
-                          AI is analyzing photos and writing details...
+                      <div className="mt-3 flex flex-col gap-2">
+                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          Populating stop details...
                         </div>
                         <div className="h-1.5 w-full overflow-hidden rounded-full bg-primary/10">
-                          <div className="h-full w-full bg-primary/60 animate-pulse rounded-full" />
+                          <div className="h-full w-full bg-primary animate-pulse rounded-full" />
                         </div>
                       </div>
                     ) : (
