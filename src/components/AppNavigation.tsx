@@ -88,7 +88,7 @@ export function AppNavigation() {
           >
             <Plus className="h-4 w-4" /> Add a Trip
           </button>
-          <h3 className="font-display text-xs font-bold uppercase tracking-wider mb-3" style={{ color: "#1e3a5f" }}>Trips TRKD</h3>
+          <div className="flex w-full items-center gap-3 rounded-xl bg-primary/10 p-3 font-display text-sm font-semibold mb-4" style={{ color: "#1e3a5f" }}>Trips TRKD</div>
           {years.map((year) => (
             <div key={year} className="mb-2">
               <button
