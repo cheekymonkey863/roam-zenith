@@ -41,12 +41,10 @@ export default function AuthPage() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
       <div className="w-full max-w-md">
-        <div className="mb-8 flex flex-col items-center gap-3 text-center">
-          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10">
-            <Globe className="h-7 w-7 text-primary" />
-          </div>
-          <h1 className="font-display text-3xl font-semibold text-foreground">Wanderlust</h1>
-          <p className="text-muted-foreground">Track every journey, remember every moment</p>
+         <div className="mb-8 flex flex-col items-center gap-3 text-center">
+           <img src="/logo.png" alt="TravelTRKR" className="h-14 w-auto object-contain" />
+           <p className="text-muted-foreground">Track every journey, remember every moment</p>
+         </div>
         </div>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-4 rounded-2xl bg-card p-6 shadow-card">
