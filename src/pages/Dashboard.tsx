@@ -52,9 +52,17 @@ export default function Dashboard() {
 
     // Subscribe to real-time updates for trips and steps
     const channel = supabase
-      .channel('dashboard-changes')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'trips', filter: `user_id=eq.${user?.id}` }, fetchData)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'trip_steps', filter: `user_id=eq.${user?.id}` }, fetchData)
+      .channel("dashboard-changes")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "trips", filter: `user_id=eq.${user?.id}` },
+        fetchData,
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "trip_steps", filter: `user_id=eq.${user?.id}` },
+        fetchData,
+      )
       .subscribe();
 
     return () => {
@@ -64,14 +72,17 @@ export default function Dashboard() {
 
   // Calculate unique stats
   const totalCountries = new Set(allSteps.map((s) => s.country).filter(Boolean)).size;
-  
+
   // Extract city names from location strings for unique count
-  const totalCities = new Set(allSteps.map((s) => {
-    if (!s.location_name) return null;
-    const parts = s.location_name.split(',');
-    // Take the city (usually the part before the last comma or the first part)
-    return parts.length > 1 ? parts[parts.length - 2].trim() : parts[0].trim();
-  }).filter(Boolean)).size;
+  const totalCities = new Set(
+    allSteps
+      .map((s) => {
+        if (!s.location_name) return null;
+        const parts = s.location_name.split(",");
+        return parts.length > 1 ? parts[parts.length - 2].trim() : parts[0].trim();
+      })
+      .filter(Boolean),
+  ).size;
 
   if (loading) {
     return (
@@ -84,17 +95,10 @@ export default function Dashboard() {
   return (
     <div className="min-h-screen bg-background pb-20 pt-24 px-6 sm:px-10 lg:px-16">
       <div className="mx-auto max-w-7xl">
-        
         {/* Centered Logo Header */}
         <div className="flex flex-col items-center justify-center mb-12">
-          <img 
-            src="/logo.png" 
-            alt="TravelTRKR" 
-            className="h-24 w-auto mb-4 object-contain" 
-          />
-          <p className="text-muted-foreground text-center max-w-sm">
-            Track every journey, remember every moment.
-          </p>
+          <img src="/logo.png" alt="TravelTRKR" className="h-24 w-auto mb-4 object-contain" />
+          <p className="text-muted-foreground text-center max-w-sm">Track every journey, remember every moment.</p>
         </div>
 
         {/* Create Trip Form */}
@@ -103,4 +107,36 @@ export default function Dashboard() {
         </div>
 
         {/* Global Statistics Grid */}
-        <div className="grid grid-cols-1 gap-6 mb-12 sm:grid-cols-
+        <div className="grid grid-cols-1 gap-6 mb-12 sm:grid-cols-3">
+          <StatCard title="Countries" value={totalCountries} icon={Globe} description="Explored across the globe" />
+          <StatCard title="Cities" value={totalCities} icon={MapPin} description="Visited worldwide" />
+          <StatCard title="Trips" value={trips.length} icon={Navigation} description="Recorded adventures" />
+        </div>
+
+        {/* Global Map Section */}
+        <div className="mb-16">
+          <h2 className="font-display text-2xl font-bold text-foreground mb-6">Where You've Been</h2>
+          <div className="overflow-hidden rounded-2xl border border-border shadow-sm">
+            <WorldMap steps={allSteps} singleTrip={false} />
+          </div>
+        </div>
+
+        {/* Trips Collection */}
+        <div>
+          <h2 className="font-display text-2xl font-bold text-foreground mb-6">Your Trips</h2>
+          {trips.length === 0 ? (
+            <div className="rounded-2xl border-2 border-dashed border-border p-12 text-center">
+              <p className="text-muted-foreground">You haven't added any trips yet. Start your first journey above!</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 gap-8 md:grid-cols-2 lg:grid-cols-3">
+              {trips.map((trip) => (
+                <TripCard key={trip.id} trip={trip} />
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
