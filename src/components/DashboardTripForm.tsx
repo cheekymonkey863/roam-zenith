@@ -9,7 +9,7 @@ import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 import { type PhotoExifData } from "@/lib/exif";
 import { processImportedMediaFiles } from "@/lib/mediaImport";
-import { buildSuggestedMediaMetadata } from "@/lib/mediaMetadata";
+import { buildStoredMediaMetadata } from "@/lib/mediaMetadata"; // FIXED NAME HERE
 import { queueVideoAnalysisJob } from "@/lib/videoAnalysisQueue";
 import { ImportPreview } from "@/components/ImportPreview";
 
@@ -100,9 +100,7 @@ export function DashboardTripForm({ onTripAdded }: { onTripAdded?: () => void })
   const { user } = useAuth();
   const navigate = useNavigate();
 
-  // COLLAPSIBLE STATE: Default is closed
   const [isOpen, setIsOpen] = useState(false);
-
   const [title, setTitle] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
@@ -188,7 +186,19 @@ export function DashboardTripForm({ onTripAdded }: { onTripAdded?: () => void })
       const result = await processImportedMediaFiles(mediaFiles, (phase, current, total) => {
         setProcessingStatus({ phase, current, total });
       });
-      setPendingPhotoSteps(result.steps);
+      // Corrected map to handle the PendingPhotoStep structure
+      const steps: PendingPhotoStep[] = result.steps.map((step: any) => ({
+        key: step.key,
+        locationName: step.locationName,
+        country: step.country,
+        latitude: step.latitude,
+        longitude: step.longitude,
+        earliestDate: step.earliestDate,
+        eventType: step.eventType,
+        description: step.description,
+        photos: step.photos,
+      }));
+      setPendingPhotoSteps(steps);
       setPendingActivities([]);
       populateFromDates(result.allDates);
       populateFromCountries(result.countries);
@@ -243,8 +253,66 @@ export function DashboardTripForm({ onTripAdded }: { onTripAdded?: () => void })
 
       if (tripError || !trip) throw tripError;
 
-      // Handle Step/Photo Import logic here...
-      // (Using your existing loop logic for pendingPhotoSteps and pendingActivities)
+      // Create photo steps + upload media logic
+      for (const step of pendingPhotoSteps) {
+        const { data: stepData } = await supabase
+          .from("trip_steps")
+          .insert({
+            trip_id: trip.id,
+            user_id: user.id,
+            location_name: step.locationName,
+            country: step.country,
+            latitude: step.latitude,
+            longitude: step.longitude,
+            recorded_at: step.earliestDate?.toISOString() || new Date().toISOString(),
+            source: "photo_import",
+            event_type: step.eventType,
+            description: step.description,
+            is_confirmed: true,
+          })
+          .select()
+          .single();
+
+        if (stepData) {
+          for (const photo of step.photos) {
+            const uploadFile = photo.uploadFile ?? photo.file;
+            const ext = uploadFile.name.split(".").pop();
+            const path = `${user.id}/${trip.id}/${stepData.id}/${crypto.randomUUID()}.${ext}`;
+
+            await supabase.storage.from("trip-photos").upload(path, uploadFile);
+
+            await supabase.from("step_photos").insert({
+              step_id: stepData.id,
+              user_id: user.id,
+              storage_path: path,
+              file_name: uploadFile.name,
+              latitude: photo.latitude,
+              longitude: photo.longitude,
+              taken_at: photo.takenAt?.toISOString(),
+              exif_data: buildStoredMediaMetadata(photo, {
+                locationName: step.locationName,
+                country: step.country,
+              }),
+            });
+
+            if (uploadFile.type.startsWith("video/")) {
+              await queueVideoAnalysisJob({
+                captionId: photo.captionId,
+                userId: user.id,
+                tripId: trip.id,
+                storagePath: path,
+                fileName: uploadFile.name,
+                mimeType: uploadFile.type,
+                takenAt: photo.takenAt?.toISOString() ?? null,
+                latitude: step.latitude,
+                longitude: step.longitude,
+                locationName: step.locationName,
+                country: step.country,
+              });
+            }
+          }
+        }
+      }
 
       toast.success("Trip created!");
       if (onTripAdded) onTripAdded();
@@ -258,7 +326,6 @@ export function DashboardTripForm({ onTripAdded }: { onTripAdded?: () => void })
 
   return (
     <div className="rounded-2xl border border-border bg-card overflow-hidden shadow-sm">
-      {/* COLLAPSIBLE TOGGLE */}
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
@@ -279,7 +346,6 @@ export function DashboardTripForm({ onTripAdded }: { onTripAdded?: () => void })
 
       {isOpen && (
         <form onSubmit={handleCreate} className="flex flex-col gap-5 border-t border-border p-6 bg-card/50">
-          {/* Import Modes */}
           <div className="grid grid-cols-2 gap-3">
             <button
               type="button"
@@ -307,7 +373,6 @@ export function DashboardTripForm({ onTripAdded }: { onTripAdded?: () => void })
             </button>
           </div>
 
-          {/* Import Drag-n-Drop Zones (Omitted for brevity, logic remains same) */}
           {importMode === "photo" && !importProcessing && (
             <label className="flex cursor-pointer flex-col items-center gap-3 rounded-xl border-2 border-dashed border-primary/20 bg-primary/5 p-8">
               <Upload className="h-8 w-8 text-primary/40" />
@@ -324,7 +389,6 @@ export function DashboardTripForm({ onTripAdded }: { onTripAdded?: () => void })
             </label>
           )}
 
-          {/* Standard Fields */}
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Trip Name *</label>
             <input
