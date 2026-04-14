@@ -24,6 +24,13 @@ export function AppNavigation() {
   const [expandedYears, setExpandedYears] = useState<Set<string>>(new Set());
   const [expandedMonths, setExpandedMonths] = useState<Set<string>>(new Set());
   const [showTrips, setShowTrips] = useState(true);
+  const [showCountries, setShowCountries] = useState(false);
+  const [showCities, setShowCities] = useState(false);
+  const [showPlaces, setShowPlaces] = useState(false);
+  const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
+  const [tripsByCountry, setTripsByCountry] = useState<Record<string, { id: string; title: string }[]>>({});
+  const [tripsByCity, setTripsByCity] = useState<Record<string, { id: string; title: string }[]>>({});
+  const [tripsByPlace, setTripsByPlace] = useState<Record<string, { id: string; title: string }[]>>({});
   const [showAddTrip, setShowAddTrip] = useState(false);
   const [tripTitle, setTripTitle] = useState("");
   const [tripStartDate, setTripStartDate] = useState("");
@@ -69,11 +76,118 @@ export function AppNavigation() {
       }
     });
     setGroupedTrips(grouped);
+
+    // Fetch steps for location-based groupings
+    const { data: steps } = await supabase
+      .from("trip_steps")
+      .select("trip_id, country, location_name")
+      .eq("user_id", user.id);
+
+    const tripMap = new Map(data.map((t) => [t.id, t.title]));
+    const countryMap: Record<string, Map<string, string>> = {};
+    const cityMap: Record<string, Map<string, string>> = {};
+    const placeMap: Record<string, Map<string, string>> = {};
+
+    (steps || []).forEach((step) => {
+      const tripTitle = tripMap.get(step.trip_id);
+      if (!tripTitle) return;
+
+      // Country
+      if (step.country) {
+        if (!countryMap[step.country]) countryMap[step.country] = new Map();
+        countryMap[step.country].set(step.trip_id, tripTitle);
+      }
+
+      // City & Place from location_name
+      if (step.location_name) {
+        const parts = step.location_name.split(",").map((p) => p.trim()).filter(Boolean);
+        // Place = full location name (first part)
+        const place = parts[0];
+        if (place && !place.toLowerCase().includes("unknown")) {
+          if (!placeMap[place]) placeMap[place] = new Map();
+          placeMap[place].set(step.trip_id, tripTitle);
+        }
+        // City = second-to-last part (or first if only 2 parts)
+        let city = "";
+        if (parts.length >= 3) city = parts[parts.length - 2];
+        else if (parts.length === 2) city = parts[0];
+        if (city && !city.toLowerCase().includes("unknown")) {
+          if (!cityMap[city]) cityMap[city] = new Map();
+          cityMap[city].set(step.trip_id, tripTitle);
+        }
+      }
+    });
+
+    const toSorted = (map: Record<string, Map<string, string>>) => {
+      const result: Record<string, { id: string; title: string }[]> = {};
+      Object.keys(map).sort().forEach((key) => {
+        result[key] = Array.from(map[key].entries()).map(([id, title]) => ({ id, title }));
+      });
+      return result;
+    };
+
+    setTripsByCountry(toSorted(countryMap));
+    setTripsByCity(toSorted(cityMap));
+    setTripsByPlace(toSorted(placeMap));
   };
 
   useEffect(() => { fetchTrips(); }, [user]);
 
   const years = Object.keys(groupedTrips).sort((a, b) => b.localeCompare(a));
+
+  const toggleExpanded = (key: string) => {
+    setExpandedItems((prev) => {
+      const n = new Set(prev);
+      n.has(key) ? n.delete(key) : n.add(key);
+      return n;
+    });
+  };
+
+  const renderLocationSection = (
+    label: string,
+    show: boolean,
+    setShow: (v: boolean) => void,
+    data: Record<string, { id: string; title: string }[]>,
+    prefix: string,
+  ) => {
+    const keys = Object.keys(data);
+    return (
+      <>
+        <button
+          onClick={() => setShow(!show)}
+          className="flex w-full items-center gap-3 rounded-xl bg-primary/10 p-3 pl-[40px] font-display text-sm font-semibold mb-2 hover:bg-primary/20 transition-colors"
+          style={{ color: "#1e3a5f" }}
+        >
+          {label}
+          {keys.length > 0 && (show ? <ChevronDown className="h-3 w-3 ml-auto" /> : <ChevronRight className="h-3 w-3 ml-auto" />)}
+        </button>
+        {show && keys.map((key) => (
+          <div key={key} className="mb-1">
+            <button
+              onClick={() => toggleExpanded(`${prefix}-${key}`)}
+              className="flex w-full items-center justify-between pl-[40px] pr-2 py-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <span className="truncate">{key}</span>
+              <span className="flex items-center gap-1 shrink-0">
+                <span className="text-[10px] text-muted-foreground/60">{data[key].length}</span>
+                {expandedItems.has(`${prefix}-${key}`) ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+              </span>
+            </button>
+            {expandedItems.has(`${prefix}-${key}`) && data[key].map((trip) => (
+              <Link
+                key={trip.id}
+                to={`/trip/${trip.id}`}
+                onClick={() => setIsOpen(false)}
+                className="block py-1 pl-[40px] pr-2 text-xs font-medium text-muted-foreground hover:text-primary transition-colors truncate"
+              >
+                {trip.title}
+              </Link>
+            ))}
+          </div>
+        ))}
+      </>
+    );
+  };
 
   const generateNavTripTitle = (countries?: string[], sDate?: string, eDate?: string): string => {
     const c = countries ?? parseTripCountriesInput(tripCountries);
@@ -398,6 +512,15 @@ export function AppNavigation() {
                 ))}
             </div>
           ))}
+
+          {/* Countries TRKD */}
+          {renderLocationSection("Countries TRKD", showCountries, setShowCountries, tripsByCountry, "country")}
+
+          {/* Cities TRKD */}
+          {renderLocationSection("Cities TRKD", showCities, setShowCities, tripsByCity, "city")}
+
+          {/* Places TRKD */}
+          {renderLocationSection("Places TRKD", showPlaces, setShowPlaces, tripsByPlace, "place")}
         </div>
       </div>
     </>
