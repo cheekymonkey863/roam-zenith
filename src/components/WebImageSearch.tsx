@@ -96,10 +96,10 @@ export function WebImageSearch({
       const { places } = await google.maps.places.Place.searchByText({
         textQuery: searchQuery,
         fields: ["photos", "displayName"],
-        locationBias: {
+        locationBias: new google.maps.Circle({
           center: { lat: latitude, lng: longitude },
           radius: 5000,
-        },
+        }),
         maxResultCount: 3,
       });
 
