@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { Calendar, MapPin, MoreVertical, Trash2, Merge } from "lucide-react";
+import { Calendar, MapPin, MoreVertical, Trash2, Merge, Pencil, Loader2 } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -8,10 +8,10 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { MergeTripDialog } from "@/components/MergeTripDialog";
+import { EditTripDialog } from "@/components/EditTripDialog";
 import { Button } from "@/components/ui/button";
 import { deleteTripCascade } from "@/lib/tripManagement";
 import { toast } from "sonner";
-import { Loader2 } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -32,7 +32,10 @@ interface TripCardProps {
 export function TripCard({ trip, allTrips = [], onUpdated }: TripCardProps) {
   const [showMerge, setShowMerge] = useState(false);
   const [showDelete, setShowDelete] = useState(false);
+  const [showEdit, setShowEdit] = useState(false);
   const [deleting, setDeleting] = useState(false);
+
+  const coverUrl = trip.cover_image_url;
 
   const startDate = trip.start_date
     ? new Date(trip.start_date).toLocaleDateString("en-US", { month: "short", year: "numeric" })
@@ -53,6 +56,9 @@ export function TripCard({ trip, allTrips = [], onUpdated }: TripCardProps) {
     }
   };
 
+  // Extract countries for EditTripDialog
+  const tripCountries: string[] = trip.countries || [];
+
   return (
     <>
       <div className="group relative flex flex-col overflow-hidden rounded-2xl border border-border bg-card transition-all hover:shadow-lg hover:-translate-y-1">
@@ -70,6 +76,15 @@ export function TripCard({ trip, allTrips = [], onUpdated }: TripCardProps) {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
+              <DropdownMenuItem
+                onClick={(e) => {
+                  e.preventDefault();
+                  setShowEdit(true);
+                }}
+              >
+                <Pencil className="h-4 w-4 mr-2" />
+                Edit
+              </DropdownMenuItem>
               {allTrips.length > 1 && (
                 <DropdownMenuItem
                   onClick={(e) => {
@@ -97,9 +112,9 @@ export function TripCard({ trip, allTrips = [], onUpdated }: TripCardProps) {
 
         <Link to={`/trip/${trip.id}`} className="flex flex-col flex-1">
           <div className="aspect-[16/9] w-full bg-muted overflow-hidden">
-            {trip.image_url ? (
+            {coverUrl ? (
               <img
-                src={trip.image_url}
+                src={coverUrl}
                 alt={trip.title}
                 className="h-full w-full object-cover transition-transform group-hover:scale-105"
               />
@@ -118,6 +133,15 @@ export function TripCard({ trip, allTrips = [], onUpdated }: TripCardProps) {
           </div>
         </Link>
       </div>
+
+      {/* Edit dialog */}
+      <EditTripDialog
+        trip={trip}
+        tripCountries={tripCountries}
+        onUpdated={() => onUpdated?.()}
+        externalOpen={showEdit}
+        onExternalOpenChange={setShowEdit}
+      />
 
       {/* Delete confirmation dialog */}
       <AlertDialog open={showDelete} onOpenChange={setShowDelete}>

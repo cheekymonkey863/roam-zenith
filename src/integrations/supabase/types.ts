@@ -280,6 +280,7 @@ export type Database = {
       trips: {
         Row: {
           countries: string[]
+          cover_image_url: string | null
           created_at: string
           end_date: string | null
           id: string
@@ -291,6 +292,7 @@ export type Database = {
         }
         Insert: {
           countries?: string[]
+          cover_image_url?: string | null
           created_at?: string
           end_date?: string | null
           id?: string
@@ -302,6 +304,7 @@ export type Database = {
         }
         Update: {
           countries?: string[]
+          cover_image_url?: string | null
           created_at?: string
           end_date?: string | null
           id?: string
