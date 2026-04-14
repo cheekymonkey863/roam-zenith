@@ -96,7 +96,7 @@ async function extractTextFromDOCX(file: File): Promise<string> {
   return text || "Could not extract text from DOCX. Please try copying and pasting the document text instead.";
 }
 
-export function ItineraryImport({ tripId, onImportComplete, onCancel }: ItineraryImportProps) {
+export function ItineraryImport({ tripId, onImportComplete, onCancel, initialFiles }: ItineraryImportProps) {
   const { user } = useAuth();
   const [dragOver, setDragOver] = useState(false);
   const [processing, setProcessing] = useState(false);
@@ -105,6 +105,7 @@ export function ItineraryImport({ tripId, onImportComplete, onCancel }: Itinerar
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [pasteMode, setPasteMode] = useState(false);
   const [pasteText, setPasteText] = useState("");
+  const initialFilesProcessed = useRef(false);
 
   const parseDocument = useCallback(async (text: string) => {
     setProcessing(true);
