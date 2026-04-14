@@ -197,6 +197,7 @@ const TripDetail = () => {
     if (!importType || loading) return;
     // Consume any pending files from the Add a Trip form
     const pending = consumePendingImport();
+    console.log("[TripDetail] import param:", importType, "pending files:", pending?.files?.length ?? 0, "pending type:", pending?.type);
     if (pending && pending.files.length > 0) {
       setPendingImportFiles(pending.files);
     }
