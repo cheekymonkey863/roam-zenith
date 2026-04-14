@@ -279,6 +279,7 @@ export type Database = {
       }
       trips: {
         Row: {
+          countries: string[]
           created_at: string
           end_date: string | null
           id: string
@@ -289,6 +290,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          countries?: string[]
           created_at?: string
           end_date?: string | null
           id?: string
@@ -299,6 +301,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          countries?: string[]
           created_at?: string
           end_date?: string | null
           id?: string

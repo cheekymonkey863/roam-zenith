@@ -1,0 +1,1 @@
+ALTER TABLE public.trips ADD COLUMN countries TEXT[] NOT NULL DEFAULT '{}';
