@@ -67,11 +67,11 @@ export function AppNavigation() {
         <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm" onClick={() => setIsOpen(false)} />
       )}
       <div
-        className={`fixed top-0 left-0 bottom-0 z-50 w-80 bg-card border-r border-border transition-transform duration-300 ${isOpen ? "translate-x-0" : "-translate-x-full"}`}
+        className={`fixed top-0 left-0 bottom-0 z-50 w-56 bg-card border-r border-border transition-transform duration-300 ${isOpen ? "translate-x-0" : "-translate-x-full"}`}
       >
-        <div className="flex items-center justify-between p-6 border-b border-border">
+        <div className="flex items-center justify-between p-4 border-b border-border">
           <Link to="/" onClick={() => setIsOpen(false)}>
-            <img src="/logo.png" alt="TravelTRKR" className="h-[120px] w-auto" />
+            <img src="/logo.png" alt="TravelTRKR" className="h-[36px] w-auto" />
           </Link>
           <button onClick={() => setIsOpen(false)} className="p-2 hover:bg-secondary rounded-lg">
             <X className="h-5 w-5" />
