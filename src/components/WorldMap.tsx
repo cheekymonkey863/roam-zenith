@@ -144,7 +144,11 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
         }
       });
 
-      const stepIds = steps.filter((s) => s.latitude !== 0 && s.longitude !== 0).map((s) => s.id);
+      // FIX: Ensure ALL valid stops get a marker, even if they have no photos
+      const validSteps = steps.filter((s) => s.latitude !== 0 && s.longitude !== 0);
+      const stepIds = validSteps.map((s) => s.id);
+
+      const photoMap = new Map<string, string[]>();
 
       if (stepIds.length > 0) {
         const { data: photos } = await supabase
@@ -152,43 +156,53 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
           .select("step_id, storage_path")
           .in("step_id", stepIds);
 
-        const photoMap = new Map();
         if (photos) {
           for (const photo of photos) {
-            if (!photoMap.has(photo.step_id)) {
-              const { data: urlData } = supabase.storage.from("trip-photos").getPublicUrl(photo.storage_path);
-              photoMap.set(photo.step_id, urlData.publicUrl);
+            const { data: urlData } = supabase.storage.from("trip-photos").getPublicUrl(photo.storage_path);
+            const list = photoMap.get(photo.step_id) || [];
+            if (list.length < 4) {
+              // keep up to 4 images for the grid
+              list.push(urlData.publicUrl);
             }
+            photoMap.set(photo.step_id, list);
           }
         }
-
-        steps.forEach((step) => {
-          if (step.latitude === 0 || step.longitude === 0) return;
-
-          const el = document.createElement("div");
-          el.className = "custom-map-marker group relative cursor-pointer flex flex-col items-center";
-
-          const imgUrl = photoMap.get(step.id);
-          const displayName = step.location_name || "Unknown Location";
-
-          el.innerHTML = `
-              <div class="bg-card text-foreground text-xs font-semibold px-3 py-1.5 rounded-full shadow-lg border border-border whitespace-nowrap mb-1 opacity-0 transition-opacity group-hover:opacity-100 pointer-events-none">
-                ${displayName}
-              </div>
-              <div class="h-10 w-10 rounded-full border-2 border-white shadow-lg overflow-hidden bg-muted flex items-center justify-center">
-                ${
-                  imgUrl
-                    ? `<img src="${imgUrl}" class="h-full w-full object-cover" />`
-                    : `<div class="w-2.5 h-2.5 rounded-full bg-primary"></div>`
-                }
-              </div>
-            `;
-
-          const marker = new mapboxgl.Marker(el).setLngLat([step.longitude, step.latitude]).addTo(map);
-
-          markersRef.current.push(marker);
-        });
       }
+
+      validSteps.forEach((step) => {
+        const el = document.createElement("div");
+        el.className = "custom-map-marker group relative cursor-pointer flex flex-col items-center";
+
+        const urls = photoMap.get(step.id) || [];
+        const displayName = step.location_name || "Unknown Location";
+
+        let innerImageHtml = "";
+
+        // Render logic for 0, 1, or 2-4 images (Grid)
+        if (urls.length === 0) {
+          innerImageHtml = `<div class="h-4 w-4 rounded-full border-2 border-white shadow-lg bg-primary"></div>`;
+        } else if (urls.length === 1) {
+          innerImageHtml = `<img src="${urls[0]}" class="h-10 w-10 rounded-full object-cover border-2 border-white shadow-lg" />`;
+        } else {
+          const gridCells = urls.map((u) => `<img src="${u}" class="h-full w-full object-cover" />`).join("");
+          innerImageHtml = `
+                <div class="h-12 w-12 rounded-full border-2 border-white shadow-lg overflow-hidden grid grid-cols-2 grid-rows-2 bg-muted">
+                  ${gridCells}
+                </div>
+             `;
+        }
+
+        el.innerHTML = `
+            <div class="bg-card text-foreground text-xs font-semibold px-3 py-1.5 rounded-full shadow-lg border border-border whitespace-nowrap mb-1 opacity-0 transition-opacity group-hover:opacity-100 pointer-events-none">
+              ${displayName}
+            </div>
+            ${innerImageHtml}
+          `;
+
+        const marker = new mapboxgl.Marker(el).setLngLat([step.longitude, step.latitude]).addTo(map);
+
+        markersRef.current.push(marker);
+      });
 
       if (!bounds.isEmpty()) {
         map.fitBounds(bounds, {
