@@ -51,74 +51,53 @@ export function WebImageSearch({
     try {
       await ensureGoogleMapsLoaded();
       const google = (window as any).google;
-      if (!google?.maps?.places?.Place) {
-        // Fallback: try legacy PlacesService
-        if (!google?.maps?.places?.PlacesService) {
-          toast.error("Google Maps Places not available");
-          setLoading(false);
-          return;
-        }
-        // Legacy fallback
-        const mapDiv = document.createElement("div");
-        mapDiv.style.display = "none";
-        document.body.appendChild(mapDiv);
-        const service = new google.maps.places.PlacesService(mapDiv);
-        service.textSearch(
-          { query: searchQuery, location: new google.maps.LatLng(latitude, longitude), radius: 5000 },
-          (results: any[] | null, status: string) => {
-            document.body.removeChild(mapDiv);
-            if (status !== google.maps.places.PlacesServiceStatus.OK || !results?.length) {
-              setPhotos([]);
-              setLoading(false);
-              return;
-            }
-            const allPhotos: PlacePhoto[] = [];
-            for (const result of results.slice(0, 3)) {
-              if (result.photos) {
-                for (const photo of result.photos) {
-                  allPhotos.push({
-                    url: photo.getUrl({ maxWidth: 800 }),
-                    attribution: photo.html_attributions?.[0] || "",
-                    width: photo.width || 800,
-                    height: photo.height || 600,
-                  });
-                }
-              }
-            }
-            setPhotos(allPhotos);
-            setLoading(false);
-          }
-        );
+      if (!google?.maps?.places?.PlacesService) {
+        toast.error("Google Maps Places not available");
+        setLoading(false);
         return;
       }
 
-      // New Places API
-      const { places } = await google.maps.places.Place.searchByText({
-        textQuery: searchQuery,
-        fields: ["photos", "displayName"],
-        maxResultCount: 3,
+      // PlacesService needs a map or an element attached to DOM
+      const mapDiv = document.createElement("div");
+      mapDiv.style.cssText = "width:1px;height:1px;position:absolute;left:-9999px;";
+      document.body.appendChild(mapDiv);
+      const map = new google.maps.Map(mapDiv, {
+        center: { lat: latitude, lng: longitude },
+        zoom: 15,
       });
+      const service = new google.maps.places.PlacesService(map);
 
-      const allPhotos: PlacePhoto[] = [];
-      if (places?.length) {
-        for (const place of places) {
-          if (place.photos) {
-            for (const photo of place.photos.slice(0, 10)) {
-              const uri = photo.getURI({ maxWidth: 800 });
-              if (uri) {
+      service.textSearch(
+        {
+          query: searchQuery,
+          location: new google.maps.LatLng(latitude, longitude),
+          radius: 5000,
+        },
+        (results: any[] | null, status: string) => {
+          try { document.body.removeChild(mapDiv); } catch {}
+          if (status !== google.maps.places.PlacesServiceStatus.OK || !results?.length) {
+            setPhotos([]);
+            setLoading(false);
+            return;
+          }
+
+          const allPhotos: PlacePhoto[] = [];
+          for (const result of results.slice(0, 3)) {
+            if (result.photos) {
+              for (const photo of result.photos) {
                 allPhotos.push({
-                  url: uri,
-                  attribution: photo.authorAttributions?.[0]?.displayName || "",
-                  width: photo.widthPx || 800,
-                  height: photo.heightPx || 600,
+                  url: photo.getUrl({ maxWidth: 800 }),
+                  attribution: photo.html_attributions?.[0] || "",
+                  width: photo.width || 800,
+                  height: photo.height || 600,
                 });
               }
             }
           }
+          setPhotos(allPhotos);
+          setLoading(false);
         }
-      }
-      setPhotos(allPhotos);
-      setLoading(false);
+      );
     } catch (err) {
       console.error("Place photo search error:", err);
       toast.error("Failed to search for photos");
