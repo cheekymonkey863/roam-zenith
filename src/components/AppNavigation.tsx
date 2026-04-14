@@ -1,8 +1,11 @@
 import { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Menu, X, Plus, ChevronRight, ChevronDown } from "lucide-react";
+import { Menu, X, Plus, ChevronRight, ChevronDown, Image, FileText, Mail } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { Switch } from "@/components/ui/switch";
+import { toast } from "sonner";
+import { parseTripCountriesInput } from "@/lib/tripManagement";
 
 const MONTHS = [
   "January",
@@ -26,6 +29,13 @@ export function AppNavigation() {
   const [groupedTrips, setGroupedTrips] = useState<any>({});
   const [expandedYears, setExpandedYears] = useState<Set<string>>(new Set());
   const [expandedMonths, setExpandedMonths] = useState<Set<string>>(new Set());
+  const [showAddTrip, setShowAddTrip] = useState(false);
+  const [tripTitle, setTripTitle] = useState("");
+  const [tripStartDate, setTripStartDate] = useState("");
+  const [tripEndDate, setTripEndDate] = useState("");
+  const [tripCountries, setTripCountries] = useState("");
+  const [tripTrackBg, setTripTrackBg] = useState(false);
+  const [creating, setCreating] = useState(false);
 
   const fetchTrips = async () => {
     if (!user) return;
