@@ -139,17 +139,8 @@ export function TripCard({ trip, allTrips = [], onUpdated }: TripCardProps) {
         trip={trip}
         tripCountries={tripCountries}
         onUpdated={() => onUpdated?.()}
-        trigger={
-          <span
-            ref={(el) => {
-              if (el && showEdit) {
-                el.click();
-                setShowEdit(false);
-              }
-            }}
-            className="hidden"
-          />
-        }
+        externalOpen={showEdit}
+        onExternalOpenChange={setShowEdit}
       />
 
       {/* Delete confirmation dialog */}
