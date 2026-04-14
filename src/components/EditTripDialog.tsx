@@ -20,10 +20,14 @@ interface EditTripDialogProps {
   tripCountries?: string[];
   onUpdated: () => void | Promise<void>;
   trigger?: React.ReactNode;
+  externalOpen?: boolean;
+  onExternalOpenChange?: (open: boolean) => void;
 }
 
-export function EditTripDialog({ trip, tripCountries = [], onUpdated, trigger }: EditTripDialogProps) {
-  const [open, setOpen] = useState(false);
+export function EditTripDialog({ trip, tripCountries = [], onUpdated, trigger, externalOpen, onExternalOpenChange }: EditTripDialogProps) {
+  const [internalOpen, setInternalOpen] = useState(false);
+  const open = externalOpen !== undefined ? externalOpen : internalOpen;
+  const setOpen = onExternalOpenChange || setInternalOpen;
   const [saving, setSaving] = useState(false);
   const [title, setTitle] = useState(trip.title);
   const [startDate, setStartDate] = useState(trip.start_date || "");
