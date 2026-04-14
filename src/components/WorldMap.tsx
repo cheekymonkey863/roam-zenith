@@ -110,6 +110,7 @@ byTrip.set(step.trip_id, tripSteps);
 });
 
 const bounds = new mapboxgl.LngLatBounds();
+      const validSteps = steps.filter((s) => s.latitude !== 0 && s.longitude !== 0);
 
       // 1. Draw route lines (trip detail only, not dashboard)
       if (singleTrip) {
@@ -152,8 +153,7 @@ const bounds = new mapboxgl.LngLatBounds();
         validSteps.forEach((s) => bounds.extend([s.longitude, s.latitude]));
       }
 
-      // 2. Build markers — photo thumbnails + full names on trip page, city labels on dashboard
-      const validSteps = steps.filter((s) => s.latitude !== 0 && s.longitude !== 0);
+      // 2. Build markers
       const stepIds = validSteps.map((s) => s.id);
 
       // Fetch photos for markers
