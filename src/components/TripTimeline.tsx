@@ -485,6 +485,19 @@ export function TripTimeline({
                     </>
                   )}
                 </div>
+
+                {!selectMode && tripId && (
+                  <div className="mt-3 flex justify-end">
+                    <WebImageSearch
+                      stepId={step.id}
+                      tripId={tripId}
+                      locationName={step.location_name}
+                      latitude={step.latitude}
+                      longitude={step.longitude}
+                      onPhotosAdded={onUpdated}
+                    />
+                  </div>
+                )}
               </div>
             </div>
           );
