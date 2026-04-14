@@ -83,11 +83,12 @@ export function AppNavigation() {
               navigate("/");
               setIsOpen(false);
             }}
-            className="flex w-full items-center gap-3 rounded-xl bg-primary/10 p-3 text-sm font-medium text-primary mb-4 hover:bg-primary/20 transition-colors"
+            className="flex w-full items-center gap-3 rounded-xl bg-primary/10 p-3 font-display text-sm font-semibold mb-4 hover:bg-primary/20 transition-colors"
+            style={{ color: "#1e3a5f" }}
           >
             <Plus className="h-4 w-4" /> Add a Trip
           </button>
-          <h3 className="text-xs font-bold uppercase text-muted-foreground tracking-wider mb-3">Trips TRKD</h3>
+          <h3 className="font-display text-xs font-bold uppercase tracking-wider mb-3" style={{ color: "#1e3a5f" }}>Trips TRKD</h3>
           {years.map((year) => (
             <div key={year} className="mb-2">
               <button
