@@ -144,28 +144,6 @@ export function AppNavigation() {
           </button>
           {showAddTrip && (
             <div className="mb-4 flex flex-col gap-3 rounded-xl border border-border bg-background p-3">
-              <input
-                type="text"
-                value={tripTitle}
-                onChange={(e) => setTripTitle(e.target.value)}
-                className="rounded-lg border border-border bg-card p-2 text-xs"
-                placeholder="Trip Name *"
-              />
-              <div className="grid grid-cols-2 gap-2">
-                <input type="date" value={tripStartDate} onChange={(e) => setTripStartDate(e.target.value)} className="rounded-lg border border-border bg-card p-2 text-xs" />
-                <input type="date" value={tripEndDate} onChange={(e) => setTripEndDate(e.target.value)} className="rounded-lg border border-border bg-card p-2 text-xs" />
-              </div>
-              <input
-                type="text"
-                value={tripCountries}
-                onChange={(e) => setTripCountries(e.target.value)}
-                className="rounded-lg border border-border bg-card p-2 text-xs"
-                placeholder="Countries (e.g. France, Italy)"
-              />
-              <div className="flex items-center justify-between">
-                <span className="text-xs">Track in background</span>
-                <Switch checked={tripTrackBg} onCheckedChange={setTripTrackBg} />
-              </div>
               <div className="grid grid-cols-3 gap-2">
                 <button
                   type="button"
@@ -194,6 +172,28 @@ export function AppNavigation() {
                   <Mail className="h-4 w-4 text-primary" />
                   Inbox
                 </button>
+              </div>
+              <input
+                type="text"
+                value={tripTitle}
+                onChange={(e) => setTripTitle(e.target.value)}
+                className="rounded-lg border border-border bg-card p-2 text-xs"
+                placeholder="Trip Name *"
+              />
+              <div className="grid grid-cols-2 gap-2">
+                <input type="date" value={tripStartDate} onChange={(e) => setTripStartDate(e.target.value)} className="rounded-lg border border-border bg-card p-2 text-xs" />
+                <input type="date" value={tripEndDate} onChange={(e) => setTripEndDate(e.target.value)} className="rounded-lg border border-border bg-card p-2 text-xs" />
+              </div>
+              <input
+                type="text"
+                value={tripCountries}
+                onChange={(e) => setTripCountries(e.target.value)}
+                className="rounded-lg border border-border bg-card p-2 text-xs"
+                placeholder="Countries (e.g. France, Italy)"
+              />
+              <div className="flex items-center justify-between">
+                <span className="text-xs">Track in background</span>
+                <Switch checked={tripTrackBg} onCheckedChange={setTripTrackBg} />
               </div>
               <button
                 disabled={creating || !tripTitle.trim()}
