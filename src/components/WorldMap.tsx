@@ -266,18 +266,19 @@ const bounds = new mapboxgl.LngLatBounds();
           }
         });
 
-        citySet.forEach((coords, cityName) => {
-          const el = document.createElement("div");
-          el.className = "custom-map-marker flex flex-col items-center";
+        citySet.forEach((coords) => {
           const imgUrl = photoMap.get(coords.stepId);
+          if (!imgUrl) return; // Skip cities without photos
+
+          const el = document.createElement("div");
+          el.className = "custom-map-marker";
+          el.style.cssText = "display:flex;flex-direction:column;align-items:center;";
 
           el.innerHTML = `
-            <div class="bg-card/90 text-foreground text-xs font-semibold px-3 py-1.5 rounded-full shadow-lg border border-border whitespace-nowrap mb-1">
-              ${cityName}
+            <div style="width:56px;height:56px;border-radius:10px;border:3px solid white;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.3);background:#e5e7eb;">
+              <img src="${imgUrl}" style="width:100%;height:100%;object-fit:cover;" />
             </div>
-            <div class="h-10 w-10 rounded-full border-2 border-white shadow-lg overflow-hidden bg-muted flex items-center justify-center">
-              ${imgUrl ? `<img src="${imgUrl}" class="h-full w-full object-cover" />` : `<div class="w-2.5 h-2.5 rounded-full bg-primary"></div>`}
-            </div>
+            <div style="width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-top:6px solid white;margin-top:-1px;"></div>
           `;
 
           const marker = new mapboxgl.Marker({ element: el, anchor: "bottom" }).setLngLat([coords.lng, coords.lat]).addTo(map);
