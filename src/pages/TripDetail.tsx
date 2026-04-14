@@ -104,7 +104,7 @@ const TripDetail = () => {
       .from("video_analysis_jobs")
       .select("id", { count: "exact", head: true })
       .eq("user_id", user.id)
-      .eq("trip_id", id) // FIX: Restrict the banner to this specific trip ONLY
+      .eq("trip_id", id) // FIX: Locked to ONLY show videos for this specific trip
       .in("status", ["pending", "processing"]);
     setPendingVideoJobs(count ?? 0);
   }, [authLoading, id, user]);
@@ -349,6 +349,7 @@ const TripDetail = () => {
         </div>
       )}
 
+      {/* Action Buttons */}
       <div className="flex flex-wrap gap-3 overflow-x-auto pb-2 scrollbar-hide">
         <button
           onClick={() => {
