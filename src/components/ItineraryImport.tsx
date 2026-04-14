@@ -55,9 +55,7 @@ async function extractTextFromPDF(file: File): Promise<string> {
   for (let i = 1; i <= pdf.numPages; i++) {
     const page = await pdf.getPage(i);
     const content = await page.getTextContent();
-    const pageText = content.items
-      .map((item: any) => item.str)
-      .join(" ");
+    const pageText = content.items.map((item: any) => item.str).join(" ");
     textParts.push(pageText);
   }
 
@@ -140,39 +138,48 @@ export function ItineraryImport({ tripId, onImportComplete, onCancel }: Itinerar
     }
   }, []);
 
-  const handleFiles = useCallback(async (files: File[]) => {
-    const file = files[0];
-    if (!file) return;
+  const handleFiles = useCallback(
+    async (files: File[]) => {
+      const file = files[0];
+      if (!file) return;
 
-    setProcessing(true);
-    toast.info(`Reading ${file.name}...`);
+      setProcessing(true);
+      toast.info(`Reading ${file.name}...`);
 
-    try {
-      const text = await extractTextFromFile(file);
-      if (text.length < 20) {
-        toast.error("Could not extract enough text from the file. Try pasting the text instead.");
+      try {
+        const text = await extractTextFromFile(file);
+        if (text.length < 20) {
+          toast.error("Could not extract enough text from the file. Try pasting the text instead.");
+          setProcessing(false);
+          return;
+        }
+        await parseDocument(text);
+      } catch (err) {
+        console.error("File read error:", err);
+        toast.error("Failed to read file");
         setProcessing(false);
-        return;
       }
-      await parseDocument(text);
-    } catch (err) {
-      console.error("File read error:", err);
-      toast.error("Failed to read file");
-      setProcessing(false);
-    }
-  }, [parseDocument]);
+    },
+    [parseDocument],
+  );
 
-  const handleDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    setDragOver(false);
-    const files = Array.from(e.dataTransfer.files);
-    handleFiles(files);
-  }, [handleFiles]);
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      setDragOver(false);
+      const files = Array.from(e.dataTransfer.files);
+      handleFiles(files);
+    },
+    [handleFiles],
+  );
 
-  const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []);
-    handleFiles(files);
-  }, [handleFiles]);
+  const handleFileSelect = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const files = Array.from(e.target.files || []);
+      handleFiles(files);
+    },
+    [handleFiles],
+  );
 
   const handlePasteSubmit = useCallback(() => {
     if (pasteText.trim().length < 20) {
@@ -198,7 +205,7 @@ export function ItineraryImport({ tripId, onImportComplete, onCancel }: Itinerar
     setImporting(true);
     try {
       const rows = [];
-      
+
       for (const a of selected) {
         let recordedAt = new Date().toISOString();
         if (a.date) {
@@ -213,8 +220,10 @@ export function ItineraryImport({ tripId, onImportComplete, onCancel }: Itinerar
 
         if (lat === 0 && lon === 0 && (a.locationName || a.country)) {
           try {
-            const query = encodeURIComponent(`${a.locationName || ''} ${a.country || ''}`.trim());
-            const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${query}&limit=1&addressdetails=1`);
+            const query = encodeURIComponent(`${a.locationName || ""} ${a.country || ""}`.trim());
+            const res = await fetch(
+              `https://nominatim.openstreetmap.org/search?format=json&q=${query}&limit=1&addressdetails=1`,
+            );
             if (res.ok) {
               const data = await res.json();
               if (data && data.length > 0) {
@@ -230,7 +239,7 @@ export function ItineraryImport({ tripId, onImportComplete, onCancel }: Itinerar
                 }
               }
             }
-            await new Promise(resolve => setTimeout(resolve, 1000));
+            await new Promise((resolve) => setTimeout(resolve, 1000));
           } catch (e) {
             console.error("Geocoding fallback failed", e);
           }
@@ -274,7 +283,10 @@ export function ItineraryImport({ tripId, onImportComplete, onCancel }: Itinerar
         <div className="flex flex-col gap-3">
           {!pasteMode ? (
             <label
-              onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+              onDragOver={(e) => {
+                e.preventDefault();
+                setDragOver(true);
+              }}
               onDragLeave={() => setDragOver(false)}
               onDrop={handleDrop}
               className={`flex cursor-pointer flex-col items-center gap-4 rounded-2xl border-2 border-dashed p-12 transition-colors ${
@@ -293,10 +305,15 @@ export function ItineraryImport({ tripId, onImportComplete, onCancel }: Itinerar
                 className="hidden"
               />
               <div className="flex items-center gap-3">
-                <span className="rounded-xl bg-primary px-4 py-2 text-sm font-medium text-primary-foreground">Browse Files</span>
+                <span className="rounded-xl bg-primary px-4 py-2 text-sm font-medium text-primary-foreground">
+                  Browse Files
+                </span>
                 <button
                   type="button"
-                  onClick={(e) => { e.preventDefault(); setPasteMode(true); }}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    setPasteMode(true);
+                  }}
                   className="rounded-xl bg-secondary px-4 py-2 text-sm font-medium text-secondary-foreground hover:bg-secondary/80 transition-colors"
                 >
                   Paste Text
@@ -314,7 +331,10 @@ export function ItineraryImport({ tripId, onImportComplete, onCancel }: Itinerar
               />
               <div className="flex items-center gap-2 self-end">
                 <button
-                  onClick={() => { setPasteMode(false); setPasteText(""); }}
+                  onClick={() => {
+                    setPasteMode(false);
+                    setPasteText("");
+                  }}
                   className="rounded-xl bg-secondary px-4 py-2 text-sm font-medium text-secondary-foreground hover:bg-secondary/80 transition-colors"
                 >
                   Back
@@ -331,7 +351,10 @@ export function ItineraryImport({ tripId, onImportComplete, onCancel }: Itinerar
           )}
 
           {onCancel && (
-            <button onClick={onCancel} className="self-end flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
+            <button
+              onClick={onCancel}
+              className="self-end flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+            >
               <X className="h-4 w-4" />
               Cancel
             </button>
@@ -354,7 +377,10 @@ export function ItineraryImport({ tripId, onImportComplete, onCancel }: Itinerar
             </h3>
             <div className="flex items-center gap-2">
               {onCancel && (
-                <button onClick={onCancel} className="flex items-center gap-1.5 rounded-xl bg-secondary px-4 py-2 text-sm font-medium text-secondary-foreground hover:bg-secondary/80 transition-colors">
+                <button
+                  onClick={onCancel}
+                  className="flex items-center gap-1.5 rounded-xl bg-secondary px-4 py-2 text-sm font-medium text-secondary-foreground hover:bg-secondary/80 transition-colors"
+                >
                   <X className="h-4 w-4" />
                   Cancel
                 </button>
@@ -422,7 +448,9 @@ export function ItineraryImport({ tripId, onImportComplete, onCancel }: Itinerar
                             className="rounded-lg border border-border bg-background px-3 py-1.5 text-sm"
                           >
                             {ALL_EVENT_TYPES.map((t) => (
-                              <option key={t.value} value={t.value}>{t.label}</option>
+                              <option key={t.value} value={t.value}>
+                                {t.label}
+                              </option>
                             ))}
                           </select>
                         </div>
@@ -456,9 +484,7 @@ export function ItineraryImport({ tripId, onImportComplete, onCancel }: Itinerar
                               {eventTypeLabel(stop.eventType)}
                             </span>
                           </div>
-                          {stop.country && (
-                            <p className="text-sm text-muted-foreground">{stop.country}</p>
-                          )}
+                          {stop.country && <p className="text-sm text-muted-foreground">{stop.country}</p>}
                           <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap mt-1">
                             {stop.date && (
                               <span className="flex items-center gap-1">
@@ -473,12 +499,8 @@ export function ItineraryImport({ tripId, onImportComplete, onCancel }: Itinerar
                               </span>
                             )}
                           </div>
-                          {stop.description && (
-                            <p className="text-xs text-muted-foreground mt-1">{stop.description}</p>
-                          )}
-                          {stop.notes && (
-                            <p className="text-xs text-muted-foreground/70 italic mt-1">{stop.notes}</p>
-                          )}
+                          {stop.description && <p className="text-xs text-muted-foreground mt-1">{stop.description}</p>}
+                          {stop.notes && <p className="text-xs text-muted-foreground/70 italic mt-1">{stop.notes}</p>}
                         </div>
                         <button
                           onClick={() => setEditingIndex(index)}
@@ -496,3 +518,5 @@ export function ItineraryImport({ tripId, onImportComplete, onCancel }: Itinerar
         </div>
       )}
     </div>
+  );
+}
