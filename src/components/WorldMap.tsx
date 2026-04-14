@@ -81,7 +81,7 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
       container: containerRef.current,
       style: "mapbox://styles/mapbox/satellite-streets-v12",
       center: [0, 20],
-      zoom: singleTrip ? 1.8 : 1.2,
+      zoom: singleTrip ? 1.8 : 1.0, // Zoomed out more for the dashboard
       projection: "mercator",
       attributionControl: false,
       pitchWithRotate: false,
@@ -173,7 +173,7 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
         el.className = "custom-map-marker group relative cursor-pointer flex flex-col items-center";
 
         if (singleTrip) {
-          // --- DETAILED BUBBLE (Trip Page) ---
+          // --- DETAILED BUBBLE (Trip Page) - Shows exact Venue Name ---
           const urls = photoMap.get(step.id) || [];
           const displayName = step.location_name || "Unknown Location";
 
@@ -198,37 +198,30 @@ export const WorldMap = forwardRef<WorldMapHandle, WorldMapProps>(function World
               ${innerImageHtml}
             `;
         } else {
-          // --- COMPACT BUBBLE (Dashboard Page) ---
+          // --- COMPACT BUBBLE (Dashboard Page) - STRICTLY CITY ONLY ---
           let cityName = "Location";
 
-          // Smart parser to extract the best City or Place Name (ignoring the Country column)
-          if (step.location_name) {
+          if (step.country && step.country.includes(",")) {
+            // If country column is "City, State", grab the City
+            cityName = step.country.split(",")[0].trim();
+          } else if (step.location_name) {
+            // If we have to guess from the location name
             const parts = step.location_name.split(",");
-
-            // If it's a formatted "Place, City, CountryCode", grab the City
             if (parts.length >= 3) {
               cityName = parts[parts.length - 2].trim();
-            }
-            // If it's "Place, City", grab the City
-            else if (parts.length === 2) {
-              cityName = parts[1].trim();
-            }
-            // If it's a raw string, use the string (extracting City if separated by a hyphen)
-            else {
+            } else if (parts.length === 2) {
               cityName = parts[0].trim();
-              if (cityName.includes(" - ")) {
-                cityName = cityName.split(" - ").pop()?.trim() || cityName;
-              }
+            } else {
+              cityName = parts[0].split("-").pop()?.trim() || parts[0];
             }
-
-            // Clean up any known messy prefixes
-            cityName = cityName.replace(/City of /gi, "").trim();
           }
 
-          // Keep the label clean and prevent massive text bubbles on the dashboard
-          if (cityName.length > 24) {
-            cityName = cityName.substring(0, 24) + "...";
-          }
+          // Scrub out words like "Airport" or "City of"
+          cityName = cityName
+            .replace(/City of /gi, "")
+            .replace(/ Airport/gi, "")
+            .trim();
+          if (!cityName) cityName = "Location";
 
           el.innerHTML = `
               <div class="bg-card text-foreground text-[10px] font-semibold px-2 py-1 rounded-full shadow border border-border whitespace-nowrap mb-1 opacity-90 pointer-events-none">
