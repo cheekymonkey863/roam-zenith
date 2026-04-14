@@ -46,17 +46,15 @@ interface PhotoImportProps {
   }>;
 }
 
-// Haversine formula to calculate distance between two coordinates in meters
 function getDistanceFromLatLonInM(lat1: number, lon1: number, lat2: number, lon2: number) {
-  const R = 6371e3; // Radius of the earth in meters
+  const R = 6371e3;
   const dLat = (lat2 - lat1) * (Math.PI / 180);
   const dLon = (lon2 - lon1) * (Math.PI / 180);
   const a =
     Math.sin(dLat / 2) * Math.sin(dLat / 2) +
     Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  const d = R * c; // Distance in meters
-  return d;
+  return R * c;
 }
 
 export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps = [] }: PhotoImportProps) {
@@ -240,50 +238,23 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
       if (coords) lastValidCoords = coords;
       else coords = lastValidCoords;
 
-      // NEW LOGIC: Check if this group belongs to an existing step (within 10 meters)
       let targetStepId: string | null = null;
-      let targetLocationName: string | null = null;
 
       for (const step of existingSteps) {
         if (step.latitude && step.longitude) {
           const distance = getDistanceFromLatLonInM(coords.latitude, coords.longitude, step.latitude, step.longitude);
           if (distance <= 10) {
-            // 10 meters tolerance
             targetStepId = step.id;
-            targetLocationName = step.location_name;
             break;
           }
         }
       }
 
-      // If it doesn't match an existing step, we need to create a new one.
       if (!targetStepId) {
         targetStepId = crypto.randomUUID();
-
-        let fallbackName = `${coords.latitude.toFixed(4)}°, ${coords.longitude.toFixed(4)}°`;
-        try {
-          const res = await fetch(
-            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${coords.latitude}&lon=${coords.longitude}&zoom=18&addressdetails=1`,
-          );
-          if (res.ok) {
-            const data = await res.json();
-            const addr = data?.address;
-            if (addr) {
-              const place = addr.amenity || addr.leisure || addr.tourism || addr.shop || addr.historic || addr.building;
-              const road = addr.road || addr.pedestrian || addr.path;
-              const city = addr.city || addr.town || addr.village || "";
-              const cc = addr.country_code ? addr.country_code.toUpperCase() : "";
-
-              if (place && city) fallbackName = `${place} - ${city}, ${cc}`;
-              else if (road && city) fallbackName = `${road}, ${city}, ${cc}`;
-              else if (city && cc) fallbackName = `${city}, ${cc}`;
-            }
-          }
-        } catch (e) {}
-
         const earliest = group.earliestDate?.toISOString() ?? new Date().toISOString();
-        targetLocationName = fallbackName;
 
+        // FIX: Explicitly set location_name to null so the AI does the heavy lifting
         await supabase.from("trip_steps").insert({
           id: targetStepId,
           trip_id: tripId,
@@ -294,18 +265,16 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
           source: "photo_import",
           event_type: "other",
           is_confirmed: false,
-          location_name: fallbackName,
-          description: "null",
+          location_name: null,
+          description: null,
         });
 
         allNewStepIds.push(targetStepId);
-
-        // Add it to existingSteps immediately so subsequent groups can match to it
         existingSteps.push({
           id: targetStepId,
           latitude: coords.latitude,
           longitude: coords.longitude,
-          location_name: fallbackName,
+          location_name: null,
           country: null,
           recorded_at: earliest,
           event_type: "other",
@@ -359,7 +328,7 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
             takenAt: file.takenAt?.toISOString() ?? null,
             latitude: coords.latitude,
             longitude: coords.longitude,
-            locationName: targetLocationName || "",
+            locationName: "",
             country: "",
             nearbyPlaces: [],
             itinerarySteps: [],
@@ -415,7 +384,8 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, existingSteps 
               : `Securing ${uploadState.current} of ${uploadState.total} files in the cloud...`}
           </p>
         )}
-        <div className="h-3 w-full max-w-md overflow-hidden rounded-full bg-muted border border-border">
+        {/* FIX: Solid loading bar without pulsing */}
+        <div className="h-3 w-full max-w-md overflow-hidden rounded-full bg-muted border border-border relative">
           <div
             className={cn(
               "h-full rounded-full transition-all duration-300",
