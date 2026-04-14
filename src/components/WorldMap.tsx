@@ -125,11 +125,6 @@ routeCoordinates.forEach((coordinate) => bounds.extend(coordinate));
 if (routeCoordinates.length > 1) {
 map.addSource(`route-${tripId}`, {
 type: "geojson",
-            data: {
-              type: "Feature",
-              properties: {},
-              geometry: { type: "LineString", coordinates: routeCoordinates },
-            },
             data: { type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: routeCoordinates } },
 });
 
