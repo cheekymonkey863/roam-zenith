@@ -98,7 +98,6 @@ map.resize();
 });
 resizeObserver.observe(containerRef.current);
 
-    map.on("load", () => {
     map.on("load", async () => {
 if (steps.length === 0) return;
 
@@ -126,11 +125,6 @@ routeCoordinates.forEach((coordinate) => bounds.extend(coordinate));
 if (routeCoordinates.length > 1) {
 map.addSource(`route-${tripId}`, {
 type: "geojson",
-            data: {
-              type: "Feature",
-              properties: {},
-              geometry: { type: "LineString", coordinates: routeCoordinates },
-            },
             data: { type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: routeCoordinates } },
 });
 
@@ -204,7 +198,6 @@ paint: { "line-color": color, "line-width": singleTrip ? 3.5 : 2.5, "line-opacit
 
 if (!bounds.isEmpty()) {
 map.fitBounds(bounds, {
-          padding: { top: 60, bottom: 60, left: 60, right: 60 },
           padding: { top: 80, bottom: 80, left: 80, right: 80 },
 maxZoom: singleTrip ? 14 : 12,
 duration: 800,
