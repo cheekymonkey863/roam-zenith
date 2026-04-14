@@ -89,15 +89,75 @@ export function AppNavigation() {
         </div>
         <div className="p-4 overflow-y-auto h-[calc(100vh-100px)]">
           <button
-            onClick={() => {
-              navigate("/");
-              setIsOpen(false);
-            }}
-            className="flex w-full items-center gap-3 rounded-xl bg-primary/10 p-3 font-display text-sm font-semibold mb-4 hover:bg-primary/20 transition-colors"
+            onClick={() => setShowAddTrip(!showAddTrip)}
+            className="flex w-full items-center gap-3 rounded-xl bg-primary/10 p-3 font-display text-sm font-semibold mb-2 hover:bg-primary/20 transition-colors"
             style={{ color: "#1e3a5f" }}
           >
             <Plus className="h-4 w-4" /> Add a Trip
+            {showAddTrip ? <ChevronDown className="h-3 w-3 ml-auto" /> : <ChevronRight className="h-3 w-3 ml-auto" />}
           </button>
+          {showAddTrip && (
+            <div className="mb-4 flex flex-col gap-3 rounded-xl border border-border bg-background p-3">
+              <input
+                type="text"
+                value={tripTitle}
+                onChange={(e) => setTripTitle(e.target.value)}
+                className="rounded-lg border border-border bg-card p-2 text-xs"
+                placeholder="Trip Name *"
+              />
+              <div className="grid grid-cols-2 gap-2">
+                <input type="date" value={tripStartDate} onChange={(e) => setTripStartDate(e.target.value)} className="rounded-lg border border-border bg-card p-2 text-xs" />
+                <input type="date" value={tripEndDate} onChange={(e) => setTripEndDate(e.target.value)} className="rounded-lg border border-border bg-card p-2 text-xs" />
+              </div>
+              <input
+                type="text"
+                value={tripCountries}
+                onChange={(e) => setTripCountries(e.target.value)}
+                className="rounded-lg border border-border bg-card p-2 text-xs"
+                placeholder="Countries (e.g. France, Italy)"
+              />
+              <div className="flex items-center justify-between">
+                <span className="text-xs">Track in background</span>
+                <Switch checked={tripTrackBg} onCheckedChange={setTripTrackBg} />
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                <button
+                  type="button"
+                  disabled={creating || !tripTitle.trim()}
+                  onClick={() => createAndImport("photos")}
+                  className="flex flex-col items-center gap-1 rounded-lg border border-border bg-card p-2 text-xs hover:bg-secondary/40 transition-colors disabled:opacity-50"
+                >
+                  <Image className="h-4 w-4 text-primary" />
+                  Photos
+                </button>
+                <button
+                  type="button"
+                  disabled={creating || !tripTitle.trim()}
+                  onClick={() => createAndImport("document")}
+                  className="flex flex-col items-center gap-1 rounded-lg border border-border bg-card p-2 text-xs hover:bg-secondary/40 transition-colors disabled:opacity-50"
+                >
+                  <FileText className="h-4 w-4 text-primary" />
+                  Document
+                </button>
+                <button
+                  type="button"
+                  disabled={creating || !tripTitle.trim()}
+                  onClick={() => createAndImport("inbox")}
+                  className="flex flex-col items-center gap-1 rounded-lg border border-border bg-card p-2 text-xs hover:bg-secondary/40 transition-colors disabled:opacity-50"
+                >
+                  <Mail className="h-4 w-4 text-primary" />
+                  Inbox
+                </button>
+              </div>
+              <button
+                disabled={creating || !tripTitle.trim()}
+                onClick={() => createAndImport(null)}
+                className="rounded-lg bg-primary py-2 text-xs font-bold text-primary-foreground hover:bg-primary/90 transition-all disabled:opacity-50"
+              >
+                {creating ? "Creating..." : "Add Trip"}
+              </button>
+            </div>
+          )}
           <div className="flex w-full items-center gap-3 rounded-xl bg-primary/10 p-3 font-display text-sm font-semibold mb-4" style={{ color: "#1e3a5f" }}>Trips TRKD</div>
           {years.map((year) => (
             <div key={year} className="mb-2">
