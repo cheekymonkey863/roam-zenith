@@ -512,7 +512,7 @@ const TripDetail = () => {
       )}
 
       {showDocumentImport && (
-        <ItineraryImport tripId={trip.id} onImportComplete={fetchData} onCancel={() => setShowDocumentImport(false)} />
+        <ItineraryImport tripId={trip.id} initialFiles={pendingImportFiles.length > 0 ? pendingImportFiles : undefined} onImportComplete={() => { fetchData(); setPendingImportFiles([]); }} onCancel={() => { setShowDocumentImport(false); setPendingImportFiles([]); }} />
       )}
 
       {showEmailImport && (
