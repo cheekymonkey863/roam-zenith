@@ -58,6 +58,8 @@ export function WebImageSearch({
       }
 
       const mapDiv = document.createElement("div");
+      mapDiv.style.display = "none";
+      document.body.appendChild(mapDiv);
       const service = new google.maps.places.PlacesService(mapDiv);
 
       const request: any = {
@@ -66,14 +68,15 @@ export function WebImageSearch({
         radius: 5000,
       };
 
-      service.textSearch(request, (results: any[], status: string) => {
-        if (status !== "OK" || !results?.length) {
+      service.textSearch(request, (results: any[] | null, status: string) => {
+        document.body.removeChild(mapDiv);
+        console.log("Places textSearch status:", status, "results:", results?.length);
+        if (status !== google.maps.places.PlacesServiceStatus.OK || !results?.length) {
           setPhotos([]);
           setLoading(false);
           return;
         }
 
-        // Get the first result with photos, or try multiple results
         const allPhotos: PlacePhoto[] = [];
         for (const result of results.slice(0, 3)) {
           if (result.photos) {
