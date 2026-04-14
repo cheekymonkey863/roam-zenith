@@ -26,7 +26,7 @@ import { toast } from "sonner";
 
 import { PhotoImport } from "@/components/PhotoImport";
 import { ItineraryImport } from "@/components/ItineraryImport";
-import { WorldMap } from "@/components/WorldMap";
+import { WorldMap, type WorldMapHandle } from "@/components/WorldMap";
 import { AddEventForm } from "@/components/AddEventForm";
 import { EditTripDialog } from "@/components/EditTripDialog";
 import { DeleteTripDialog } from "@/components/DeleteTripDialog";
@@ -62,7 +62,7 @@ const TripDetail = () => {
   });
   const [hasStagedFiles, setHasStagedFiles] = useState(false);
   const visualTypes = useStepVisualTypes(steps);
-  const mapRef = useRef<any>(null);
+  const mapRef = useRef<WorldMapHandle>(null);
 
   const fetchData = useCallback(async () => {
     if (!id || !user) {
@@ -487,8 +487,13 @@ const TripDetail = () => {
           <div className="sticky top-0 z-30 w-full bg-background/95 backdrop-blur-md pb-4 pt-2 -mx-4 px-4 sm:mx-0 sm:px-0">
             <div className="relative z-0 h-[35vh] sm:h-[40vh] min-h-[300px] w-full rounded-2xl overflow-hidden shadow-sm border border-border">
               <WorldMap
+                ref={mapRef}
                 steps={steps}
                 singleTrip
+                visualTypes={visualTypes}
+                activeStepId={activeStepId}
+                className="absolute inset-0 h-full w-full"
+                style={{ height: "100%" }}
               />
             </div>
           </div>
