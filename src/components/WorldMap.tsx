@@ -81,8 +81,9 @@ mapRef.current = null;
 const map = new mapboxgl.Map({
 container: containerRef.current,
 style: "mapbox://styles/mapbox/satellite-streets-v12",
-center: [0, 20],
-zoom: 1.8,
+center: [20, 20],
+zoom: 1.5,
+minZoom: 1.5,
 projection: "mercator",
 attributionControl: false,
 pitchWithRotate: false,
@@ -253,8 +254,8 @@ mapRef.current = null;
 return (
 <div
 ref={containerRef}
-className={className || "relative z-0 max-h-[40vh] mb-8 w-full overflow-hidden rounded-2xl shadow-card"}
-style={style || { minHeight: singleTrip ? 420 : 340 }}
+className={className || "relative z-0 mb-8 w-full max-w-4xl mx-auto overflow-hidden rounded-2xl shadow-card"}
+style={style || { height: singleTrip ? 500 : 420 }}
 />
 );
 });
