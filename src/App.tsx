@@ -12,6 +12,7 @@ import AuthPage from "@/pages/AuthPage";
 import JoinTrip from "@/pages/JoinTrip";
 import StatsPage from "@/pages/StatsPage";
 import ActivityLogPage from "@/pages/ActivityLogPage";
+import DebugPage from "@/pages/DebugPage";
 import NotFound from "@/pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -34,6 +35,7 @@ const AppRoutes = () => (
         <Route path="/trip/:id" element={<ProtectedRoute><TripDetail /></ProtectedRoute>} />
         <Route path="/stats" element={<ProtectedRoute><StatsPage /></ProtectedRoute>} />
         <Route path="/activity" element={<ProtectedRoute><ActivityLogPage /></ProtectedRoute>} />
+        <Route path="/debug" element={<ProtectedRoute><DebugPage /></ProtectedRoute>} />
         <Route path="*" element={<NotFound />} />
       </Routes>
     </main>
