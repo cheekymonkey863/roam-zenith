@@ -14,6 +14,21 @@ export type Database = {
   }
   public: {
     Tables: {
+      admins: {
+        Row: {
+          created_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       audit_logs: {
         Row: {
           action: string
@@ -47,6 +62,51 @@ export type Database = {
           id?: string
           summary?: string | null
           trip_id?: string | null
+        }
+        Relationships: []
+      }
+      debug_logs: {
+        Row: {
+          actor_user_id: string | null
+          col_no: number | null
+          context: Json
+          created_at: string
+          id: string
+          level: string
+          line_no: number | null
+          message: string
+          route: string | null
+          source: string | null
+          stack: string | null
+          user_agent: string | null
+        }
+        Insert: {
+          actor_user_id?: string | null
+          col_no?: number | null
+          context?: Json
+          created_at?: string
+          id?: string
+          level?: string
+          line_no?: number | null
+          message: string
+          route?: string | null
+          source?: string | null
+          stack?: string | null
+          user_agent?: string | null
+        }
+        Update: {
+          actor_user_id?: string | null
+          col_no?: number | null
+          context?: Json
+          created_at?: string
+          id?: string
+          level?: string
+          line_no?: number | null
+          message?: string
+          route?: string | null
+          source?: string | null
+          stack?: string | null
+          user_agent?: string | null
         }
         Relationships: []
       }
@@ -420,6 +480,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      is_admin: { Args: { _user_id: string }; Returns: boolean }
       is_trip_owner: {
         Args: { _trip_id: string; _user_id: string }
         Returns: boolean
