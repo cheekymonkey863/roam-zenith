@@ -218,7 +218,6 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, initialFiles, 
       });
 
       setUploadState((p) => ({ ...p, current: i + 1 }));
-      await new Promise((r) => setTimeout(r, 10));
     }
 
     setUploadState({
@@ -247,6 +246,7 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, initialFiles, 
         : { latitude: 0, longitude: 0 };
 
     for (const group of rawGroups) {
+     try {
       const rawCoords = getGroupRepresentativeCoordinates(group);
       let coords = rawCoords && (rawCoords.latitude !== 0 || rawCoords.longitude !== 0) ? rawCoords : null;
       if (coords) lastValidCoords = coords;
@@ -271,9 +271,14 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, initialFiles, 
         let fallbackCountry = "";
 
         try {
+          // 5s timeout so a hung Nominatim never freezes the whole import
+          const ctrl = new AbortController();
+          const timeoutId = setTimeout(() => ctrl.abort(), 5000);
           const res = await fetch(
             `https://nominatim.openstreetmap.org/reverse?format=json&lat=${coords.latitude}&lon=${coords.longitude}&zoom=18&addressdetails=1`,
+            { signal: ctrl.signal },
           );
+          clearTimeout(timeoutId);
           if (res.ok) {
             const data = await res.json();
             const addr = data?.address;
@@ -300,7 +305,9 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, initialFiles, 
               }
             }
           }
-        } catch (e) {}
+        } catch (e) {
+          console.warn("[PhotoImport] Nominatim lookup failed/timed out, using GPS fallback", e);
+        }
 
         const earliest = group.earliestDate?.toISOString() ?? new Date().toISOString();
 
