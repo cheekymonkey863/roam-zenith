@@ -392,6 +392,10 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, initialFiles, 
           }).catch(() => {});
         }
       }
+     } catch (groupErr) {
+       console.error("[PhotoImport] Group failed, continuing with next group:", groupErr);
+       toast.error("One group failed to upload — continuing with the rest");
+     }
     }
 
     setUploadState({ phase: "finalizing", current: 0, total: 0, message: "Initiating AI visual recognition..." });
@@ -400,6 +404,7 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, initialFiles, 
     }
 
     toast.success("Upload complete! AI is finalizing locations.");
+    setUploadState({ phase: "idle", current: 0, total: 0, message: "" });
     setTimeout(() => {
       onImportComplete();
     }, 1500);
