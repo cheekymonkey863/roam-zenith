@@ -583,6 +583,21 @@ const TripDetail = () => {
           </div>
         </div>
       )}
+
+      {trip && (
+        <div className="mt-12">
+          <details className="group rounded-2xl border border-border bg-card">
+            <summary className="cursor-pointer list-none flex items-center justify-between p-6 font-display text-xl font-semibold text-foreground">
+              <span>Activity Log</span>
+              <span className="text-xs font-normal text-muted-foreground group-open:hidden">Show changes</span>
+              <span className="text-xs font-normal text-muted-foreground hidden group-open:inline">Hide</span>
+            </summary>
+            <div className="p-6 pt-0">
+              <ActivityLog tripId={trip.id} />
+            </div>
+          </details>
+        </div>
+      )}
     </div>
   );
 };
