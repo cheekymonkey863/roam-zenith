@@ -33,6 +33,7 @@ import { AddEventForm } from "@/components/AddEventForm";
 import { EditTripDialog } from "@/components/EditTripDialog";
 import { DeleteTripDialog } from "@/components/DeleteTripDialog";
 import { ShareTripDialog } from "@/components/ShareTripDialog";
+import { ActivityLog } from "@/components/ActivityLog";
 import { Button } from "@/components/ui/button";
 import { useIsMobile } from "@/hooks/use-mobile";
 import type { Tables } from "@/integrations/supabase/types";
