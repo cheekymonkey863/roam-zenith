@@ -40,10 +40,13 @@ stepsRef.current = steps;
 const flyToStep = useCallback((step: TripStep) => {
 const map = mapRef.current;
 if (!map || (step.latitude === 0 && step.longitude === 0)) return;
+// Two-phase: zoom out mid-flight then zoom in close enough to frame the marker fully
 map.flyTo({
 center: [step.longitude, step.latitude],
-zoom: Math.max(map.getZoom(), 7),
-duration: 1200,
+zoom: 11,
+minZoom: 3,
+speed: 1.3,
+curve: 1.6,
 essential: true,
 });
 }, []);
