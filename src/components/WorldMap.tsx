@@ -174,16 +174,60 @@ const bounds = new mapboxgl.LngLatBounds();
         }
       }
 
-      if (singleTrip) {
-        // Trip detail: photo thumbnail bubbles with always-visible place names
-        // For flights: show plane icon + only the origin airport name
-        // For accommodations: show hotel icon + only the check-in entry (deduplicated by location)
-        const FLIGHT_TYPES = new Set(["flight"]);
-        const ACCOMMODATION_TYPES = new Set(["hotel", "apartment_flat", "private_home", "villa", "safari", "glamping", "camping", "resort", "ski_lodge", "accommodation"]);
+      // Helper: render a single point marker element (returns HTMLElement)
+      const buildPointEl = (props: {
+        kind: "flight" | "accommodation" | "photo" | "dashboard";
+        imgUrl?: string;
+        displayName?: string;
+      }): HTMLElement => {
         const PLANE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.4-.1.9.3 1.1L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.2.4.7.5 1.1.3l.5-.3c.4-.2.6-.6.5-1.1z"/></svg>`;
         const HOTEL_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2Z"/><path d="m9 16 .348-.24c1.465-1.013 3.84-1.013 5.304 0L15 16"/><path d="M8 7h.01"/><path d="M16 7h.01"/><path d="M12 7h.01"/><path d="M12 11h.01"/><path d="M16 11h.01"/><path d="M8 11h.01"/></svg>`;
 
-        // Deduplicate accommodations: only show the first (check-in) entry per location
+        const el = document.createElement("div");
+        el.className = "custom-map-marker cursor-pointer";
+        let bubble: string;
+        if (props.kind === "flight") {
+          bubble = `<div class="h-10 w-10 rounded-full border-2 border-white shadow-lg overflow-hidden flex items-center justify-center" style="background:#3b82f6">${PLANE_SVG}</div>`;
+        } else if (props.kind === "accommodation") {
+          bubble = `<div class="h-10 w-10 rounded-full border-2 border-white shadow-lg overflow-hidden flex items-center justify-center" style="background:#8b5cf6">${HOTEL_SVG}</div>`;
+        } else if (props.kind === "dashboard") {
+          el.style.cssText = "display:flex;flex-direction:column;align-items:center;";
+          el.innerHTML = `
+            <div style="width:56px;height:56px;border-radius:10px;border:3px solid white;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.3);background:#e5e7eb;">
+              <img src="${props.imgUrl}" style="width:100%;height:100%;object-fit:cover;" />
+            </div>
+            <div style="width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-top:6px solid white;margin-top:-1px;"></div>
+          `;
+          return el;
+        } else {
+          bubble = `<div class="h-10 w-10 rounded-full border-2 border-white shadow-lg overflow-hidden bg-muted flex items-center justify-center">
+              ${props.imgUrl ? `<img src="${props.imgUrl}" class="h-full w-full object-cover" />` : `<div class="w-2.5 h-2.5 rounded-full bg-primary"></div>`}
+            </div>`;
+        }
+
+        const label = props.displayName
+          ? `<div class="absolute bottom-full mb-1 left-1/2 -translate-x-1/2 bg-card text-foreground text-xs font-semibold px-3 py-1.5 rounded-full shadow-lg border border-border whitespace-nowrap pointer-events-none">${props.displayName}</div>`
+          : "";
+        el.innerHTML = `<div class="relative flex items-center justify-center">${bubble}${label}</div>`;
+        return el;
+      };
+
+      const buildClusterEl = (count: number): HTMLElement => {
+        const el = document.createElement("div");
+        el.className = "custom-map-cluster cursor-pointer";
+        const size = count < 10 ? 40 : count < 50 ? 48 : 56;
+        el.innerHTML = `<div style="width:${size}px;height:${size}px;border-radius:9999px;border:3px solid white;background:#E74C5E;color:white;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;box-shadow:0 4px 12px rgba(0,0,0,0.3);">${count}</div>`;
+        return el;
+      };
+
+      // Build features for clustering
+      type PointFeature = GeoJSON.Feature<GeoJSON.Point, { stepId: string; kind: string; imgUrl?: string; displayName?: string }>;
+      const features: PointFeature[] = [];
+
+      if (singleTrip) {
+        const FLIGHT_TYPES = new Set(["flight"]);
+        const ACCOMMODATION_TYPES = new Set(["hotel", "apartment_flat", "private_home", "villa", "safari", "glamping", "camping", "resort", "ski_lodge", "accommodation"]);
+
         const seenAccommodationLocations = new Set<string>();
         const filteredSteps = validSteps.filter((step) => {
           if (ACCOMMODATION_TYPES.has(step.event_type)) {
@@ -195,107 +239,132 @@ const bounds = new mapboxgl.LngLatBounds();
         });
 
         filteredSteps.forEach((step) => {
-          const el = document.createElement("div");
-          el.className = "custom-map-marker group relative cursor-pointer flex flex-col items-center";
-
           const isFlight = FLIGHT_TYPES.has(step.event_type);
           const isAccommodation = ACCOMMODATION_TYPES.has(step.event_type);
-          const imgUrl = photoMap.get(step.id);
-
-          // For flights: show the airport at THIS location (before →), not the full route
           let displayName = step.location_name || "Unknown Location";
-          if (isFlight && displayName.includes("→")) {
-            displayName = displayName.split("→")[0].trim();
-          }
-
-          let bubble: string;
-          if (isFlight) {
-            bubble = `<div class="h-10 w-10 rounded-full border-2 border-white shadow-lg overflow-hidden flex items-center justify-center" style="background:#3b82f6">${PLANE_SVG}</div>`;
-          } else if (isAccommodation) {
-            bubble = `<div class="h-10 w-10 rounded-full border-2 border-white shadow-lg overflow-hidden flex items-center justify-center" style="background:#8b5cf6">${HOTEL_SVG}</div>`;
-          } else {
-            bubble = `<div class="h-10 w-10 rounded-full border-2 border-white shadow-lg overflow-hidden bg-muted flex items-center justify-center">
-                ${imgUrl ? `<img src="${imgUrl}" class="h-full w-full object-cover" />` : `<div class="w-2.5 h-2.5 rounded-full bg-primary"></div>`}
-              </div>`;
-          }
-
-          el.innerHTML = `
-            <div class="relative flex items-center justify-center">
-              ${bubble}
-              <div class="absolute bottom-full mb-1 left-1/2 -translate-x-1/2 bg-card text-foreground text-xs font-semibold px-3 py-1.5 rounded-full shadow-lg border border-border whitespace-nowrap pointer-events-none">
-                ${displayName}
-              </div>
-            </div>
-          `;
-
-          const marker = new mapboxgl.Marker({ element: el, anchor: "bottom" }).setLngLat([step.longitude, step.latitude]).addTo(map);
-          markersRef.current.push(marker);
+          if (isFlight && displayName.includes("→")) displayName = displayName.split("→")[0].trim();
+          features.push({
+            type: "Feature",
+            properties: {
+              stepId: step.id,
+              kind: isFlight ? "flight" : isAccommodation ? "accommodation" : "photo",
+              imgUrl: photoMap.get(step.id),
+              displayName,
+            },
+            geometry: { type: "Point", coordinates: [step.longitude, step.latitude] },
+          });
         });
       } else {
-        // Dashboard: show only accommodation & activity steps, deduplicated by city, with photo thumbnails
         const DASHBOARD_ACCOMMODATION = new Set(["hotel", "apartment_flat", "private_home", "villa", "safari", "glamping", "camping", "resort", "ski_lodge", "accommodation"]);
         const DASHBOARD_ACTIVITY = new Set(["activity", "sightseeing", "tour", "dining", "food", "meeting", "concert", "theatre", "live_show", "wellness", "sport", "other"]);
         const DASHBOARD_TYPES = new Set([...DASHBOARD_ACCOMMODATION, ...DASHBOARD_ACTIVITY]);
 
         const relevantSteps = validSteps.filter((s) => DASHBOARD_TYPES.has(s.event_type));
-
         const citySet = new Map<string, { lng: number; lat: number; stepId: string }>();
         relevantSteps.forEach((step) => {
-          // Use the country field as the city source, or extract from location_name
-          // location_name is often "Place Name, City, Country" — we want just the city
           let cityName = "Unknown";
+          const raw = step.location_name || "";
+          const parts = raw.split(",").map((p) => p.trim()).filter(Boolean);
           if (step.country) {
-            // country field often has just the country; try location_name for city
-            const raw = step.location_name || "";
-            const parts = raw.split(",").map((p) => p.trim()).filter(Boolean);
-            if (parts.length >= 3) {
-              // "Place, City, Country" → take City
-              cityName = parts[parts.length - 2];
-            } else if (parts.length === 2) {
-              // "City, Country" → take City
-              cityName = parts[0];
-            } else {
-              // Single name — likely the city itself or a place name; use country as fallback
-              cityName = step.country || parts[0] || "Unknown";
-            }
+            if (parts.length >= 3) cityName = parts[parts.length - 2];
+            else if (parts.length === 2) cityName = parts[0];
+            else cityName = step.country || parts[0] || "Unknown";
           } else {
-            const raw = step.location_name || "Unknown";
-            const parts = raw.split(",").map((p) => p.trim()).filter(Boolean);
-            cityName = parts.length >= 2 ? parts[parts.length - 2] : parts[0];
+            cityName = parts.length >= 2 ? parts[parts.length - 2] : parts[0] || "Unknown";
           }
           if (!citySet.has(cityName)) {
             citySet.set(cityName, { lng: step.longitude, lat: step.latitude, stepId: step.id });
           }
         });
-
         citySet.forEach((coords) => {
           const imgUrl = photoMap.get(coords.stepId);
-          if (!imgUrl) return; // Skip cities without photos
-
-          const el = document.createElement("div");
-          el.className = "custom-map-marker";
-          el.style.cssText = "display:flex;flex-direction:column;align-items:center;";
-
-          el.innerHTML = `
-            <div style="width:56px;height:56px;border-radius:10px;border:3px solid white;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.3);background:#e5e7eb;">
-              <img src="${imgUrl}" style="width:100%;height:100%;object-fit:cover;" />
-            </div>
-            <div style="width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-top:6px solid white;margin-top:-1px;"></div>
-          `;
-
-          const marker = new mapboxgl.Marker({ element: el, anchor: "bottom" }).setLngLat([coords.lng, coords.lat]).addTo(map);
-          markersRef.current.push(marker);
+          if (!imgUrl) return;
+          features.push({
+            type: "Feature",
+            properties: { stepId: coords.stepId, kind: "dashboard", imgUrl },
+            geometry: { type: "Point", coordinates: [coords.lng, coords.lat] },
+          });
         });
       }
 
-if (!bounds.isEmpty()) {
-map.fitBounds(bounds, {
+      // Add clustered source
+      const SOURCE_ID = "trip-points";
+      map.addSource(SOURCE_ID, {
+        type: "geojson",
+        data: { type: "FeatureCollection", features },
+        cluster: true,
+        clusterRadius: 60,
+        clusterMaxZoom: 14,
+      });
+      // Invisible layers so queryRenderedFeatures works
+      map.addLayer({ id: "trip-points-clusters", type: "circle", source: SOURCE_ID, filter: ["has", "point_count"], paint: { "circle-radius": 0, "circle-opacity": 0 } });
+      map.addLayer({ id: "trip-points-unclustered", type: "circle", source: SOURCE_ID, filter: ["!", ["has", "point_count"]], paint: { "circle-radius": 0, "circle-opacity": 0 } });
+
+      const markersById = new Map<string, mapboxgl.Marker>();
+
+      const updateMarkers = () => {
+        const newIds = new Set<string>();
+        const rendered = map.querySourceFeatures(SOURCE_ID);
+        // Dedup by cluster_id / stepId
+        const seen = new Set<string>();
+        rendered.forEach((feat) => {
+          const coords = (feat.geometry as GeoJSON.Point).coordinates as [number, number];
+          const props = feat.properties || {};
+          const isCluster = props.cluster;
+          const id = isCluster ? `cluster-${props.cluster_id}` : `point-${props.stepId}`;
+          if (seen.has(id)) return;
+          seen.add(id);
+          newIds.add(id);
+
+          let marker = markersById.get(id);
+          if (!marker) {
+            const el = isCluster
+              ? buildClusterEl(props.point_count)
+              : buildPointEl({
+                  kind: props.kind,
+                  imgUrl: props.imgUrl,
+                  displayName: props.displayName,
+                });
+            if (isCluster) {
+              const clusterId = props.cluster_id;
+              el.addEventListener("click", () => {
+                const source = map.getSource(SOURCE_ID) as mapboxgl.GeoJSONSource;
+                source.getClusterExpansionZoom(clusterId, (err, zoom) => {
+                  if (err) return;
+                  map.easeTo({ center: coords, zoom: zoom ?? map.getZoom() + 1 });
+                });
+              });
+            }
+            marker = new mapboxgl.Marker({ element: el, anchor: "bottom" }).setLngLat(coords).addTo(map);
+            markersById.set(id, marker);
+            markersRef.current.push(marker);
+          } else {
+            marker.setLngLat(coords);
+          }
+        });
+        // Remove markers no longer present
+        markersById.forEach((m, id) => {
+          if (!newIds.has(id)) {
+            m.remove();
+            markersById.delete(id);
+          }
+        });
+      };
+
+      map.on("render", () => {
+        if (!map.isSourceLoaded(SOURCE_ID)) return;
+        updateMarkers();
+      });
+      map.on("moveend", updateMarkers);
+
+      if (!bounds.isEmpty()) {
+        map.fitBounds(bounds, {
           padding: { top: 200, bottom: 200, left: 200, right: 200 },
-maxZoom: singleTrip ? 6 : 7,
-duration: 800,
-});
-}
-});
+          maxZoom: singleTrip ? 6 : 7,
+          duration: 800,
+        });
+      }
+    });
 
 return () => {
 resizeObserver.disconnect();
