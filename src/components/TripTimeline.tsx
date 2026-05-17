@@ -368,11 +368,12 @@ export function TripTimeline({
               const isSelected = selectedIds.has(step.id);
               const isDragOver = overIndex === globalIndex && dragIndex !== null && dragIndex !== globalIndex;
 
+              // Populating only while we don't yet have a resolved location.
+              // A missing description is fine — AI may have nothing to add.
               const isPopulating =
-                step.description === null ||
-                step.description === undefined ||
-                step.description === "" ||
-                step.description === "null";
+                !step.location_name ||
+                step.location_name.trim() === "" ||
+                step.location_name.toLowerCase().includes("unknown");
 
               const hasCoordinates = step.latitude !== 0 && step.longitude !== 0;
 
