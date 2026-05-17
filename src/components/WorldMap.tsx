@@ -220,10 +220,12 @@ const bounds = new mapboxgl.LngLatBounds();
           }
 
           el.innerHTML = `
-            <div class="bg-card text-foreground text-xs font-semibold px-3 py-1.5 rounded-full shadow-lg border border-border whitespace-nowrap mb-1">
-              ${displayName}
+            <div class="relative flex items-center justify-center">
+              ${bubble}
+              <div class="absolute bottom-full mb-1 left-1/2 -translate-x-1/2 bg-card text-foreground text-xs font-semibold px-3 py-1.5 rounded-full shadow-lg border border-border whitespace-nowrap pointer-events-none">
+                ${displayName}
+              </div>
             </div>
-            ${bubble}
           `;
 
           const marker = new mapboxgl.Marker({ element: el, anchor: "bottom" }).setLngLat([step.longitude, step.latitude]).addTo(map);
