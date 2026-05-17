@@ -521,16 +521,6 @@ export function AppNavigation() {
 
           {/* Places TRKD */}
           {renderLocationSection("Places TRKD", showPlaces, setShowPlaces, tripsByPlace, "place")}
-
-          {/* Activity Log */}
-          <Link
-            to="/activity"
-            onClick={() => setIsOpen(false)}
-            className="flex w-full items-center gap-3 rounded-xl bg-primary/10 p-3 pl-[40px] font-display text-sm font-semibold mt-2 hover:bg-primary/20 transition-colors"
-            style={{ color: "#1e3a5f" }}
-          >
-            Activity Log
-          </Link>
         </div>
       </div>
     </>
