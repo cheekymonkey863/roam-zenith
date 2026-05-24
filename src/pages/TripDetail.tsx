@@ -276,8 +276,6 @@ const TripDetail = () => {
   }
 
   const uniqueCountries = new Set<string>();
-  const uniqueCities = new Set<string>();
-
   steps.forEach((step) => {
     if (step.country) {
       uniqueCountries.add(step.country);
@@ -292,31 +290,10 @@ const TripDetail = () => {
         uniqueCountries.add("United Kingdom");
       }
     }
-
-    if (step.location_name) {
-      const locLower = step.location_name.toLowerCase();
-      let city = "";
-
-      if (locLower.includes("edinburgh")) {
-        city = "Edinburgh";
-      } else if (locLower.includes("glasgow")) {
-        city = "Glasgow";
-      } else {
-        const parts = step.location_name.split(",");
-        if (parts.length > 1) {
-          city = parts[parts.length - 2].split("-").pop() || parts[0];
-        } else {
-          city = step.location_name;
-        }
-      }
-
-      if (city) {
-        uniqueCities.add(city.replace(/City of /gi, "").trim());
-      }
-    }
   });
 
-  const displayCityCount = uniqueCities.size;
+  const { cityCount, isResolvingCities } = useResolvedCities(steps);
+  const displayCityCount = isResolvingCities && steps.length > 0 ? "…" : cityCount;
   const displayCountries = Array.from(uniqueCountries);
 
   const hasStops = steps.length > 0;
