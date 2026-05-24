@@ -349,10 +349,10 @@ const TripDetail = () => {
                 {displayCountries.join(", ")}
               </span>
             )}
-            {displayCityCount > 0 && (
+            {(cityCount > 0 || isResolvingCities) && (
               <span className="flex items-center gap-1.5">
                 <Route className="h-4 w-4 text-primary/70" />
-                {displayCityCount} {displayCityCount === 1 ? "city" : "cities"}
+                {displayCityCount} {cityCount === 1 ? "city" : "cities"}
               </span>
             )}
           </div>
