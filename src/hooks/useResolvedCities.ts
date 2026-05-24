@@ -13,8 +13,29 @@ const CITY_COMPONENT_PRIORITY = [
 
 const cityResolutionCache = new Map<string, Promise<string | null>>();
 
+const COUNTRY_ONLY_VALUES = new Set([
+  "england",
+  "scotland",
+  "wales",
+  "northern ireland",
+  "united kingdom",
+  "uk",
+]);
+
 function normalizeCityKey(value: string) {
-  return value.trim().toLowerCase();
+  return value.trim().toLowerCase().replace(/^city of\s+/, "");
+}
+
+function getStoredCity(step: Pick<TripStep, "country">) {
+  if (typeof step.country !== "string") return null;
+
+  const firstSegment = step.country.split(",")[0]?.trim();
+  if (!firstSegment) return null;
+
+  const city = firstSegment.replace(/^city of\s+/i, "").trim();
+  if (!city || COUNTRY_ONLY_VALUES.has(city.toLowerCase())) return null;
+
+  return city;
 }
 
 function isValidCoordinate(latitude: number | null | undefined, longitude: number | null | undefined) {
@@ -56,8 +77,11 @@ function extractCityName(results: any[] | null) {
 const GEOCODE_TIMEOUT_MS = 6000;
 
 async function resolveCityName(step: TripStep): Promise<string | null> {
+  const storedCity = getStoredCity(step);
+  if (storedCity) return storedCity;
+
   if (!isValidCoordinate(step.latitude, step.longitude)) {
-    return getLocationNameFallback(step);
+    return null;
   }
 
   const cacheKey = buildCoordinateKey(step);
