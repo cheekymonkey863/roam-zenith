@@ -68,6 +68,7 @@ const TripDetail = () => {
   const visualTypes = useStepVisualTypes(steps);
   const mapRef = useRef<WorldMapHandle>(null);
   const [pendingImportFiles, setPendingImportFiles] = useState<File[]>([]);
+  const { cityCount, isResolvingCities } = useResolvedCities(steps);
 
   const fetchData = useCallback(async () => {
     if (!id || !user) {
