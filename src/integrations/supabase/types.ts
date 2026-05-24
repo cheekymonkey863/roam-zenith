@@ -232,6 +232,7 @@ export type Database = {
           step_id: string | null
           storage_path: string
           taken_at: string | null
+          thumbnail_path: string | null
           user_id: string
         }
         Insert: {
@@ -245,6 +246,7 @@ export type Database = {
           step_id?: string | null
           storage_path: string
           taken_at?: string | null
+          thumbnail_path?: string | null
           user_id: string
         }
         Update: {
@@ -258,6 +260,7 @@ export type Database = {
           step_id?: string | null
           storage_path?: string
           taken_at?: string | null
+          thumbnail_path?: string | null
           user_id?: string
         }
         Relationships: [

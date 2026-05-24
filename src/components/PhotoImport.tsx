@@ -332,7 +332,7 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, initialFiles, 
         });
       }
 
-      const uploadedFiles = [];
+      const uploadedFiles: { file: typeof group.files[number]; objectName: string; thumbnailPath: string | null }[] = [];
       for (const f of group.files) {
         const ext = f.fileName.split(".").pop() || "jpg";
         const objectName = `${user.id}/${tripId}/staging/${crypto.randomUUID()}.${ext}`;
@@ -343,16 +343,34 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, initialFiles, 
           file: f.file,
           contentType: f.mimeType || undefined,
         });
-        uploadedFiles.push({ file: f, objectName });
+
+        // For videos and HEIC, upload a JPEG sidecar so map/gallery have a renderable preview.
+        let thumbnailPath: string | null = null;
+        const needsSidecar = f.mimeType.startsWith("video/") || /\.(heic|heif)$/i.test(f.fileName) || f.mimeType === "image/heic" || f.mimeType === "image/heif";
+        if (needsSidecar && f.previewUrl && (f.previewUrl.startsWith("data:") || f.previewUrl.startsWith("blob:"))) {
+          try {
+            const jpegBlob = await (await fetch(f.previewUrl)).blob();
+            const thumbName = `${user.id}/${tripId}/staging/${crypto.randomUUID()}.jpg`;
+            const { error: thumbErr } = await supabase.storage
+              .from("trip-photos")
+              .upload(thumbName, jpegBlob, { contentType: "image/jpeg", upsert: false });
+            if (!thumbErr) thumbnailPath = thumbName;
+          } catch (e) {
+            console.warn("[thumbnail] sidecar upload failed", e);
+          }
+        }
+
+        uploadedFiles.push({ file: f, objectName, thumbnailPath });
 
         completedUploads++;
         setUploadState((p) => ({ ...p, current: completedUploads }));
       }
 
-      const photoRows = uploadedFiles.map(({ file, objectName }) => ({
+      const photoRows = uploadedFiles.map(({ file, objectName, thumbnailPath }) => ({
         step_id: targetStepId,
         user_id: user.id,
         storage_path: objectName,
+        thumbnail_path: thumbnailPath,
         file_name: file.fileName,
         latitude: file.latitude ?? null,
         longitude: file.longitude ?? null,

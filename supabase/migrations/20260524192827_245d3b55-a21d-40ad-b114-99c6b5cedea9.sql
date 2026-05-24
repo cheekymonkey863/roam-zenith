@@ -1,0 +1,1 @@
+ALTER TABLE public.step_photos ADD COLUMN IF NOT EXISTS thumbnail_path text;
