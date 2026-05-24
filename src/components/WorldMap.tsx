@@ -264,8 +264,7 @@ const bounds = new mapboxgl.LngLatBounds();
         // Dashboard: one thumbnail per stop that has a photo/video snapshot.
         // Mapbox clustering aggregates them at low zoom and breaks them out as you zoom in.
         validSteps.forEach((step) => {
-          const imgUrl = photoMap.get(step.id);
-          if (!imgUrl) return;
+          const imgUrl = photoMap.get(step.id) || "/placeholder.svg";
           features.push({
             type: "Feature",
             properties: { stepId: step.id, kind: "dashboard", imgUrl },
