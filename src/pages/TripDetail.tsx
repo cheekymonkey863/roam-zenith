@@ -36,6 +36,7 @@ import { ShareTripDialog } from "@/components/ShareTripDialog";
 import { Button } from "@/components/ui/button";
 import { useIsMobile } from "@/hooks/use-mobile";
 import type { Tables } from "@/integrations/supabase/types";
+import { useResolvedCities } from "@/hooks/useResolvedCities";
 
 type Trip = Tables<"trips">;
 type TripStep = Tables<"trip_steps">;
