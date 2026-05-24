@@ -36,6 +36,7 @@ import { ShareTripDialog } from "@/components/ShareTripDialog";
 import { Button } from "@/components/ui/button";
 import { useIsMobile } from "@/hooks/use-mobile";
 import type { Tables } from "@/integrations/supabase/types";
+import { useResolvedCities } from "@/hooks/useResolvedCities";
 
 type Trip = Tables<"trips">;
 type TripStep = Tables<"trip_steps">;
@@ -275,8 +276,6 @@ const TripDetail = () => {
   }
 
   const uniqueCountries = new Set<string>();
-  const uniqueCities = new Set<string>();
-
   steps.forEach((step) => {
     if (step.country) {
       uniqueCountries.add(step.country);
@@ -291,31 +290,10 @@ const TripDetail = () => {
         uniqueCountries.add("United Kingdom");
       }
     }
-
-    if (step.location_name) {
-      const locLower = step.location_name.toLowerCase();
-      let city = "";
-
-      if (locLower.includes("edinburgh")) {
-        city = "Edinburgh";
-      } else if (locLower.includes("glasgow")) {
-        city = "Glasgow";
-      } else {
-        const parts = step.location_name.split(",");
-        if (parts.length > 1) {
-          city = parts[parts.length - 2].split("-").pop() || parts[0];
-        } else {
-          city = step.location_name;
-        }
-      }
-
-      if (city) {
-        uniqueCities.add(city.replace(/City of /gi, "").trim());
-      }
-    }
   });
 
-  const displayCityCount = uniqueCities.size;
+  const { cityCount, isResolvingCities } = useResolvedCities(steps);
+  const displayCityCount = isResolvingCities && steps.length > 0 ? "…" : cityCount;
   const displayCountries = Array.from(uniqueCountries);
 
   const hasStops = steps.length > 0;
@@ -371,10 +349,10 @@ const TripDetail = () => {
                 {displayCountries.join(", ")}
               </span>
             )}
-            {displayCityCount > 0 && (
+            {(cityCount > 0 || isResolvingCities) && (
               <span className="flex items-center gap-1.5">
                 <Route className="h-4 w-4 text-primary/70" />
-                {displayCityCount} {displayCityCount === 1 ? "city" : "cities"}
+                {displayCityCount} {cityCount === 1 ? "city" : "cities"}
               </span>
             )}
           </div>
