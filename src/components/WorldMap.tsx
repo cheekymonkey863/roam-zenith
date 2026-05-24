@@ -159,7 +159,8 @@ const bounds = new mapboxgl.LngLatBounds();
       // 2. Build markers
       const stepIds = validSteps.map((s) => s.id);
 
-      // Fetch photos for markers
+      // Fetch photos for markers — prefer browser-renderable formats (jpg/png/webp)
+      // since MOV/HEIC won't display as <img> thumbnails.
       const photoMap = new Map<string, string>();
       if (stepIds.length > 0) {
         const { data: photos } = await supabase
@@ -167,12 +168,14 @@ const bounds = new mapboxgl.LngLatBounds();
           .select("step_id, storage_path")
           .in("step_id", stepIds);
 
+        const isRenderable = (path: string) => /\.(jpe?g|png|webp|gif|avif)$/i.test(path);
         if (photos) {
+          // First pass: only renderable formats
           for (const photo of photos) {
-            if (!photoMap.has(photo.step_id)) {
-              const { data: urlData } = supabase.storage.from("trip-photos").getPublicUrl(photo.storage_path);
-              photoMap.set(photo.step_id, urlData.publicUrl);
-            }
+            if (!photo.step_id || photoMap.has(photo.step_id)) continue;
+            if (!isRenderable(photo.storage_path)) continue;
+            const { data: urlData } = supabase.storage.from("trip-photos").getPublicUrl(photo.storage_path);
+            photoMap.set(photo.step_id, urlData.publicUrl);
           }
         }
       }
