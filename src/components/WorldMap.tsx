@@ -258,34 +258,15 @@ const bounds = new mapboxgl.LngLatBounds();
           });
         });
       } else {
-        const DASHBOARD_ACCOMMODATION = new Set(["hotel", "apartment_flat", "private_home", "villa", "safari", "glamping", "camping", "resort", "ski_lodge", "accommodation"]);
-        const DASHBOARD_ACTIVITY = new Set(["activity", "sightseeing", "tour", "dining", "food", "meeting", "concert", "theatre", "live_show", "wellness", "sport", "other"]);
-        const DASHBOARD_TYPES = new Set([...DASHBOARD_ACCOMMODATION, ...DASHBOARD_ACTIVITY]);
-
-        const relevantSteps = validSteps.filter((s) => DASHBOARD_TYPES.has(s.event_type));
-        const citySet = new Map<string, { lng: number; lat: number; stepId: string }>();
-        relevantSteps.forEach((step) => {
-          let cityName = "Unknown";
-          const raw = step.location_name || "";
-          const parts = raw.split(",").map((p) => p.trim()).filter(Boolean);
-          if (step.country) {
-            if (parts.length >= 3) cityName = parts[parts.length - 2];
-            else if (parts.length === 2) cityName = parts[0];
-            else cityName = step.country || parts[0] || "Unknown";
-          } else {
-            cityName = parts.length >= 2 ? parts[parts.length - 2] : parts[0] || "Unknown";
-          }
-          if (!citySet.has(cityName)) {
-            citySet.set(cityName, { lng: step.longitude, lat: step.latitude, stepId: step.id });
-          }
-        });
-        citySet.forEach((coords) => {
-          const imgUrl = photoMap.get(coords.stepId);
+        // Dashboard: one thumbnail per stop that has a photo/video snapshot.
+        // Mapbox clustering aggregates them at low zoom and breaks them out as you zoom in.
+        validSteps.forEach((step) => {
+          const imgUrl = photoMap.get(step.id);
           if (!imgUrl) return;
           features.push({
             type: "Feature",
-            properties: { stepId: coords.stepId, kind: "dashboard", imgUrl },
-            geometry: { type: "Point", coordinates: [coords.lng, coords.lat] },
+            properties: { stepId: step.id, kind: "dashboard", imgUrl },
+            geometry: { type: "Point", coordinates: [step.longitude, step.latitude] },
           });
         });
       }
