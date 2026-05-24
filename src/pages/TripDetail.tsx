@@ -293,7 +293,6 @@ const TripDetail = () => {
     }
   });
 
-  const { cityCount, isResolvingCities } = useResolvedCities(steps);
   const displayCityCount = isResolvingCities && steps.length > 0 ? "…" : cityCount;
   const displayCountries = Array.from(uniqueCountries);
 
