@@ -111,11 +111,18 @@ export function AppNavigation() {
           if (!placeMap[place]) placeMap[place] = new Map();
           placeMap[place].set(step.trip_id, tripTitle);
         }
-        // City = second-to-last part (or first if only 2 parts)
+        // City: prefer second-to-last segment (Place, City, Country).
+        // For 2-part values, only treat first part as city if the last part is the country.
         let city = "";
-        if (parts.length >= 3) city = parts[parts.length - 2];
-        else if (parts.length === 2) city = parts[0];
-        if (city && !city.toLowerCase().includes("unknown")) {
+        if (parts.length >= 3) {
+          city = parts[parts.length - 2];
+        } else if (parts.length === 2 && step.country) {
+          const countryNorm = step.country.split(",").pop()?.trim().toLowerCase() || "";
+          if (parts[1].toLowerCase() === countryNorm) city = parts[0];
+        }
+        // Filter out obvious non-cities (venues, POIs with descriptors)
+        const looksLikeVenue = /\b(hotel|airport|station|museum|cafe|restaurant|bar|park|beach|tower|bridge|church|cathedral|temple|market|mall|center|centre|plaza|square|street|road|avenue|terminal)\b/i.test(city);
+        if (city && !city.toLowerCase().includes("unknown") && !looksLikeVenue) {
           if (!cityMap[city]) cityMap[city] = new Map();
           cityMap[city].set(step.trip_id, tripTitle);
         }
