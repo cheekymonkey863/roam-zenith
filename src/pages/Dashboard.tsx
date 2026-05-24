@@ -40,7 +40,7 @@ export default function Dashboard() {
   if (loading) return null;
 
   return (
-    <div className="min-h-screen bg-background pb-20 pt-24 px-6 sm:px-10 lg:px-16">
+    <div className="min-h-screen bg-background pb-20 pt-20 sm:pt-24 px-4 sm:px-10 lg:px-16">
       <div className="mx-auto max-w-7xl">
         <div className="mb-10 flex flex-col items-center text-center">
           <img src="/logo.png" alt="TravelTRKR" className="h-[84px] w-auto object-contain" />
@@ -51,21 +51,22 @@ export default function Dashboard() {
           <DashboardTripForm onTripAdded={fetchData} />
         </div>
 
-        <div className="grid grid-cols-1 gap-6 mb-12 sm:grid-cols-3">
+        <div className="grid grid-cols-3 gap-3 mb-10 sm:gap-6 sm:mb-12">
           <StatCard title="Countries" value={totalCountries} icon={Globe} />
           <StatCard title="Cities" value={totalCities} icon={MapPin} />
           <StatCard title="Trips" value={trips.length} icon={Navigation} />
         </div>
 
-        <div className="mb-16">
-          <h2 className="text-2xl font-bold mb-6">Where You've Been</h2>
-          <div className="h-[400px] rounded-2xl border overflow-hidden">
+        <div className="mb-12 sm:mb-16">
+          <h2 className="text-xl sm:text-2xl font-bold mb-4 sm:mb-6">Where You've Been</h2>
+          <div className="h-[280px] sm:h-[400px] rounded-2xl border overflow-hidden">
             <WorldMap steps={allSteps} />
           </div>
         </div>
 
-        <h2 className="text-2xl font-bold mb-6">Your Trips</h2>
-        <div className="grid grid-cols-1 gap-8 md:grid-cols-2 lg:grid-cols-3">
+        <h2 className="text-xl sm:text-2xl font-bold mb-4 sm:mb-6">Your Trips</h2>
+
+        <div className="grid grid-cols-1 gap-6 sm:gap-8 sm:grid-cols-2 lg:grid-cols-3">
           {trips.map((trip) => (
             <TripCard key={trip.id} trip={trip} allTrips={trips} onUpdated={fetchData} />
           ))}
