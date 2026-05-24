@@ -92,10 +92,14 @@ export function AppNavigation() {
       const tripTitle = tripMap.get(step.trip_id);
       if (!tripTitle) return;
 
-      // Country
+      // Country - normalize: take last comma segment, split slash-separated multi-country values
       if (step.country) {
-        if (!countryMap[step.country]) countryMap[step.country] = new Map();
-        countryMap[step.country].set(step.trip_id, tripTitle);
+        const lastSegment = step.country.split(",").map((p) => p.trim()).filter(Boolean).pop() || "";
+        const countries = lastSegment.split("/").map((c) => c.trim()).filter(Boolean);
+        countries.forEach((country) => {
+          if (!countryMap[country]) countryMap[country] = new Map();
+          countryMap[country].set(step.trip_id, tripTitle);
+        });
       }
 
       // City & Place from location_name
