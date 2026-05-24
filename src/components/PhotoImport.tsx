@@ -347,9 +347,9 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, initialFiles, 
         // For videos and HEIC, upload a JPEG sidecar so map/gallery have a renderable preview.
         let thumbnailPath: string | null = null;
         const needsSidecar = f.mimeType.startsWith("video/") || /\.(heic|heif)$/i.test(f.fileName) || f.mimeType === "image/heic" || f.mimeType === "image/heif";
-        if (needsSidecar && f.thumbnail) {
+        if (needsSidecar && f.previewUrl && (f.previewUrl.startsWith("data:") || f.previewUrl.startsWith("blob:"))) {
           try {
-            const jpegBlob = await (await fetch(f.thumbnail)).blob();
+            const jpegBlob = await (await fetch(f.previewUrl)).blob();
             const thumbName = `${user.id}/${tripId}/staging/${crypto.randomUUID()}.jpg`;
             const { error: thumbErr } = await supabase.storage
               .from("trip-photos")
