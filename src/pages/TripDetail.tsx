@@ -300,7 +300,7 @@ const TripDetail = () => {
   const timelineLabel = "Journey Timeline";
 
   return (
-    <div className="flex flex-col gap-8 py-8 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto w-full">
+    <div className="flex flex-col gap-6 sm:gap-8 pt-20 sm:pt-8 pb-8 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto w-full">
       <div className="flex flex-col gap-4">
         <Link
           to="/"
@@ -310,9 +310,9 @@ const TripDetail = () => {
           Back to dashboard
         </Link>
 
-        <div className="rounded-2xl bg-gradient-to-br from-primary/15 via-accent/10 to-secondary p-6 sm:p-8">
+        <div className="rounded-2xl bg-gradient-to-br from-primary/15 via-accent/10 to-secondary p-4 sm:p-8">
           <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-            <h1 className="font-display text-3xl sm:text-4xl font-semibold text-foreground break-words">
+            <h1 className="font-display text-2xl sm:text-4xl font-semibold text-foreground break-words">
               {trip.title}
             </h1>
             <div className="flex shrink-0 items-center gap-2 self-start">
@@ -528,7 +528,7 @@ const TripDetail = () => {
             </div>
           </div>
 
-          <div className="relative z-10 flex flex-col gap-6 w-full max-w-3xl mx-auto pb-[60vh]">
+          <div className="relative z-10 flex flex-col gap-6 w-full max-w-3xl mx-auto pb-[30vh] sm:pb-[60vh]">
             <div className="flex items-center justify-between px-2">
               <h2 className="font-display text-2xl font-semibold text-foreground">{timelineLabel}</h2>
               <button
