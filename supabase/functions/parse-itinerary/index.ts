@@ -12,6 +12,7 @@ const VALID_EVENT_TYPES = [
 
 interface ParsedActivity {
   locationName: string;
+  city: string;
   country: string;
   latitude: number | null;
   longitude: number | null;
