@@ -138,113 +138,89 @@ OUTPUT FORMAT (JSON exactly matching this schema):
 Respond with valid JSON only. No markdown, no explanation.`;
 }
 
-// ── Gemini File API helpers ─────────────────────────────────────────
+// ── Lovable AI Gateway helpers ──────────────────────────────────────
 
-async function uploadToGeminiFileApi(
-  apiKey: string,
-  videoUrl: string,
-  mimeType: string,
-  displayName: string,
-): Promise<string> {
-  const videoResponse = await fetch(videoUrl);
-  if (!videoResponse.ok || !videoResponse.body) {
-    throw new Error(`Failed to fetch video from storage: ${videoResponse.statusText}`);
+async function fetchAsBase64(url: string): Promise<{ base64: string; bytes: number }> {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Failed to fetch media: ${res.status} ${res.statusText}`);
+  const buffer = await res.arrayBuffer();
+  const bytes = buffer.byteLength;
+  if (bytes > MAX_INLINE_BYTES) {
+    throw new Error(`Media too large for inline analysis: ${(bytes / 1024 / 1024).toFixed(1)}MB (max ${MAX_INLINE_BYTES / 1024 / 1024}MB)`);
   }
-
-  const fileApiUrl = `https://generativelanguage.googleapis.com/upload/v1beta/files?uploadType=media&key=${apiKey}`;
-  console.log(`Streaming "${displayName}" to Gemini File API (${mimeType})...`);
-
-  const uploadRes = await fetch(fileApiUrl, {
-    method: "POST",
-    headers: {
-      "X-Goog-Upload-Protocol": "raw",
-      "Content-Type": mimeType,
-    },
-    body: videoResponse.body,
-    // @ts-ignore — Deno requires this to stream request bodies without buffering to RAM
-    duplex: "half",
-  });
-
-  if (!uploadRes.ok) {
-    const errBody = await uploadRes.text();
-    throw new Error(`Gemini File API upload failed [${uploadRes.status}]: ${errBody}`);
+  const arr = new Uint8Array(buffer);
+  let binary = "";
+  const CHUNK = 0x8000;
+  for (let i = 0; i < arr.length; i += CHUNK) {
+    binary += String.fromCharCode(...arr.subarray(i, i + CHUNK));
   }
-
-  const uploadData = await uploadRes.json();
-  const fileUri = uploadData?.file?.uri;
-  if (!fileUri) {
-    throw new Error(`Gemini File API returned no fileUri: ${JSON.stringify(uploadData)}`);
-  }
-
-  console.log(`Upload complete. URI: ${fileUri}`);
-  return fileUri;
+  return { base64: btoa(binary), bytes };
 }
 
-async function waitForFileActive(apiKey: string, fileUri: string): Promise<void> {
-  const filePath = fileUri.replace("https://generativelanguage.googleapis.com/v1beta/", "");
-  const statusUrl = `https://generativelanguage.googleapis.com/v1beta/${filePath}?key=${apiKey}`;
-
-  for (let attempt = 0; attempt < FILE_POLL_MAX_ATTEMPTS; attempt++) {
-    const res = await fetch(statusUrl);
-    if (!res.ok) {
-      const errText = await res.text();
-      throw new Error(`Failed to check file status: ${errText}`);
-    }
-    const data = await res.json();
-    if (data?.state === "ACTIVE") {
-      console.log("File is ACTIVE.");
-      return;
-    }
-    if (data?.state === "FAILED") {
-      throw new Error(`Gemini file processing failed: ${JSON.stringify(data?.error)}`);
-    }
-    await sleep(FILE_POLL_INTERVAL_MS);
-  }
-  throw new Error("Gemini file processing timed out.");
-}
-
-async function deleteGeminiFile(apiKey: string, fileUri: string): Promise<void> {
-  try {
-    const filePath = fileUri.replace("https://generativelanguage.googleapis.com/v1beta/", "");
-    await fetch(`https://generativelanguage.googleapis.com/v1beta/${filePath}?key=${apiKey}`, { method: "DELETE" });
-  } catch { /* Gemini auto-deletes after 48h */ }
-}
-
-// ── Gemini generate ─────────────────────────────────────────────────
-
-// deno-lint-ignore no-explicit-any
-async function callGemini(apiKey: string, mediaPart: any, prompt: string) {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`;
+async function callGateway(apiKey: string, dataUrl: string, prompt: string): Promise<string> {
   const body = {
-    contents: [{
-      parts: [mediaPart, { text: prompt }],
-    }],
-    generationConfig: { responseMimeType: "application/json" },
+    model: MODEL,
+    messages: [
+      {
+        role: "user",
+        content: [
+          { type: "image_url", image_url: { url: dataUrl } },
+          { type: "text", text: prompt },
+        ],
+      },
+    ],
+    response_format: { type: "json_object" },
   };
 
   for (let attempt = 0; attempt <= RATE_LIMIT_RETRY_DELAYS_MS.length; attempt++) {
-    const response = await fetch(url, {
+    const res = await fetch(GATEWAY_URL, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
       body: JSON.stringify(body),
     });
 
-    if (response.status === 429) {
-      const errText = await response.text();
+    if (res.status === 429) {
       if (attempt < RATE_LIMIT_RETRY_DELAYS_MS.length) {
-        console.warn(`Gemini rate limited, retrying in ${RATE_LIMIT_RETRY_DELAYS_MS[attempt]}ms`);
+        console.warn(`[Queue] Gateway rate limited, retrying in ${RATE_LIMIT_RETRY_DELAYS_MS[attempt]}ms`);
         await sleep(RATE_LIMIT_RETRY_DELAYS_MS[attempt]);
         continue;
       }
-      throw new Error(`Rate limited after retries: ${errText}`);
+      throw new Error("Lovable AI rate limit exceeded after retries.");
     }
-    if (!response.ok) {
-      const errText = await response.text();
-      throw new Error(`Gemini error [${response.status}]: ${errText}`);
+    if (res.status === 402) {
+      throw new Error("Lovable AI credits exhausted. Add credits in workspace settings.");
     }
-    return await response.json();
+    if (!res.ok) {
+      const errText = await res.text();
+      throw new Error(`AI gateway error [${res.status}]: ${errText}`);
+    }
+    const data = await res.json();
+    const text = data?.choices?.[0]?.message?.content;
+    if (typeof text !== "string" || !text.trim()) {
+      throw new Error("No content in gateway response");
+    }
+    return text;
   }
   throw new Error("Rate limited after all retries.");
+}
+
+function parseJsonContent(raw: string): any {
+  const candidates = [raw.trim()];
+  if (raw.includes("```")) {
+    for (const match of raw.matchAll(/```(?:json)?\s*([\s\S]*?)\s*```/gi)) {
+      candidates.push(match[1].trim());
+    }
+  }
+  const first = raw.indexOf("{");
+  const last = raw.lastIndexOf("}");
+  if (first >= 0 && last > first) candidates.push(raw.slice(first, last + 1).trim());
+  for (const c of candidates) {
+    try { return JSON.parse(c); } catch { /* continue */ }
+  }
+  throw new Error("Failed to parse JSON from model response");
 }
 
 // ── Parse result helper ─────────────────────────────────────────────
