@@ -172,7 +172,9 @@ const bounds = new mapboxgl.LngLatBounds();
 
       // Fetch photos for markers — prefer the JPEG thumbnail sidecar (for videos/HEIC),
       // falling back to browser-renderable formats from storage_path.
-      const photoMap = new Map<string, string>();
+      // mediaMap: per step, prefer in this order:
+      //   1) thumbnail_path sidecar  2) renderable image  3) video (rendered as <video>)
+      const mediaMap = new Map<string, { url: string; isVideo: boolean }>();
       if (stepIds.length > 0) {
         const { data: photos } = await supabase
           .from("step_photos")
@@ -182,13 +184,24 @@ const bounds = new mapboxgl.LngLatBounds();
           .order("created_at", { ascending: true });
 
         const isRenderable = (path: string) => /\.(jpe?g|png|webp|gif|avif)$/i.test(path);
+        const isVideo = (path: string) => /\.(mov|mp4|m4v|webm)$/i.test(path);
+        const publicUrl = (path: string) =>
+          supabase.storage.from("trip-photos").getPublicUrl(path).data.publicUrl;
+
         if (photos) {
+          // pick best media per step: image beats video; first-encountered wins within tier
           for (const photo of photos) {
-            if (!photo.step_id || photoMap.has(photo.step_id)) continue;
-            const path = photo.thumbnail_path || (isRenderable(photo.storage_path) ? photo.storage_path : null);
-            if (!path) continue;
-            const { data: urlData } = supabase.storage.from("trip-photos").getPublicUrl(path);
-            photoMap.set(photo.step_id, urlData.publicUrl);
+            if (!photo.step_id) continue;
+            const existing = mediaMap.get(photo.step_id);
+            if (existing && !existing.isVideo) continue; // already have an image
+
+            if (photo.thumbnail_path) {
+              mediaMap.set(photo.step_id, { url: publicUrl(photo.thumbnail_path), isVideo: false });
+            } else if (isRenderable(photo.storage_path)) {
+              mediaMap.set(photo.step_id, { url: publicUrl(photo.storage_path), isVideo: false });
+            } else if (isVideo(photo.storage_path) && !existing) {
+              mediaMap.set(photo.step_id, { url: publicUrl(photo.storage_path), isVideo: true });
+            }
           }
         }
       }
@@ -199,6 +212,7 @@ const bounds = new mapboxgl.LngLatBounds();
         imgUrl?: string;
         displayName?: string;
         iconSvg?: string;
+        isVideo?: boolean;
       }): HTMLElement => {
         const PLANE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.4-.1.9.3 1.1L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.2.4.7.5 1.1.3l.5-.3c.4-.2.6-.6.5-1.1z"/></svg>`;
         const HOTEL_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2Z"/><path d="m9 16 .348-.24c1.465-1.013 3.84-1.013 5.304 0L15 16"/><path d="M8 7h.01"/><path d="M16 7h.01"/><path d="M12 7h.01"/><path d="M12 11h.01"/><path d="M16 11h.01"/><path d="M8 11h.01"/></svg>`;
@@ -212,9 +226,16 @@ const bounds = new mapboxgl.LngLatBounds();
           bubble = `<div class="h-10 w-10 rounded-full border-2 border-white shadow-lg overflow-hidden flex items-center justify-center" style="background:#8b5cf6">${HOTEL_SVG}</div>`;
         } else if (props.kind === "dashboard") {
           el.style.cssText = "display:flex;flex-direction:column;align-items:center;";
-          const inner = props.imgUrl
-            ? `<img src="${props.imgUrl}" style="width:100%;height:100%;object-fit:cover;display:block;" onerror="this.style.display='none'" />`
-            : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:#1e3a5f;color:white;">${props.iconSvg ?? ""}</div>`;
+          let inner: string;
+          if (props.imgUrl && props.isVideo) {
+            // Browsers render the first frame of a muted, metadata-preloaded video.
+            // `#t=0.1` hint nudges Safari/Chrome to decode an early frame as the poster.
+            inner = `<video src="${props.imgUrl}#t=0.1" muted playsinline preload="metadata" style="width:100%;height:100%;object-fit:cover;display:block;pointer-events:none;"></video>`;
+          } else if (props.imgUrl) {
+            inner = `<img src="${props.imgUrl}" style="width:100%;height:100%;object-fit:cover;display:block;" onerror="this.style.display='none'" />`;
+          } else {
+            inner = `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:#1e3a5f;color:white;">${props.iconSvg ?? ""}</div>`;
+          }
           el.innerHTML = `
             <div style="width:56px;height:56px;border-radius:10px;border:3px solid white;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.3);background:#1e3a5f;">
               ${inner}
@@ -244,7 +265,7 @@ const bounds = new mapboxgl.LngLatBounds();
       };
 
       // Build features for clustering
-      type PointFeature = GeoJSON.Feature<GeoJSON.Point, { stepId: string; kind: string; imgUrl?: string; displayName?: string; iconSvg?: string }>;
+      type PointFeature = GeoJSON.Feature<GeoJSON.Point, { stepId: string; kind: string; imgUrl?: string; displayName?: string; iconSvg?: string; isVideo?: string }>;
 
       const renderEventIcon = (eventType: string): string => {
         const Icon = getEventType(eventType)?.icon ?? MapPin;
@@ -278,7 +299,7 @@ const bounds = new mapboxgl.LngLatBounds();
             properties: {
               stepId: step.id,
               kind: isFlight ? "flight" : isAccommodation ? "accommodation" : "photo",
-              imgUrl: photoMap.get(step.id),
+              imgUrl: mediaMap.get(step.id)?.url,
               displayName,
             },
             geometry: { type: "Point", coordinates: [step.longitude, step.latitude] },
@@ -288,14 +309,15 @@ const bounds = new mapboxgl.LngLatBounds();
         // Dashboard: one thumbnail per stop that has a photo/video snapshot.
         // Mapbox clustering aggregates them at low zoom and breaks them out as you zoom in.
         validSteps.forEach((step) => {
-          const imgUrl = photoMap.get(step.id);
+          const media = mediaMap.get(step.id);
           features.push({
             type: "Feature",
             properties: {
               stepId: step.id,
               kind: "dashboard",
-              imgUrl,
-              iconSvg: imgUrl ? undefined : renderEventIcon(step.event_type),
+              imgUrl: media?.url,
+              isVideo: media?.isVideo ? "1" : "",
+              iconSvg: media ? undefined : renderEventIcon(step.event_type),
             },
             geometry: { type: "Point", coordinates: [step.longitude, step.latitude] },
           });
@@ -340,6 +362,7 @@ const bounds = new mapboxgl.LngLatBounds();
                   imgUrl: props.imgUrl,
                   displayName: props.displayName,
                   iconSvg: props.iconSvg,
+                  isVideo: props.isVideo === "1",
                 });
             if (isCluster) {
               const clusterId = props.cluster_id;
