@@ -61,7 +61,7 @@ export function useVideoAnalysisJobs(tripId?: string) {
     })();
 
     const channel = supabase
-      .channel(`video-jobs-${tripId}`)
+      .channel(`video-jobs-${tripId}-${Math.random().toString(36).slice(2)}`)
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "video_analysis_jobs", filter: `trip_id=eq.${tripId}` },
