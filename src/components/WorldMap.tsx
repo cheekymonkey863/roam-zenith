@@ -373,7 +373,8 @@ const bounds = new mapboxgl.LngLatBounds();
       });
       map.on("moveend", updateMarkers);
 
-      if (!bounds.isEmpty()) {
+      if (!bounds.isEmpty() && !hasFitInitialBoundsRef.current) {
+        hasFitInitialBoundsRef.current = true;
         map.fitBounds(bounds, {
           padding: { top: 200, bottom: 200, left: 200, right: 200 },
           maxZoom: singleTrip ? 6 : 7,
@@ -387,8 +388,9 @@ resizeObserver.disconnect();
       markersRef.current.forEach((marker) => marker.remove());
 map.remove();
 mapRef.current = null;
+      hasFitInitialBoundsRef.current = false;
 };
-}, [steps, singleTrip]);
+}, [stepsSignature, singleTrip]);
 
 return (
 <div
