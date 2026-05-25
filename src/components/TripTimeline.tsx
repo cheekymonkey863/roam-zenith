@@ -148,7 +148,9 @@ export function TripTimeline({
     let ticking = false;
 
     const findCenterStep = () => {
-      const centerY = window.innerHeight * 0.35;
+      // Trigger line near the bottom of the viewport so the map zooms to the
+      // upcoming stop before the user scrolls onto it.
+      const centerY = window.innerHeight * 0.7;
       let closestId = "";
       let closestDist = Infinity;
 
