@@ -157,9 +157,10 @@ interface StepMediaGalleryProps {
   stepId: string;
   allSteps: { id: string; location_name: string | null }[];
   onUpdated: () => void;
+  videoJobsByPath?: Map<string, VideoAnalysisJobInfo>;
 }
 
-export function StepMediaGallery({ photos, stepId, allSteps, onUpdated }: StepMediaGalleryProps) {
+export function StepMediaGallery({ photos, stepId, allSteps, onUpdated, videoJobsByPath }: StepMediaGalleryProps) {
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [showMovePicker, setShowMovePicker] = useState(false);
