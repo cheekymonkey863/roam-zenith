@@ -323,6 +323,13 @@ export function StepMediaGallery({ photos, stepId, allSteps, onUpdated, videoJob
                 </div>
               )}
 
+              {/* Video analysis status badge */}
+              {isVideo && videoJobsByPath?.get(photo.storage_path) && (
+                <div className="absolute bottom-1 left-1" onClick={(e) => e.stopPropagation()}>
+                  <VideoJobStatusBadge job={videoJobsByPath.get(photo.storage_path)} />
+                </div>
+              )}
+
               {/* Checkbox — visible on hover or when checked */}
               <div
                 className={`absolute top-1 left-1 flex h-5 w-5 items-center justify-center rounded-sm border-2 transition-all ${
