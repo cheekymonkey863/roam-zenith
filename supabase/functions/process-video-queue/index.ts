@@ -36,12 +36,12 @@ function jsonResponse(body: unknown, status = 200) {
   });
 }
 
-const GEMINI_MODEL = "gemini-2.5-flash";
+const GATEWAY_URL = "https://ai.gateway.lovable.dev/v1/chat/completions";
+const MODEL = "google/gemini-2.5-flash";
 const RATE_LIMIT_RETRY_DELAYS_MS = [2000, 4000, 8000];
-const FILE_POLL_INTERVAL_MS = 5000;
-const FILE_POLL_MAX_ATTEMPTS = 60;
 const BATCH_SIZE = 5;
-const INTER_JOB_DELAY_MS = 4000;
+const INTER_JOB_DELAY_MS = 2000;
+const MAX_INLINE_BYTES = 18 * 1024 * 1024; // ~18MB raw
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
