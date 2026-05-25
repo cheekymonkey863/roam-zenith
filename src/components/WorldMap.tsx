@@ -291,7 +291,7 @@ const bounds = new mapboxgl.LngLatBounds();
             properties: {
               stepId: step.id,
               kind: isFlight ? "flight" : isAccommodation ? "accommodation" : "photo",
-              imgUrl: photoMap.get(step.id),
+              imgUrl: mediaMap.get(step.id)?.url,
               displayName,
             },
             geometry: { type: "Point", coordinates: [step.longitude, step.latitude] },
@@ -301,14 +301,15 @@ const bounds = new mapboxgl.LngLatBounds();
         // Dashboard: one thumbnail per stop that has a photo/video snapshot.
         // Mapbox clustering aggregates them at low zoom and breaks them out as you zoom in.
         validSteps.forEach((step) => {
-          const imgUrl = photoMap.get(step.id);
+          const media = mediaMap.get(step.id);
           features.push({
             type: "Feature",
             properties: {
               stepId: step.id,
               kind: "dashboard",
-              imgUrl,
-              iconSvg: imgUrl ? undefined : renderEventIcon(step.event_type),
+              imgUrl: media?.url,
+              isVideo: media?.isVideo ? "1" : "",
+              iconSvg: media ? undefined : renderEventIcon(step.event_type),
             },
             geometry: { type: "Point", coordinates: [step.longitude, step.latitude] },
           });
