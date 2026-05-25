@@ -264,6 +264,19 @@ function PendingMediaThumbnail({
       ) : (
         <div className="absolute inset-0 bg-black/0 transition-colors group-hover:bg-black/10" />
       )}
+
+      <div
+        title={gps.tooltip}
+        className={cn(
+          "pointer-events-none absolute right-1 top-1 flex items-center gap-0.5 rounded px-1 py-0.5 text-[8px] font-medium uppercase tracking-wider backdrop-blur-sm",
+          gps.tone === "ok" && "bg-emerald-600/80 text-white",
+          gps.tone === "warn" && "bg-amber-600/80 text-white",
+          gps.tone === "none" && "bg-destructive/80 text-destructive-foreground",
+        )}
+      >
+        {gps.tone === "none" ? <MapPinOff className="h-2.5 w-2.5" /> : <MapPin className="h-2.5 w-2.5" />}
+        <span>{gps.label}</span>
+      </div>
     </button>
   );
 }
