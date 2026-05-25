@@ -102,7 +102,7 @@ Be precise with eventType:
                   description: { type: "string" },
                   notes: { type: "string" },
                 },
-                required: ["eventType", "locationName", "activityName", "description"],
+                required: ["eventType", "locationName", "activityName", "city", "country", "description"],
                 additionalProperties: false,
               },
             },
