@@ -236,7 +236,14 @@ const bounds = new mapboxgl.LngLatBounds();
       };
 
       // Build features for clustering
-      type PointFeature = GeoJSON.Feature<GeoJSON.Point, { stepId: string; kind: string; imgUrl?: string; displayName?: string }>;
+      type PointFeature = GeoJSON.Feature<GeoJSON.Point, { stepId: string; kind: string; imgUrl?: string; displayName?: string; iconSvg?: string }>;
+
+      const renderEventIcon = (eventType: string): string => {
+        const Icon = getEventType(eventType)?.icon ?? MapPin;
+        return renderToStaticMarkup(
+          createElement(Icon, { size: 28, color: "white", strokeWidth: 2 }),
+        );
+      };
       const features: PointFeature[] = [];
 
       if (singleTrip) {
