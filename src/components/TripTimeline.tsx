@@ -500,6 +500,7 @@ export function TripTimeline({
                           stepId={step.id}
                           allSteps={steps.map((s) => ({ id: s.id, location_name: s.location_name }))}
                           onUpdated={onUpdated}
+                          videoJobsByPath={videoJobsByPath}
                         />
                       </div>
                     )}
