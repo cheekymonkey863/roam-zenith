@@ -168,8 +168,10 @@ const bounds = new mapboxgl.LngLatBounds();
       if (stepIds.length > 0) {
         const { data: photos } = await supabase
           .from("step_photos")
-          .select("step_id, storage_path, thumbnail_path")
-          .in("step_id", stepIds);
+          .select("step_id, storage_path, thumbnail_path, taken_at, created_at")
+          .in("step_id", stepIds)
+          .order("taken_at", { ascending: true, nullsFirst: false })
+          .order("created_at", { ascending: true });
 
         const isRenderable = (path: string) => /\.(jpe?g|png|webp|gif|avif)$/i.test(path);
         if (photos) {
