@@ -4,6 +4,8 @@ import { X, Play, Trash2, ArrowRightLeft, Check, ChevronLeft, ChevronRight } fro
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { getStoredPreviewThumbnail } from "@/lib/mediaMetadata";
+import { VideoJobStatusBadge } from "@/components/VideoJobStatusBadge";
+import type { VideoAnalysisJobInfo } from "@/hooks/useVideoAnalysisJobs";
 import type { Tables } from "@/integrations/supabase/types";
 
 type StepPhoto = Tables<"step_photos">;
