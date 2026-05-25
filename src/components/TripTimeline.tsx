@@ -3,6 +3,7 @@ import { MapPin, Image as ImageIcon, Trash2, GripVertical, CheckSquare, Square, 
 import { supabase } from "@/integrations/supabase/client";
 import { EditStepDialog } from "@/components/EditStepDialog";
 import { StepMediaGallery } from "@/components/StepMediaGallery";
+import { useVideoAnalysisJobs } from "@/hooks/useVideoAnalysisJobs";
 import { toast } from "sonner";
 import { WebImageSearch } from "@/components/WebImageSearch";
 import { inferStepVisualType, type StepVisualType } from "@/lib/stepVisuals";
