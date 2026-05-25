@@ -3,6 +3,7 @@ import { MapPin, Image as ImageIcon, Trash2, GripVertical, CheckSquare, Square, 
 import { supabase } from "@/integrations/supabase/client";
 import { EditStepDialog } from "@/components/EditStepDialog";
 import { StepMediaGallery } from "@/components/StepMediaGallery";
+import { useVideoAnalysisJobs } from "@/hooks/useVideoAnalysisJobs";
 import { toast } from "sonner";
 import { WebImageSearch } from "@/components/WebImageSearch";
 import { inferStepVisualType, type StepVisualType } from "@/lib/stepVisuals";
@@ -133,6 +134,7 @@ export function TripTimeline({
   const [photosByStep, setPhotosByStep] = useState<Record<string, StepPhoto[]>>({});
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const stepRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  const videoJobsByPath = useVideoAnalysisJobs(tripId);
 
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -498,6 +500,7 @@ export function TripTimeline({
                           stepId={step.id}
                           allSteps={steps.map((s) => ({ id: s.id, location_name: s.location_name }))}
                           onUpdated={onUpdated}
+                          videoJobsByPath={videoJobsByPath}
                         />
                       </div>
                     )}

@@ -4,6 +4,8 @@ import { X, Play, Trash2, ArrowRightLeft, Check, ChevronLeft, ChevronRight } fro
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { getStoredPreviewThumbnail } from "@/lib/mediaMetadata";
+import { VideoJobStatusBadge } from "@/components/VideoJobStatusBadge";
+import type { VideoAnalysisJobInfo } from "@/hooks/useVideoAnalysisJobs";
 import type { Tables } from "@/integrations/supabase/types";
 
 type StepPhoto = Tables<"step_photos">;
@@ -155,9 +157,10 @@ interface StepMediaGalleryProps {
   stepId: string;
   allSteps: { id: string; location_name: string | null }[];
   onUpdated: () => void;
+  videoJobsByPath?: Map<string, VideoAnalysisJobInfo>;
 }
 
-export function StepMediaGallery({ photos, stepId, allSteps, onUpdated }: StepMediaGalleryProps) {
+export function StepMediaGallery({ photos, stepId, allSteps, onUpdated, videoJobsByPath }: StepMediaGalleryProps) {
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [showMovePicker, setShowMovePicker] = useState(false);
@@ -317,6 +320,13 @@ export function StepMediaGallery({ photos, stepId, allSteps, onUpdated }: StepMe
                   <div className="flex h-7 w-7 items-center justify-center rounded-full bg-black/50 backdrop-blur-sm">
                     <Play className="h-3.5 w-3.5 text-white ml-0.5" fill="white" />
                   </div>
+                </div>
+              )}
+
+              {/* Video analysis status badge */}
+              {isVideo && videoJobsByPath?.get(photo.storage_path) && (
+                <div className="absolute bottom-1 left-1" onClick={(e) => e.stopPropagation()}>
+                  <VideoJobStatusBadge job={videoJobsByPath.get(photo.storage_path)} />
                 </div>
               )}
 
