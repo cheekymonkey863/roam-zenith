@@ -257,7 +257,7 @@ const bounds = new mapboxgl.LngLatBounds();
       };
 
       // Build features for clustering
-      type PointFeature = GeoJSON.Feature<GeoJSON.Point, { stepId: string; kind: string; imgUrl?: string; displayName?: string; iconSvg?: string }>;
+      type PointFeature = GeoJSON.Feature<GeoJSON.Point, { stepId: string; kind: string; imgUrl?: string; displayName?: string; iconSvg?: string; isVideo?: string }>;
 
       const renderEventIcon = (eventType: string): string => {
         const Icon = getEventType(eventType)?.icon ?? MapPin;
