@@ -366,10 +366,6 @@ async function processJob(job: any, lovableApiKey: string, supabaseUrl: string) 
       .from("video_analysis_jobs")
       .update({ status: "failed", error: message, updated_at: new Date().toISOString() })
       .eq("id", job.id);
-  } finally {
-    if (geminiFileUri) {
-      await deleteGeminiFile(geminiApiKey, geminiFileUri);
-    }
   }
 }
 
