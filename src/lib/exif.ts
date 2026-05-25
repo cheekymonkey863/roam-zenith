@@ -2,6 +2,7 @@ import exifr from "exifr";
 import heic2any from "heic2any";
 import { supabase } from "@/integrations/supabase/client";
 import { createVideoPreviews, type VideoPreviewSource } from "@/lib/videoFrames";
+import { isKnownVideoFile } from "@/lib/mediaFiles";
 
 export interface PhotoExifData {
   file: File;
@@ -581,7 +582,7 @@ async function extractVideoMetadataServerSide(
 }
 
 export async function extractExifFromFile(file: File): Promise<PhotoExifData> {
-  const isVideo = file.type.startsWith("video/");
+  const isVideo = isKnownVideoFile(file);
   const isMovVideo = isVideo && isMovLikeVideo(file);
 
   const [uploadFile, exif, videoPreviews] = await Promise.all([
