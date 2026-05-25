@@ -87,6 +87,37 @@ export function AppNavigation() {
     const countryMap: Record<string, Map<string, string>> = {};
     const cityMap: Record<string, Map<string, string>> = {};
     const placeMap: Record<string, Map<string, string>> = {};
+    const placeLabels: Record<string, string> = {};
+    const cityLabels: Record<string, string> = {};
+    const countryLabels: Record<string, string> = {};
+
+    const normKey = (v: string) =>
+      v
+        .toLowerCase()
+        .replace(/^(the|city of|st\.?|saint)\s+/i, "")
+        .replace(/[''`".,()]/g, "")
+        .replace(/\s+/g, " ")
+        .trim();
+
+    const addTo = (
+      map: Record<string, Map<string, string>>,
+      labels: Record<string, string>,
+      rawName: string,
+      tripId: string,
+      tripTitle: string,
+    ) => {
+      const name = rawName.trim();
+      if (!name) return;
+      const key = normKey(name);
+      if (!key) return;
+      if (!map[key]) map[key] = new Map();
+      map[key].set(tripId, tripTitle);
+      // Prefer the longest / properly-cased label
+      const existing = labels[key];
+      if (!existing || (name.length >= existing.length && name !== name.toLowerCase())) {
+        labels[key] = name;
+      }
+    };
 
     (steps || []).forEach((step) => {
       const tripTitle = tripMap.get(step.trip_id);
@@ -97,8 +128,7 @@ export function AppNavigation() {
         const lastSegment = step.country.split(",").map((p) => p.trim()).filter(Boolean).pop() || "";
         const countries = lastSegment.split("/").map((c) => c.trim()).filter(Boolean);
         countries.forEach((country) => {
-          if (!countryMap[country]) countryMap[country] = new Map();
-          countryMap[country].set(step.trip_id, tripTitle);
+          addTo(countryMap, countryLabels, country, step.trip_id, tripTitle);
         });
       }
 
@@ -107,8 +137,7 @@ export function AppNavigation() {
         const parts = step.location_name.split(",").map((p) => p.trim()).filter(Boolean);
         const place = parts[0];
         if (place && !place.toLowerCase().includes("unknown") && !place.includes("°")) {
-          if (!placeMap[place]) placeMap[place] = new Map();
-          placeMap[place].set(step.trip_id, tripTitle);
+          addTo(placeMap, placeLabels, place, step.trip_id, tripTitle);
         }
       }
 
@@ -117,23 +146,29 @@ export function AppNavigation() {
         const firstSegment = step.country.split(",")[0].trim().replace(/^city of\s+/i, "");
         const countryOnly = new Set(["england","scotland","wales","northern ireland","united kingdom","uk"]);
         if (firstSegment && !countryOnly.has(firstSegment.toLowerCase())) {
-          if (!cityMap[firstSegment]) cityMap[firstSegment] = new Map();
-          cityMap[firstSegment].set(step.trip_id, tripTitle);
+          addTo(cityMap, cityLabels, firstSegment, step.trip_id, tripTitle);
         }
       }
     });
 
-    const toSorted = (map: Record<string, Map<string, string>>) => {
+    const toSorted = (
+      map: Record<string, Map<string, string>>,
+      labels: Record<string, string>,
+    ) => {
       const result: Record<string, { id: string; title: string }[]> = {};
-      Object.keys(map).sort().forEach((key) => {
-        result[key] = Array.from(map[key].entries()).map(([id, title]) => ({ id, title }));
-      });
+      Object.keys(map)
+        .map((k) => ({ key: k, label: labels[k] || k }))
+        .sort((a, b) => a.label.localeCompare(b.label))
+        .forEach(({ key, label }) => {
+          result[label] = Array.from(map[key].entries()).map(([id, title]) => ({ id, title }));
+        });
       return result;
     };
 
-    setTripsByCountry(toSorted(countryMap));
-    setTripsByCity(toSorted(cityMap));
-    setTripsByPlace(toSorted(placeMap));
+    setTripsByCountry(toSorted(countryMap, countryLabels));
+    setTripsByCity(toSorted(cityMap, cityLabels));
+    setTripsByPlace(toSorted(placeMap, placeLabels));
+
   };
 
   useEffect(() => { fetchTrips(); }, [user]);
