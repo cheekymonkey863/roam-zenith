@@ -440,9 +440,11 @@ export function AppNavigation() {
                   <Mail className="h-4 w-4 text-primary" /> Inbox
                 </button>
               </div>
-              <input ref={navPhotoInputRef} type="file" accept="image/*,video/*,.heic,.heif" multiple className="hidden"
+              <input ref={navPhotoInputRef} type="file" accept="image/*,video/*,.heic,.heif" multiple
+                style={{ position: "absolute", width: 1, height: 1, padding: 0, margin: -1, overflow: "hidden", clip: "rect(0,0,0,0)", border: 0 }}
                 onChange={(e) => { const f = Array.from(e.target.files || []); if (f.length > 0) handleNavPhotoFiles(f); e.target.value = ""; }} />
-              <input ref={navDocInputRef} type="file" accept=".pdf,.docx,.txt,.md" className="hidden"
+              <input ref={navDocInputRef} type="file" accept=".pdf,.docx,.txt,.md"
+                style={{ position: "absolute", width: 1, height: 1, padding: 0, margin: -1, overflow: "hidden", clip: "rect(0,0,0,0)", border: 0 }}
                 onChange={(e) => { const f = Array.from(e.target.files || []); if (f.length > 0) handleNavDocFiles(f); e.target.value = ""; }} />
 
               {/* Extracting indicator */}
