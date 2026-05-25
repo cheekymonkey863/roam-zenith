@@ -197,7 +197,8 @@ Sort activities chronologically. Be thorough — extract every single stop menti
     const activities: ParsedActivity[] = Array.isArray(parsed?.activities)
       ? parsed.activities.map((a: any) => ({
           locationName: typeof a.locationName === "string" ? a.locationName : "Unknown",
-          country: typeof a.country === "string" ? a.country : "Unknown",
+          city: typeof a.city === "string" ? a.city.trim() : "",
+          country: typeof a.country === "string" ? a.country.trim() : "Unknown",
           latitude: typeof a.latitude === "number" ? a.latitude : null,
           longitude: typeof a.longitude === "number" ? a.longitude : null,
           eventType: VALID_EVENT_TYPES.includes(a.eventType) ? a.eventType : mapLegacyEventType(a.eventType),
