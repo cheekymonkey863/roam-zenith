@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Menu, X, Plus, ChevronRight, ChevronDown, Image, FileText, Mail, Loader2, MapPin } from "lucide-react";
 import { format } from "date-fns";
@@ -15,6 +15,17 @@ const MONTHS = [
   "January","February","March","April","May","June",
   "July","August","September","October","November","December",
 ];
+
+const visuallyHiddenFileInputStyle: React.CSSProperties = {
+  position: "absolute",
+  width: 1,
+  height: 1,
+  padding: 0,
+  margin: -1,
+  overflow: "hidden",
+  clip: "rect(0,0,0,0)",
+  border: 0,
+};
 
 export function AppNavigation() {
   const { user } = useAuth();
@@ -44,9 +55,6 @@ export function AppNavigation() {
   const [navImportedStops, setNavImportedStops] = useState<PendingStop[]>([]);
   const [navPendingFiles, setNavPendingFiles] = useState<File[]>([]);
   const [navExtracting, setNavExtracting] = useState(false);
-
-  const navPhotoInputRef = useRef<HTMLInputElement>(null);
-  const navDocInputRef = useRef<HTMLInputElement>(null);
 
   const fetchTrips = async () => {
     if (!user) return;
@@ -409,16 +417,33 @@ export function AppNavigation() {
             <div className="mb-4 flex flex-col gap-3 rounded-xl border border-border bg-background p-3">
               {/* Import buttons */}
               <div className="grid grid-cols-3 gap-2">
-                <button type="button" disabled={navExtracting || creating}
-                  onClick={() => navPhotoInputRef.current?.click()}
-                  className="flex flex-col items-center gap-1 rounded-lg border border-border bg-card p-2 text-xs hover:bg-secondary/40 transition-colors disabled:opacity-50">
+                <label
+                  aria-disabled={navExtracting || creating}
+                  className={`flex flex-col items-center gap-1 rounded-lg border border-border bg-card p-2 text-xs hover:bg-secondary/40 transition-colors ${navExtracting || creating ? "pointer-events-none opacity-50" : "cursor-pointer"}`}
+                >
+                  <input
+                    type="file"
+                    accept="image/*,video/*,.heic,.heif"
+                    multiple
+                    disabled={navExtracting || creating}
+                    style={visuallyHiddenFileInputStyle}
+                    onChange={(e) => { const f = Array.from(e.target.files || []); if (f.length > 0) handleNavPhotoFiles(f); e.target.value = ""; }}
+                  />
                   <Image className="h-4 w-4 text-primary" /> Photos
-                </button>
-                <button type="button" disabled={navExtracting || creating}
-                  onClick={() => navDocInputRef.current?.click()}
-                  className="flex flex-col items-center gap-1 rounded-lg border border-border bg-card p-2 text-xs hover:bg-secondary/40 transition-colors disabled:opacity-50">
+                </label>
+                <label
+                  aria-disabled={navExtracting || creating}
+                  className={`flex flex-col items-center gap-1 rounded-lg border border-border bg-card p-2 text-xs hover:bg-secondary/40 transition-colors ${navExtracting || creating ? "pointer-events-none opacity-50" : "cursor-pointer"}`}
+                >
+                  <input
+                    type="file"
+                    accept=".pdf,.docx,.txt,.md"
+                    disabled={navExtracting || creating}
+                    style={visuallyHiddenFileInputStyle}
+                    onChange={(e) => { const f = Array.from(e.target.files || []); if (f.length > 0) handleNavDocFiles(f); e.target.value = ""; }}
+                  />
                   <FileText className="h-4 w-4 text-primary" /> Document
-                </button>
+                </label>
                 <button type="button" disabled={navExtracting || creating}
                   onClick={() => {
                     if (!user) return;
@@ -440,13 +465,6 @@ export function AppNavigation() {
                   <Mail className="h-4 w-4 text-primary" /> Inbox
                 </button>
               </div>
-              <input ref={navPhotoInputRef} type="file" accept="image/*,video/*,.heic,.heif" multiple
-                style={{ position: "absolute", width: 1, height: 1, padding: 0, margin: -1, overflow: "hidden", clip: "rect(0,0,0,0)", border: 0 }}
-                onChange={(e) => { const f = Array.from(e.target.files || []); if (f.length > 0) handleNavPhotoFiles(f); e.target.value = ""; }} />
-              <input ref={navDocInputRef} type="file" accept=".pdf,.docx,.txt,.md"
-                style={{ position: "absolute", width: 1, height: 1, padding: 0, margin: -1, overflow: "hidden", clip: "rect(0,0,0,0)", border: 0 }}
-                onChange={(e) => { const f = Array.from(e.target.files || []); if (f.length > 0) handleNavDocFiles(f); e.target.value = ""; }} />
-
               {/* Extracting indicator */}
               {navExtracting && (
                 <div className="flex items-center gap-2 rounded-lg border border-border bg-secondary/20 p-2">
