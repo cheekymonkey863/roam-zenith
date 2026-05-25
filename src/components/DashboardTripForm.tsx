@@ -10,6 +10,7 @@ import { toast } from "sonner";
 import { setPendingImport, type PendingStop } from "@/lib/pendingImportStore";
 import { processImportedMediaFiles } from "@/lib/mediaImport";
 import { getEventType } from "@/lib/eventTypes";
+import { MEDIA_FILE_ACCEPT } from "@/lib/mediaFiles";
 
 const visuallyHiddenFileInputStyle: React.CSSProperties = {
   position: "absolute",
@@ -215,7 +216,8 @@ export function DashboardTripForm({ onTripAdded }: { onTripAdded?: () => void })
       startDate,
       endDate
     );
-    if (!finalTitle || finalTitle === "New Trip") {
+    const hasPendingMedia = importType === "photos" && pendingFiles.length > 0;
+    if ((!finalTitle || finalTitle === "New Trip") && !hasPendingMedia) {
       toast.error("Please enter a trip name or import data first");
       return;
     }
@@ -227,7 +229,7 @@ export function DashboardTripForm({ onTripAdded }: { onTripAdded?: () => void })
         .from("trips")
         .insert({
           user_id: user.id,
-          title: finalTitle,
+          title: hasPendingMedia && finalTitle === "New Trip" ? "Imported Media" : finalTitle,
           start_date: startDate || null,
           end_date: endDate || null,
           is_active: trackInBackground,
@@ -291,7 +293,7 @@ export function DashboardTripForm({ onTripAdded }: { onTripAdded?: () => void })
               >
                 <input
                   type="file"
-                  accept="image/*,video/*,.heic,.heif"
+                  accept={MEDIA_FILE_ACCEPT}
                   multiple
                   disabled={extracting || creating}
                   style={visuallyHiddenFileInputStyle}
@@ -302,7 +304,7 @@ export function DashboardTripForm({ onTripAdded }: { onTripAdded?: () => void })
                   }}
                 />
                 <Image className="h-5 w-5 text-primary" />
-                <span>Photos</span>
+                <span>Media</span>
               </label>
               <label
                 aria-disabled={extracting || creating}
