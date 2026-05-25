@@ -70,7 +70,8 @@ For each item determine:
   Example: "Edinburgh Airport (EDI) → London Heathrow Airport (LHR)"
   Example: "São Paulo Guarulhos (GRU) → Madrid Barajas (MAD)"
   For trains: "Origin Station → Destination Station" (e.g. "London St Pancras → Paris Gare du Nord")
-- country: country name. For flights/trains, use the ORIGIN/DEPARTURE country.
+- city: REQUIRED. The city/town name for this stop. For flights/trains, use the ORIGIN/DEPARTURE city. NEVER leave this blank — if a city isn't explicitly stated, infer it from the venue, airport, address, or your knowledge of the location. Use only the city name (e.g. "Paris", "Cape Town", "Cusco") — no country, no region, no descriptors.
+- country: REQUIRED. The country name only (e.g. "France", "South Africa", "Peru"). For flights/trains, use the ORIGIN/DEPARTURE country. Never leave blank — infer from context if not explicit.
 - latitude/longitude: your best estimate of coordinates (use your knowledge of the location). For flights/trains, use the ORIGIN/DEPARTURE coordinates (departure airport/station).
 - eventType: MUST be one of these exact values:
 
