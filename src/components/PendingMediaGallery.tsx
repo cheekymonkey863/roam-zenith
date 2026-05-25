@@ -213,6 +213,7 @@ function PendingMediaThumbnail({
   const fileUrl = useObjectUrl(!isVideo && !previewImage ? (photo.uploadFile ?? photo.file) : null);
   const videoUrl = useObjectUrl(isVideo && !previewImage ? (photo.uploadFile ?? photo.file) : null);
   const imageSrc = !isVideo ? previewImage || fileUrl : previewImage;
+  const gps = summarizeGpsSource(photo);
 
   return (
     <button
