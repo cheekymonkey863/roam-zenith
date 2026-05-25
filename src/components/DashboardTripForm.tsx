@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Plus, ChevronDown, ChevronUp, Image, FileText, Mail, Loader2, X, MapPin } from "lucide-react";
 import { format } from "date-fns";
@@ -10,6 +10,17 @@ import { toast } from "sonner";
 import { setPendingImport, type PendingStop } from "@/lib/pendingImportStore";
 import { processImportedMediaFiles } from "@/lib/mediaImport";
 import { getEventType } from "@/lib/eventTypes";
+
+const visuallyHiddenFileInputStyle: React.CSSProperties = {
+  position: "absolute",
+  width: 1,
+  height: 1,
+  padding: 0,
+  margin: -1,
+  overflow: "hidden",
+  clip: "rect(0,0,0,0)",
+  border: 0,
+};
 
 // Duplicated text extraction helpers from ItineraryImport (kept lightweight)
 async function extractTextFromFile(file: File): Promise<string> {
@@ -68,9 +79,6 @@ export function DashboardTripForm({ onTripAdded }: { onTripAdded?: () => void })
   const [importedStops, setImportedStops] = useState<PendingStop[]>([]);
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const [extracting, setExtracting] = useState(false);
-
-  const photoInputRef = useRef<HTMLInputElement>(null);
-  const docInputRef = useRef<HTMLInputElement>(null);
 
   const generateTripTitle = (countries: string[], sDate: string, eDate: string): string => {
     const countryPart = countries.length > 0 ? countries.join(", ") : "New Trip";
@@ -277,24 +285,43 @@ export function DashboardTripForm({ onTripAdded }: { onTripAdded?: () => void })
           <div className="flex flex-col gap-2">
             <label className="text-xs font-bold text-muted-foreground uppercase">Add stops from</label>
             <div className="grid grid-cols-3 gap-3">
-              <button
-                type="button"
-                disabled={extracting || creating}
-                onClick={() => photoInputRef.current?.click()}
-                className="flex flex-col items-center gap-2 rounded-xl border border-border bg-background p-4 text-sm font-medium hover:bg-secondary/40 transition-colors disabled:opacity-50"
+              <label
+                aria-disabled={extracting || creating}
+                className={`flex flex-col items-center gap-2 rounded-xl border border-border bg-background p-4 text-sm font-medium hover:bg-secondary/40 transition-colors ${extracting || creating ? "pointer-events-none opacity-50" : "cursor-pointer"}`}
               >
+                <input
+                  type="file"
+                  accept="image/*,video/*,.heic,.heif"
+                  multiple
+                  disabled={extracting || creating}
+                  style={visuallyHiddenFileInputStyle}
+                  onChange={(e) => {
+                    const files = Array.from(e.target.files || []);
+                    if (files.length > 0) handlePhotoFiles(files);
+                    e.target.value = "";
+                  }}
+                />
                 <Image className="h-5 w-5 text-primary" />
                 <span>Photos</span>
-              </button>
-              <button
-                type="button"
-                disabled={extracting || creating}
-                onClick={() => docInputRef.current?.click()}
-                className="flex flex-col items-center gap-2 rounded-xl border border-border bg-background p-4 text-sm font-medium hover:bg-secondary/40 transition-colors disabled:opacity-50"
+              </label>
+              <label
+                aria-disabled={extracting || creating}
+                className={`flex flex-col items-center gap-2 rounded-xl border border-border bg-background p-4 text-sm font-medium hover:bg-secondary/40 transition-colors ${extracting || creating ? "pointer-events-none opacity-50" : "cursor-pointer"}`}
               >
+                <input
+                  type="file"
+                  accept=".pdf,.docx,.txt,.md"
+                  disabled={extracting || creating}
+                  style={visuallyHiddenFileInputStyle}
+                  onChange={(e) => {
+                    const files = Array.from(e.target.files || []);
+                    if (files.length > 0) handleDocumentFiles(files);
+                    e.target.value = "";
+                  }}
+                />
                 <FileText className="h-5 w-5 text-primary" />
                 <span>Document</span>
-              </button>
+              </label>
               <button
                 type="button"
                 disabled={extracting || creating}
@@ -333,29 +360,6 @@ export function DashboardTripForm({ onTripAdded }: { onTripAdded?: () => void })
                 <span>Inbox</span>
               </button>
             </div>
-            <input
-              ref={photoInputRef}
-              type="file"
-              accept="image/*,video/*,.heic,.heif"
-              multiple
-              style={{ position: "absolute", width: 1, height: 1, padding: 0, margin: -1, overflow: "hidden", clip: "rect(0,0,0,0)", border: 0 }}
-              onChange={(e) => {
-                const files = Array.from(e.target.files || []);
-                if (files.length > 0) handlePhotoFiles(files);
-                e.target.value = "";
-              }}
-            />
-            <input
-              ref={docInputRef}
-              type="file"
-              accept=".pdf,.docx,.txt,.md"
-              style={{ position: "absolute", width: 1, height: 1, padding: 0, margin: -1, overflow: "hidden", clip: "rect(0,0,0,0)", border: 0 }}
-              onChange={(e) => {
-                const files = Array.from(e.target.files || []);
-                if (files.length > 0) handleDocumentFiles(files);
-                e.target.value = "";
-              }}
-            />
           </div>
 
           {/* Extracting indicator */}
