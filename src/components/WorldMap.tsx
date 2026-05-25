@@ -38,7 +38,15 @@ const containerRef = useRef<HTMLDivElement>(null);
 const mapRef = useRef<mapboxgl.Map | null>(null);
 const stepsRef = useRef<TripStep[]>(steps);
   const markersRef = useRef<mapboxgl.Marker[]>([]);
+  const hasFitInitialBoundsRef = useRef(false);
 stepsRef.current = steps;
+
+// Stable signature: only rebuild the map when the actual step set changes
+// (ids + coords), not when fetchData returns a new array reference with
+// identical contents. Prevents the map from resetting to world view on poll.
+const stepsSignature = steps
+  .map((s) => `${s.id}:${s.latitude.toFixed(5)}:${s.longitude.toFixed(5)}:${s.event_type}`)
+  .join("|");
 
 const flyToStep = useCallback((step: TripStep) => {
 const map = mapRef.current;
