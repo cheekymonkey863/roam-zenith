@@ -381,9 +381,7 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, initialFiles, 
           cameraModel: file.cameraModel,
         },
       }));
-      await supabase
-        .from("step_photos")
-        .upsert(photoRows, { onConflict: "step_id,file_name", ignoreDuplicates: true });
+      await supabase.from("step_photos").insert(photoRows);
 
       for (const { file, objectName } of uploadedFiles) {
         if (file.mimeType.startsWith("video/")) {

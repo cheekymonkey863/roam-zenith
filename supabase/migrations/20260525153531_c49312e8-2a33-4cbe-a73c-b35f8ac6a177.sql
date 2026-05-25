@@ -1,1 +1,0 @@
-UPDATE public.video_analysis_jobs SET status='pending', error=NULL, updated_at=NOW() WHERE status='failed' AND (error LIKE '%429%' OR error LIKE '%quota%' OR error LIKE '%Rate limit%' OR error LIKE '%GOOGLE_AI%');
