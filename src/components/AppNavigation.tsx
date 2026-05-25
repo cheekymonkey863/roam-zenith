@@ -10,6 +10,7 @@ import { parseTripCountriesInput } from "@/lib/tripManagement";
 import { setPendingImport, type PendingStop } from "@/lib/pendingImportStore";
 import { processImportedMediaFiles } from "@/lib/mediaImport";
 import { getEventType } from "@/lib/eventTypes";
+import { MEDIA_FILE_ACCEPT } from "@/lib/mediaFiles";
 
 const MONTHS = [
   "January","February","March","April","May","June",
@@ -342,7 +343,8 @@ export function AppNavigation() {
   const createNavTrip = async () => {
     if (!user) return;
     const finalTitle = tripTitle.trim() || generateNavTripTitle();
-    if (!finalTitle || finalTitle === "New Trip") {
+    const hasPendingMedia = navImportType === "photos" && navPendingFiles.length > 0;
+    if ((!finalTitle || finalTitle === "New Trip") && !hasPendingMedia) {
       toast.error("Please enter a trip name or import data first");
       return;
     }
@@ -352,7 +354,7 @@ export function AppNavigation() {
       const { data, error } = await supabase
         .from("trips")
         .insert({
-          user_id: user.id, title: finalTitle,
+          user_id: user.id, title: hasPendingMedia && finalTitle === "New Trip" ? "Imported Media" : finalTitle,
           start_date: tripStartDate || null, end_date: tripEndDate || null,
           is_active: tripTrackBg, countries,
         } as any)
@@ -423,13 +425,13 @@ export function AppNavigation() {
                 >
                   <input
                     type="file"
-                    accept="image/*,video/*,.heic,.heif"
+                    accept={MEDIA_FILE_ACCEPT}
                     multiple
                     disabled={navExtracting || creating}
                     style={visuallyHiddenFileInputStyle}
                     onChange={(e) => { const f = Array.from(e.target.files || []); if (f.length > 0) handleNavPhotoFiles(f); e.target.value = ""; }}
                   />
-                  <Image className="h-4 w-4 text-primary" /> Photos
+                  <Image className="h-4 w-4 text-primary" /> Media
                 </label>
                 <label
                   aria-disabled={navExtracting || creating}
