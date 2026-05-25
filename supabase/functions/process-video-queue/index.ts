@@ -230,14 +230,17 @@ async function callGemini(apiKey: string, mediaPart: any, prompt: string) {
       body: JSON.stringify(body),
     });
 
-    if (response.status === 429) {
+    if (TRANSIENT_STATUSES.has(response.status)) {
       const errText = await response.text();
       if (attempt < RATE_LIMIT_RETRY_DELAYS_MS.length) {
-        console.warn(`Gemini rate limited, retrying in ${RATE_LIMIT_RETRY_DELAYS_MS[attempt]}ms`);
+        console.warn(`Gemini transient ${response.status}, retrying in ${RATE_LIMIT_RETRY_DELAYS_MS[attempt]}ms`);
         await sleep(RATE_LIMIT_RETRY_DELAYS_MS[attempt]);
         continue;
       }
-      throw new Error(`Rate limited after retries: ${errText}`);
+      const err = new Error(`Gemini transient error [${response.status}] after retries: ${errText}`);
+      // deno-lint-ignore no-explicit-any
+      (err as any).transient = true;
+      throw err;
     }
     if (!response.ok) {
       const errText = await response.text();
@@ -245,7 +248,10 @@ async function callGemini(apiKey: string, mediaPart: any, prompt: string) {
     }
     return await response.json();
   }
-  throw new Error("Rate limited after all retries.");
+  const err = new Error("Gemini transient error after all retries.");
+  // deno-lint-ignore no-explicit-any
+  (err as any).transient = true;
+  throw err;
 }
 
 // ── Parse result helper ─────────────────────────────────────────────
