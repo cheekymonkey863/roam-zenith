@@ -407,11 +407,17 @@ async function processJob(job: any, geminiApiKey: string, supabaseUrl: string) {
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
-    console.error(`[Queue] Analysis failed for job ${job.id}:`, message);
+    // deno-lint-ignore no-explicit-any
+    const isTransient = !!(error as any)?.transient;
+    console.error(`[Queue] Analysis ${isTransient ? "deferred (transient)" : "failed"} for job ${job.id}:`, message);
 
     await supabase
       .from("video_analysis_jobs")
-      .update({ status: "failed", error: message, updated_at: new Date().toISOString() })
+      .update({
+        status: isTransient ? "pending" : "failed",
+        error: message,
+        updated_at: new Date().toISOString(),
+      })
       .eq("id", job.id);
   } finally {
     if (geminiFileUri) {
