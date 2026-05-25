@@ -247,9 +247,8 @@ function parseGeminiResult(parsed: any, captionId: string): VideoAnalysisResult 
 // ── Process a single job ────────────────────────────────────────────
 
 // deno-lint-ignore no-explicit-any
-async function processJob(job: any, geminiApiKey: string, supabaseUrl: string) {
+async function processJob(job: any, lovableApiKey: string, supabaseUrl: string) {
   const supabase = getServiceClient();
-  let geminiFileUri: string | null = null;
 
   // Mark as processing
   await supabase
@@ -263,28 +262,15 @@ async function processJob(job: any, geminiApiKey: string, supabaseUrl: string) {
     const fileName = job.file_name || "media";
     const mediaUrl = `${supabaseUrl}/storage/v1/object/public/trip-photos/${storagePath}`;
 
-    // deno-lint-ignore no-explicit-any
-    let geminiMediaPart: any;
-
-    if (mimeType.startsWith("video/")) {
-      console.log(`[Queue] Analyzing VIDEO "${fileName}" via Gemini File API.`);
-      geminiFileUri = await uploadToGeminiFileApi(geminiApiKey, mediaUrl, mimeType, fileName);
-      await waitForFileActive(geminiApiKey, geminiFileUri);
-      geminiMediaPart = { fileData: { mimeType, fileUri: geminiFileUri } };
-    } else if (mimeType.startsWith("image/")) {
-      console.log(`[Queue] Analyzing IMAGE "${fileName}" via Inline Data.`);
-      const imageResponse = await fetch(mediaUrl);
-      if (!imageResponse.ok) throw new Error("Failed to fetch image from storage.");
-      const arrayBuffer = await imageResponse.arrayBuffer();
-      const bytes = new Uint8Array(arrayBuffer);
-      let binary = "";
-      for (let i = 0; i < bytes.length; i++) {
-        binary += String.fromCharCode(bytes[i]);
-      }
-      geminiMediaPart = { inlineData: { mimeType, data: btoa(binary) } };
-    } else {
+    if (!mimeType.startsWith("video/") && !mimeType.startsWith("image/")) {
       throw new Error(`Unsupported file type: ${mimeType}`);
     }
+
+    console.log(`[Queue] Analyzing ${mimeType.startsWith("video/") ? "VIDEO" : "IMAGE"} "${fileName}" via Lovable AI Gateway.`);
+
+    const { base64, bytes } = await fetchAsBase64(mediaUrl);
+    console.log(`[Queue] Fetched ${(bytes / 1024 / 1024).toFixed(2)}MB inline.`);
+    const dataUrl = `data:${mimeType};base64,${base64}`;
 
     // Extract nearbyPlaces and itinerarySteps from itinerary_context
     const context = job.itinerary_context || {};
@@ -292,7 +278,7 @@ async function processJob(job: any, geminiApiKey: string, supabaseUrl: string) {
     const itinerarySteps: ItineraryStop[] = Array.isArray(context.itinerarySteps)
       ? context.itinerarySteps
       : Array.isArray(context)
-        ? context  // backwards compat: old jobs stored itinerarySteps directly as array
+        ? context  // backwards compat
         : [];
 
     const prompt = buildPrompt({
@@ -305,14 +291,12 @@ async function processJob(job: any, geminiApiKey: string, supabaseUrl: string) {
       itinerarySteps,
     });
 
-    const data = await callGemini(geminiApiKey, geminiMediaPart, prompt);
-    const textContent = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!textContent) throw new Error("No content in Gemini response");
-
-    const parsed = JSON.parse(textContent);
+    const textContent = await callGateway(lovableApiKey, dataUrl, prompt);
+    const parsed = parseJsonContent(textContent);
     const result = parseGeminiResult(parsed, job.caption_id);
 
     console.log(`[Queue] Analysis complete for "${fileName}": ${result.caption}`);
+
 
     // Update the job with results
     await supabase
