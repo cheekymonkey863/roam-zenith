@@ -36,10 +36,12 @@ function jsonResponse(body: unknown, status = 200) {
   });
 }
 
-const GEMINI_MODEL = "gemini-2.5-flash";
+const GATEWAY_URL = "https://ai.gateway.lovable.dev/v1/chat/completions";
+const MODEL = "google/gemini-2.5-flash";
 const RATE_LIMIT_RETRY_DELAYS_MS = [2000, 4000, 8000];
-const FILE_POLL_INTERVAL_MS = 5000;
-const FILE_POLL_MAX_ATTEMPTS = 60;
+
+// Hard cap on inline media size sent through the gateway (base64 inflates ~33%)
+const MAX_INLINE_BYTES = 18 * 1024 * 1024; // 18MB raw -> ~24MB base64
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -49,8 +51,6 @@ function getServiceClient() {
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
   );
 }
-
-// ── Prompt builder ──────────────────────────────────────────────────
 
 function buildPrompt(metadata: {
   takenAt: string | null;
@@ -105,150 +105,100 @@ function buildPrompt(metadata: {
   }
 
   return `You are a world-class travel writer and expert video analyzer.
-I am providing a video from a user's trip.
+I am providing a video or image from a user's trip.
 
 ${metadataBlock}${nearbyPlacesBlock}${itineraryBlock}
 
 OUTPUT RULES:
 - GPS coordinates are a HINT, not the truth. The "Rough GPS Neighborhood" is an automated lookup that is often wrong.
 - TRUST YOUR EYES AND EARS FIRST. If you can visually identify a specific landmark, venue sign, logo, or branding, that is the definitive venue name.
-- If "NEARBY BUSINESSES/VENUES" are provided, cross-reference them with what you see. If you see a stadium and "Ibrox Stadium" is on the list, the venue IS "Ibrox Stadium".
-- If you can read a sign, logo, or branding in the video, use that EXACT name.
+- If "NEARBY BUSINESSES/VENUES" are provided, cross-reference them with what you see.
+- If you can read a sign, logo, or branding, use that EXACT name.
 - Do NOT fall back to generic street addresses, administrative regions, or the GPS neighborhood name if a specific venue or landmark is visible.
 - ONLY if visual evidence gives absolutely no clue should you use the GPS neighborhood as a last resort.
-- Pay extreme attention to weather (overcast, rainy, golden hour, crisp air), lighting (neon, dim, candlelit, bright), and audio (live music, crowd chatter, wind, sizzling food, laughter, clinking glasses).
+- Pay extreme attention to weather, lighting, and audio cues.
 
-OUTPUT FORMAT (JSON exactly matching this schema):
+Respond with valid JSON only matching this exact schema. No markdown, no explanation:
 {
-  "suggestedVenueName": "The exact place/venue name ONLY (e.g., 'Ibrox Stadium', 'Civerinos', 'Whistlebinkies'). DO NOT include the city here.",
-  "suggestedCityName": "The city name ONLY (e.g., 'Glasgow', 'Edinburgh').",
-  "caption": "A 1-sentence description of the exact action happening in the video (e.g., 'Eating massive slices of pizza at 1am').",
-  "sceneDescription": "Literal description of the visual AND audio evidence in one rich sentence.",
-  "essence": "A highly evocative, sensory 2-sentence journal entry capturing the weather, lighting, sounds, and mood of being there in this exact moment. Write in present tense. Make it beautiful.",
-  "activityType": "1-3 words (e.g., 'Comfort Food', 'Live Music', 'Stadium Visit').",
-  "richTags": ["5-8", "lowercase", "literal", "tags"],
-  "moodTags": ["3", "emotional", "atmospheric", "tags"]
+  "suggestedVenueName": "exact venue name only, or null",
+  "suggestedCityName": "city name only, or null",
+  "caption": "1-sentence description of the exact action",
+  "sceneDescription": "literal description of visual and audio evidence in one rich sentence",
+  "essence": "highly evocative 2-sentence present-tense journal entry capturing weather, lighting, sounds, mood",
+  "activityType": "1-3 words",
+  "richTags": ["5-8", "lowercase", "tags"],
+  "moodTags": ["3", "emotional", "tags"]
+}`;
 }
 
-Respond with valid JSON only. No markdown, no explanation.`;
-}
-
-// ── Gemini File API helpers (videos only) ───────────────────────────
-
-async function uploadToGeminiFileApi(
-  apiKey: string,
-  videoUrl: string,
-  mimeType: string,
-  displayName: string,
-): Promise<string> {
-  const videoResponse = await fetch(videoUrl);
-  if (!videoResponse.ok || !videoResponse.body) {
-    throw new Error(`Failed to fetch video from storage: ${videoResponse.statusText}`);
+async function fetchAsBase64(url: string): Promise<{ base64: string; bytes: number }> {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Failed to fetch media from storage: ${res.status} ${res.statusText}`);
+  const buffer = await res.arrayBuffer();
+  const bytes = buffer.byteLength;
+  if (bytes > MAX_INLINE_BYTES) {
+    throw new Error(`Media too large for inline analysis: ${(bytes / 1024 / 1024).toFixed(1)}MB (max ${MAX_INLINE_BYTES / 1024 / 1024}MB)`);
   }
-
-  const fileApiUrl = `https://generativelanguage.googleapis.com/upload/v1beta/files?uploadType=media&key=${apiKey}`;
-  console.log(`Streaming "${displayName}" to Gemini File API (${mimeType})...`);
-
-  const uploadRes = await fetch(fileApiUrl, {
-    method: "POST",
-    headers: {
-      "X-Goog-Upload-Protocol": "raw",
-      "Content-Type": mimeType,
-    },
-    body: videoResponse.body,
-    // @ts-ignore — Deno requires this to stream request bodies without buffering to RAM
-    duplex: "half",
-  });
-
-  if (!uploadRes.ok) {
-    const errBody = await uploadRes.text();
-    throw new Error(`Gemini File API upload failed [${uploadRes.status}]: ${errBody}`);
+  const arr = new Uint8Array(buffer);
+  let binary = "";
+  const CHUNK = 0x8000;
+  for (let i = 0; i < arr.length; i += CHUNK) {
+    binary += String.fromCharCode(...arr.subarray(i, i + CHUNK));
   }
-
-  const uploadData = await uploadRes.json();
-  const fileUri = uploadData?.file?.uri;
-  if (!fileUri) {
-    throw new Error(`Gemini File API returned no fileUri: ${JSON.stringify(uploadData)}`);
-  }
-
-  console.log(`Upload complete. URI: ${fileUri}`);
-  return fileUri;
+  return { base64: btoa(binary), bytes };
 }
 
-async function waitForFileActive(apiKey: string, fileUri: string): Promise<void> {
-  const filePath = fileUri.replace("https://generativelanguage.googleapis.com/v1beta/", "");
-  const statusUrl = `https://generativelanguage.googleapis.com/v1beta/${filePath}?key=${apiKey}`;
-
-  for (let attempt = 0; attempt < FILE_POLL_MAX_ATTEMPTS; attempt++) {
-    const res = await fetch(statusUrl);
-    if (!res.ok) {
-      const errText = await res.text();
-      throw new Error(`Failed to check file status: ${errText}`);
-    }
-    const data = await res.json();
-    if (data?.state === "ACTIVE") {
-      console.log("File is ACTIVE.");
-      return;
-    }
-    if (data?.state === "FAILED") {
-      throw new Error(`Gemini file processing failed: ${JSON.stringify(data?.error)}`);
-    }
-    await sleep(FILE_POLL_INTERVAL_MS);
-  }
-  throw new Error("Gemini file processing timed out.");
-}
-
-async function deleteGeminiFile(apiKey: string, fileUri: string): Promise<void> {
-  try {
-    const filePath = fileUri.replace("https://generativelanguage.googleapis.com/v1beta/", "");
-    await fetch(`https://generativelanguage.googleapis.com/v1beta/${filePath}?key=${apiKey}`, { method: "DELETE" });
-  } catch { /* Gemini auto-deletes after 48h */ }
-}
-
-// ── Gemini generate (accepts any media part) ────────────────────────
-
-// deno-lint-ignore no-explicit-any
-async function callGemini(apiKey: string, mediaPart: any, prompt: string) {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`;
-  const body = {
-    contents: [{
-      parts: [
-        mediaPart,
-        { text: prompt },
-      ],
-    }],
-    generationConfig: { responseMimeType: "application/json" },
-  };
+async function callGateway(body: unknown): Promise<any> {
+  const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+  if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY is not configured");
 
   for (let attempt = 0; attempt <= RATE_LIMIT_RETRY_DELAYS_MS.length; attempt++) {
-    const response = await fetch(url, {
+    const res = await fetch(GATEWAY_URL, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        Authorization: `Bearer ${LOVABLE_API_KEY}`,
+        "Content-Type": "application/json",
+      },
       body: JSON.stringify(body),
     });
 
-    if (response.status === 429) {
-      const errText = await response.text();
+    if (res.status === 429) {
       if (attempt < RATE_LIMIT_RETRY_DELAYS_MS.length) {
-        console.warn(`Gemini rate limited, retrying in ${RATE_LIMIT_RETRY_DELAYS_MS[attempt]}ms`);
+        console.warn(`Gateway rate limited, retrying in ${RATE_LIMIT_RETRY_DELAYS_MS[attempt]}ms`);
         await sleep(RATE_LIMIT_RETRY_DELAYS_MS[attempt]);
         continue;
       }
-      throw new Error(`Rate limited after retries: ${errText}`);
+      throw new Error("Rate limit exceeded after retries. Please try again later.");
     }
-    if (!response.ok) {
-      const errText = await response.text();
-      throw new Error(`Gemini error [${response.status}]: ${errText}`);
+    if (res.status === 402) {
+      throw new Error("Lovable AI credits exhausted. Please add credits in workspace settings.");
     }
-    return await response.json();
+    if (!res.ok) {
+      const errText = await res.text();
+      throw new Error(`AI gateway error [${res.status}]: ${errText}`);
+    }
+    return await res.json();
   }
   throw new Error("Rate limited after all retries.");
 }
 
-// ── Parse result helper ─────────────────────────────────────────────
+function parseJsonContent(raw: string): any {
+  const candidates = [raw.trim()];
+  if (raw.includes("```")) {
+    for (const match of raw.matchAll(/```(?:json)?\s*([\s\S]*?)\s*```/gi)) {
+      candidates.push(match[1].trim());
+    }
+  }
+  const first = raw.indexOf("{");
+  const last = raw.lastIndexOf("}");
+  if (first >= 0 && last > first) candidates.push(raw.slice(first, last + 1).trim());
+  for (const c of candidates) {
+    try { return JSON.parse(c); } catch { /* continue */ }
+  }
+  throw new Error("Failed to parse JSON from model response");
+}
 
-// deno-lint-ignore no-explicit-any
-function parseGeminiResult(parsed: any, captionId: string): VideoAnalysisResult {
+function parseResult(parsed: any, captionId: string): VideoAnalysisResult {
   return {
     captionId,
     caption: typeof parsed.caption === "string" ? parsed.caption.trim() : "Video clip",
@@ -261,12 +211,10 @@ function parseGeminiResult(parsed: any, captionId: string): VideoAnalysisResult 
     moodTags: Array.isArray(parsed.moodTags)
       ? parsed.moodTags.filter((t: unknown): t is string => typeof t === "string").map((t: string) => t.trim().toLowerCase())
       : [],
-    suggestedVenueName: typeof parsed.suggestedVenueName === "string" ? parsed.suggestedVenueName.trim() : (typeof parsed.venueName === "string" ? parsed.venueName.trim() : null),
-    suggestedCityName: typeof parsed.suggestedCityName === "string" ? parsed.suggestedCityName.trim() : (typeof parsed.cityName === "string" ? parsed.cityName.trim() : null),
+    suggestedVenueName: typeof parsed.suggestedVenueName === "string" ? parsed.suggestedVenueName.trim() : null,
+    suggestedCityName: typeof parsed.suggestedCityName === "string" ? parsed.suggestedCityName.trim() : null,
   };
 }
-
-// ── Background processing ───────────────────────────────────────────
 
 async function processMediaInBackground(params: {
   jobId: string;
@@ -282,55 +230,17 @@ async function processMediaInBackground(params: {
   nearbyPlaces: string[];
   itinerarySteps: ItineraryStop[];
 }) {
-  const geminiApiKey = Deno.env.get("GOOGLE_AI_STUDIO_KEY")!;
   const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
   const supabase = getServiceClient();
-  let geminiFileUri: string | null = null;
 
   try {
     const mediaUrl = `${supabaseUrl}/storage/v1/object/public/trip-photos/${params.storagePath}`;
+    console.log(`Analyzing "${params.fileName}" (${params.mimeType}) via Lovable AI Gateway.`);
 
-    // deno-lint-ignore no-explicit-any
-    let geminiMediaPart: any;
+    const { base64, bytes } = await fetchAsBase64(mediaUrl);
+    console.log(`Fetched ${(bytes / 1024 / 1024).toFixed(2)}MB, encoding inline.`);
 
-    // ── Route based on media type ──
-    if (params.mimeType.startsWith("video/")) {
-      console.log(`Analyzing VIDEO "${params.fileName}" via Gemini File API.`);
-
-      geminiFileUri = await uploadToGeminiFileApi(geminiApiKey, mediaUrl, params.mimeType, params.fileName);
-      await waitForFileActive(geminiApiKey, geminiFileUri);
-
-      geminiMediaPart = {
-        fileData: {
-          mimeType: params.mimeType,
-          fileUri: geminiFileUri,
-        },
-      };
-    } else if (params.mimeType.startsWith("image/")) {
-      console.log(`Analyzing IMAGE "${params.fileName}" via Inline Data.`);
-
-      const imageResponse = await fetch(mediaUrl);
-      if (!imageResponse.ok) throw new Error("Failed to fetch image from storage.");
-
-      const arrayBuffer = await imageResponse.arrayBuffer();
-      const bytes = new Uint8Array(arrayBuffer);
-      let binary = "";
-      for (let i = 0; i < bytes.length; i++) {
-        binary += String.fromCharCode(bytes[i]);
-      }
-      const base64Data = btoa(binary);
-
-      geminiMediaPart = {
-        inlineData: {
-          mimeType: params.mimeType,
-          data: base64Data,
-        },
-      };
-    } else {
-      throw new Error(`Unsupported file type: ${params.mimeType}`);
-    }
-
-    // Generate analysis
+    const dataUrl = `data:${params.mimeType};base64,${base64}`;
     const prompt = buildPrompt({
       takenAt: params.takenAt,
       latitude: params.latitude,
@@ -340,37 +250,43 @@ async function processMediaInBackground(params: {
       nearbyPlaces: params.nearbyPlaces,
       itinerarySteps: params.itinerarySteps,
     });
-    const data = await callGemini(geminiApiKey, geminiMediaPart, prompt);
 
-    const textContent = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!textContent) throw new Error("No content in Gemini response");
+    const data = await callGateway({
+      model: MODEL,
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "image_url", image_url: { url: dataUrl } },
+            { type: "text", text: prompt },
+          ],
+        },
+      ],
+      response_format: { type: "json_object" },
+    });
 
-    const parsed = JSON.parse(textContent);
-    const result = parseGeminiResult(parsed, params.captionId);
+    const textContent = data?.choices?.[0]?.message?.content;
+    if (typeof textContent !== "string" || !textContent.trim()) {
+      throw new Error("No content in gateway response");
+    }
 
+    const parsed = parseJsonContent(textContent);
+    const result = parseResult(parsed, params.captionId);
     console.log(`Analysis complete for "${params.fileName}": ${result.caption}`);
 
     await supabase
       .from("video_analysis_jobs")
       .update({ status: "complete", result, updated_at: new Date().toISOString() })
       .eq("id", params.jobId);
-
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
     console.error(`Background analysis failed for "${params.fileName}":`, message);
-
     await supabase
       .from("video_analysis_jobs")
       .update({ status: "failed", error: message, updated_at: new Date().toISOString() })
       .eq("id", params.jobId);
-  } finally {
-    if (geminiFileUri) {
-      await deleteGeminiFile(geminiApiKey, geminiFileUri);
-    }
   }
 }
-
-// ── Main handler ────────────────────────────────────────────────────
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -381,8 +297,7 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const geminiApiKey = Deno.env.get("GOOGLE_AI_STUDIO_KEY");
-    if (!geminiApiKey) throw new Error("GOOGLE_AI_STUDIO_KEY is not configured");
+    if (!Deno.env.get("LOVABLE_API_KEY")) throw new Error("LOVABLE_API_KEY is not configured");
 
     const authHeader = req.headers.get("authorization") ?? "";
     const supabase = getServiceClient();
