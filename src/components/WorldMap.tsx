@@ -331,6 +331,7 @@ const bounds = new mapboxgl.LngLatBounds();
                   kind: props.kind,
                   imgUrl: props.imgUrl,
                   displayName: props.displayName,
+                  iconSvg: props.iconSvg,
                 });
             if (isCluster) {
               const clusterId = props.cluster_id;
