@@ -277,21 +277,26 @@ export function useStagingInbox(tripId: string) {
         });
 
         // Insert DB row (no AI calls — AI runs only after "Import Selected")
-        const { error: insertError } = await supabase.from("pending_media_imports").insert({
-          trip_id: tripId,
-          user_id: user.id,
-          storage_path: objectName,
-          mime_type: file.type || "application/octet-stream",
-          file_name: file.name,
-          exif_metadata: {
-            latitude: exif.latitude,
-            longitude: exif.longitude,
-            takenAt: exif.takenAt?.toISOString() ?? null,
-            cameraMake: exif.cameraMake ?? null,
-            cameraModel: exif.cameraModel ?? null,
-            duration: exif.duration ?? null,
-          },
-        });
+        const { error: insertError } = await supabase
+          .from("pending_media_imports")
+          .upsert(
+            {
+              trip_id: tripId,
+              user_id: user.id,
+              storage_path: objectName,
+              mime_type: file.type || "application/octet-stream",
+              file_name: file.name,
+              exif_metadata: {
+                latitude: exif.latitude,
+                longitude: exif.longitude,
+                takenAt: exif.takenAt?.toISOString() ?? null,
+                cameraMake: exif.cameraMake ?? null,
+                cameraModel: exif.cameraModel ?? null,
+                duration: exif.duration ?? null,
+              },
+            },
+            { onConflict: "trip_id,file_name", ignoreDuplicates: true },
+          );
 
         if (insertError) {
           console.error("Failed to insert staged file:", insertError);
