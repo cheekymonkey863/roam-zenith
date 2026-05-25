@@ -1,9 +1,12 @@
-import { useEffect, useRef, useImperativeHandle, forwardRef, useCallback, type CSSProperties } from "react";
+import { useEffect, useRef, useImperativeHandle, forwardRef, useCallback, createElement, type CSSProperties } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 import type { StepVisualType } from "@/lib/stepVisuals";
 import type { Tables } from "@/integrations/supabase/types";
 import { supabase } from "@/integrations/supabase/client";
+import { getEventType } from "@/lib/eventTypes";
+import { MapPin } from "lucide-react";
 
 type TripStep = Tables<"trip_steps">;
 
@@ -165,8 +168,10 @@ const bounds = new mapboxgl.LngLatBounds();
       if (stepIds.length > 0) {
         const { data: photos } = await supabase
           .from("step_photos")
-          .select("step_id, storage_path, thumbnail_path")
-          .in("step_id", stepIds);
+          .select("step_id, storage_path, thumbnail_path, taken_at, created_at")
+          .in("step_id", stepIds)
+          .order("taken_at", { ascending: true, nullsFirst: false })
+          .order("created_at", { ascending: true });
 
         const isRenderable = (path: string) => /\.(jpe?g|png|webp|gif|avif)$/i.test(path);
         if (photos) {
@@ -185,6 +190,7 @@ const bounds = new mapboxgl.LngLatBounds();
         kind: "flight" | "accommodation" | "photo" | "dashboard";
         imgUrl?: string;
         displayName?: string;
+        iconSvg?: string;
       }): HTMLElement => {
         const PLANE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.4-.1.9.3 1.1L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.2.4.7.5 1.1.3l.5-.3c.4-.2.6-.6.5-1.1z"/></svg>`;
         const HOTEL_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2Z"/><path d="m9 16 .348-.24c1.465-1.013 3.84-1.013 5.304 0L15 16"/><path d="M8 7h.01"/><path d="M16 7h.01"/><path d="M12 7h.01"/><path d="M12 11h.01"/><path d="M16 11h.01"/><path d="M8 11h.01"/></svg>`;
@@ -198,9 +204,12 @@ const bounds = new mapboxgl.LngLatBounds();
           bubble = `<div class="h-10 w-10 rounded-full border-2 border-white shadow-lg overflow-hidden flex items-center justify-center" style="background:#8b5cf6">${HOTEL_SVG}</div>`;
         } else if (props.kind === "dashboard") {
           el.style.cssText = "display:flex;flex-direction:column;align-items:center;";
+          const inner = props.imgUrl
+            ? `<img src="${props.imgUrl}" style="width:100%;height:100%;object-fit:cover;display:block;" onerror="this.style.display='none'" />`
+            : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:#1e3a5f;color:white;">${props.iconSvg ?? ""}</div>`;
           el.innerHTML = `
-            <div style="width:56px;height:56px;border-radius:10px;border:3px solid white;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.3);background:#e5e7eb;">
-              <img src="${props.imgUrl}" style="width:100%;height:100%;object-fit:cover;" />
+            <div style="width:56px;height:56px;border-radius:10px;border:3px solid white;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.3);background:#1e3a5f;">
+              ${inner}
             </div>
             <div style="width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-top:6px solid white;margin-top:-1px;"></div>
           `;
@@ -227,7 +236,14 @@ const bounds = new mapboxgl.LngLatBounds();
       };
 
       // Build features for clustering
-      type PointFeature = GeoJSON.Feature<GeoJSON.Point, { stepId: string; kind: string; imgUrl?: string; displayName?: string }>;
+      type PointFeature = GeoJSON.Feature<GeoJSON.Point, { stepId: string; kind: string; imgUrl?: string; displayName?: string; iconSvg?: string }>;
+
+      const renderEventIcon = (eventType: string): string => {
+        const Icon = getEventType(eventType)?.icon ?? MapPin;
+        return renderToStaticMarkup(
+          createElement(Icon, { size: 28, color: "white", strokeWidth: 2 }),
+        );
+      };
       const features: PointFeature[] = [];
 
       if (singleTrip) {
@@ -264,10 +280,15 @@ const bounds = new mapboxgl.LngLatBounds();
         // Dashboard: one thumbnail per stop that has a photo/video snapshot.
         // Mapbox clustering aggregates them at low zoom and breaks them out as you zoom in.
         validSteps.forEach((step) => {
-          const imgUrl = photoMap.get(step.id) || "/placeholder.svg";
+          const imgUrl = photoMap.get(step.id);
           features.push({
             type: "Feature",
-            properties: { stepId: step.id, kind: "dashboard", imgUrl },
+            properties: {
+              stepId: step.id,
+              kind: "dashboard",
+              imgUrl,
+              iconSvg: imgUrl ? undefined : renderEventIcon(step.event_type),
+            },
             geometry: { type: "Point", coordinates: [step.longitude, step.latitude] },
           });
         });
@@ -310,6 +331,7 @@ const bounds = new mapboxgl.LngLatBounds();
                   kind: props.kind,
                   imgUrl: props.imgUrl,
                   displayName: props.displayName,
+                  iconSvg: props.iconSvg,
                 });
             if (isCluster) {
               const clusterId = props.cluster_id;
