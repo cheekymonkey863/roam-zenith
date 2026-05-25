@@ -93,11 +93,13 @@ export function AppNavigation() {
 
     const normKey = (v: string) =>
       v
+        .normalize("NFKD")
+        .replace(/[\u0300-\u036f]/g, "") // strip diacritics (é -> e)
         .toLowerCase()
         .replace(/^(the|city of|st\.?|saint)\s+/i, "")
-        .replace(/[''`".,()]/g, "")
-        .replace(/\s+/g, " ")
-        .trim();
+        .replace(/[^a-z0-9]+/g, " ") // drop ALL symbols/punctuation/emoji/stars/etc.
+        .trim()
+        .replace(/\s+/g, " ");
 
     const addTo = (
       map: Record<string, Map<string, string>>,
