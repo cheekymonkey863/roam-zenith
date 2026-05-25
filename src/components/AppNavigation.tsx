@@ -102,29 +102,23 @@ export function AppNavigation() {
         });
       }
 
-      // City & Place from location_name
+      // Place from location_name (first part)
       if (step.location_name) {
         const parts = step.location_name.split(",").map((p) => p.trim()).filter(Boolean);
-        // Place = full location name (first part)
         const place = parts[0];
-        if (place && !place.toLowerCase().includes("unknown")) {
+        if (place && !place.toLowerCase().includes("unknown") && !place.includes("°")) {
           if (!placeMap[place]) placeMap[place] = new Map();
           placeMap[place].set(step.trip_id, tripTitle);
         }
-        // City: prefer second-to-last segment (Place, City, Country).
-        // For 2-part values, only treat first part as city if the last part is the country.
-        let city = "";
-        if (parts.length >= 3) {
-          city = parts[parts.length - 2];
-        } else if (parts.length === 2 && step.country) {
-          const countryNorm = step.country.split(",").pop()?.trim().toLowerCase() || "";
-          if (parts[1].toLowerCase() === countryNorm) city = parts[0];
-        }
-        // Filter out obvious non-cities (venues, POIs with descriptors)
-        const looksLikeVenue = /\b(hotel|airport|station|museum|cafe|restaurant|bar|park|beach|tower|bridge|church|cathedral|temple|market|mall|center|centre|plaza|square|street|road|avenue|terminal)\b/i.test(city);
-        if (city && !city.toLowerCase().includes("unknown") && !looksLikeVenue) {
-          if (!cityMap[city]) cityMap[city] = new Map();
-          cityMap[city].set(step.trip_id, tripTitle);
+      }
+
+      // City: extract from country field when it has "City, Region/Country" format
+      if (step.country && step.country.includes(",")) {
+        const firstSegment = step.country.split(",")[0].trim().replace(/^city of\s+/i, "");
+        const countryOnly = new Set(["england","scotland","wales","northern ireland","united kingdom","uk"]);
+        if (firstSegment && !countryOnly.has(firstSegment.toLowerCase())) {
+          if (!cityMap[firstSegment]) cityMap[firstSegment] = new Map();
+          cityMap[firstSegment].set(step.trip_id, tripTitle);
         }
       }
     });
