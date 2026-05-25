@@ -172,7 +172,9 @@ const bounds = new mapboxgl.LngLatBounds();
 
       // Fetch photos for markers — prefer the JPEG thumbnail sidecar (for videos/HEIC),
       // falling back to browser-renderable formats from storage_path.
-      const photoMap = new Map<string, string>();
+      // mediaMap: per step, prefer in this order:
+      //   1) thumbnail_path sidecar  2) renderable image  3) video (rendered as <video>)
+      const mediaMap = new Map<string, { url: string; isVideo: boolean }>();
       if (stepIds.length > 0) {
         const { data: photos } = await supabase
           .from("step_photos")
@@ -182,13 +184,24 @@ const bounds = new mapboxgl.LngLatBounds();
           .order("created_at", { ascending: true });
 
         const isRenderable = (path: string) => /\.(jpe?g|png|webp|gif|avif)$/i.test(path);
+        const isVideo = (path: string) => /\.(mov|mp4|m4v|webm)$/i.test(path);
+        const publicUrl = (path: string) =>
+          supabase.storage.from("trip-photos").getPublicUrl(path).data.publicUrl;
+
         if (photos) {
+          // pick best media per step: image beats video; first-encountered wins within tier
           for (const photo of photos) {
-            if (!photo.step_id || photoMap.has(photo.step_id)) continue;
-            const path = photo.thumbnail_path || (isRenderable(photo.storage_path) ? photo.storage_path : null);
-            if (!path) continue;
-            const { data: urlData } = supabase.storage.from("trip-photos").getPublicUrl(path);
-            photoMap.set(photo.step_id, urlData.publicUrl);
+            if (!photo.step_id) continue;
+            const existing = mediaMap.get(photo.step_id);
+            if (existing && !existing.isVideo) continue; // already have an image
+
+            if (photo.thumbnail_path) {
+              mediaMap.set(photo.step_id, { url: publicUrl(photo.thumbnail_path), isVideo: false });
+            } else if (isRenderable(photo.storage_path)) {
+              mediaMap.set(photo.step_id, { url: publicUrl(photo.storage_path), isVideo: false });
+            } else if (isVideo(photo.storage_path) && !existing) {
+              mediaMap.set(photo.step_id, { url: publicUrl(photo.storage_path), isVideo: true });
+            }
           }
         }
       }
