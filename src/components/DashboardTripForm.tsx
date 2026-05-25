@@ -338,7 +338,7 @@ export function DashboardTripForm({ onTripAdded }: { onTripAdded?: () => void })
               type="file"
               accept="image/*,video/*,.heic,.heif"
               multiple
-              className="hidden"
+              style={{ position: "absolute", width: 1, height: 1, padding: 0, margin: -1, overflow: "hidden", clip: "rect(0,0,0,0)", border: 0 }}
               onChange={(e) => {
                 const files = Array.from(e.target.files || []);
                 if (files.length > 0) handlePhotoFiles(files);
@@ -349,7 +349,7 @@ export function DashboardTripForm({ onTripAdded }: { onTripAdded?: () => void })
               ref={docInputRef}
               type="file"
               accept=".pdf,.docx,.txt,.md"
-              className="hidden"
+              style={{ position: "absolute", width: 1, height: 1, padding: 0, margin: -1, overflow: "hidden", clip: "rect(0,0,0,0)", border: 0 }}
               onChange={(e) => {
                 const files = Array.from(e.target.files || []);
                 if (files.length > 0) handleDocumentFiles(files);
