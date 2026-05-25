@@ -1,8 +1,35 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowRightLeft, Check, ChevronLeft, ChevronRight, Film, Play, Trash2, X } from "lucide-react";
+import { ArrowRightLeft, Check, ChevronLeft, ChevronRight, Film, MapPin, MapPinOff, Play, Trash2, X } from "lucide-react";
 import type { PhotoExifData } from "@/lib/exif";
 import { cn } from "@/lib/utils";
 import { isKnownVideoFile } from "@/lib/mediaFiles";
+
+type GpsBadge = { label: string; tone: "ok" | "warn" | "none"; tooltip: string };
+
+function summarizeGpsSource(photo: PhotoExifData): GpsBadge {
+  const sources = photo.metadataSources ?? [];
+  const hasGps = photo.latitude !== null && photo.longitude !== null;
+  if (!hasGps) {
+    return {
+      label: "No GPS",
+      tone: "none",
+      tooltip: "No location metadata found. iOS often strips GPS on upload, or the file was captured without location.",
+    };
+  }
+  if (sources.includes("embedded_gps")) {
+    return { label: "GPS", tone: "ok", tooltip: "GPS embedded in file metadata." };
+  }
+  if (sources.some((s) => s.startsWith("video_") && s.endsWith("_gps"))) {
+    const src = sources.find((s) => s.startsWith("video_") && s.endsWith("_gps")) ?? "";
+    const detail = src.includes("server")
+      ? "Extracted from video container server-side."
+      : src.includes("quicktime_text")
+        ? "Parsed from QuickTime text metadata."
+        : "Read from video container atoms.";
+    return { label: "GPS·video", tone: "ok", tooltip: detail };
+  }
+  return { label: "GPS", tone: "ok", tooltip: `Sources: ${sources.join(", ") || "unknown"}` };
+}
 
 function useObjectUrl(file?: File | null): string | null {
   const urlRef = useRef<string | null>(null);
