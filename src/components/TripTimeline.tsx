@@ -134,6 +134,7 @@ export function TripTimeline({
   const [photosByStep, setPhotosByStep] = useState<Record<string, StepPhoto[]>>({});
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const stepRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  const videoJobsByPath = useVideoAnalysisJobs(tripId);
 
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
