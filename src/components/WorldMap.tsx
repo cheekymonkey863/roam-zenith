@@ -1,9 +1,12 @@
-import { useEffect, useRef, useImperativeHandle, forwardRef, useCallback, type CSSProperties } from "react";
+import { useEffect, useRef, useImperativeHandle, forwardRef, useCallback, createElement, type CSSProperties } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 import type { StepVisualType } from "@/lib/stepVisuals";
 import type { Tables } from "@/integrations/supabase/types";
 import { supabase } from "@/integrations/supabase/client";
+import { getEventType } from "@/lib/eventTypes";
+import { MapPin } from "lucide-react";
 
 type TripStep = Tables<"trip_steps">;
 
