@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { ArrowRightLeft, Check, ChevronLeft, ChevronRight, Film, Play, Trash2, X } from "lucide-react";
 import type { PhotoExifData } from "@/lib/exif";
 import { cn } from "@/lib/utils";
+import { isKnownVideoFile } from "@/lib/mediaFiles";
 
 function useObjectUrl(file?: File | null): string | null {
   const urlRef = useRef<string | null>(null);
@@ -55,7 +56,7 @@ function PendingMediaLightbox({
 
   if (!photo) return null;
 
-  const isVideo = photo.file.type.startsWith("video/");
+  const isVideo = isKnownVideoFile(photo.file);
   const imageSrc = fileUrl ?? photo.analysisImage ?? photo.thumbnail ?? null;
 
   return (
@@ -180,7 +181,7 @@ function PendingMediaThumbnail({
   isSelected: boolean;
   onClick: () => void;
 }) {
-  const isVideo = photo.file.type.startsWith("video/");
+  const isVideo = isKnownVideoFile(photo.file);
   const previewImage = photo.thumbnail || photo.analysisImage || null;
   const fileUrl = useObjectUrl(!isVideo && !previewImage ? (photo.uploadFile ?? photo.file) : null);
   const videoUrl = useObjectUrl(isVideo && !previewImage ? (photo.uploadFile ?? photo.file) : null);
