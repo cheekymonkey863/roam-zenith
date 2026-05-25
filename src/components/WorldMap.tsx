@@ -203,9 +203,12 @@ const bounds = new mapboxgl.LngLatBounds();
           bubble = `<div class="h-10 w-10 rounded-full border-2 border-white shadow-lg overflow-hidden flex items-center justify-center" style="background:#8b5cf6">${HOTEL_SVG}</div>`;
         } else if (props.kind === "dashboard") {
           el.style.cssText = "display:flex;flex-direction:column;align-items:center;";
+          const inner = props.imgUrl
+            ? `<img src="${props.imgUrl}" style="width:100%;height:100%;object-fit:cover;display:block;" onerror="this.style.display='none'" />`
+            : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:#1e3a5f;color:white;">${props.iconSvg ?? ""}</div>`;
           el.innerHTML = `
-            <div style="width:56px;height:56px;border-radius:10px;border:3px solid white;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.3);background:#e5e7eb;">
-              <img src="${props.imgUrl}" style="width:100%;height:100%;object-fit:cover;" />
+            <div style="width:56px;height:56px;border-radius:10px;border:3px solid white;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.3);background:#1e3a5f;">
+              ${inner}
             </div>
             <div style="width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-top:6px solid white;margin-top:-1px;"></div>
           `;
