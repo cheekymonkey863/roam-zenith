@@ -9,6 +9,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { groupLocalFiles, getGroupRepresentativeCoordinates } from "@/lib/stagingGrouping";
 import { resumableUpload } from "@/lib/resumableUpload";
 import { queueVideoAnalysisJob } from "@/lib/videoAnalysisQueue";
+import { MEDIA_FILE_ACCEPT, isKnownVideoFile, isSupportedMediaFile } from "@/lib/mediaFiles";
 
 export interface LocalStagedFile {
   id: string;
@@ -145,14 +146,11 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, initialFiles, 
   const handleFiles = async (incoming: File[]) => {
     if (!user) return;
 
-    const mediaFiles = incoming.filter(
-      (f) =>
-        f.type.startsWith("image/") ||
-        f.type.startsWith("video/") ||
-        f.name.toLowerCase().endsWith(".heic") ||
-        f.name.toLowerCase().endsWith(".heif"),
-    );
-    if (mediaFiles.length === 0) return;
+    const mediaFiles = incoming.filter(isSupportedMediaFile);
+    if (mediaFiles.length === 0) {
+      toast.error("No supported photos or videos found");
+      return;
+    }
 
     let skippedCount = 0;
     const filtered = mediaFiles.filter((f) => {
@@ -172,11 +170,12 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, initialFiles, 
     for (let i = 0; i < filtered.length; i++) {
       const file = filtered[i];
       let newPreviewUrl: string | null = null;
-      const isVideo = file.type.startsWith("video/");
+      const isVideo = isKnownVideoFile(file);
       const isHeic =
         file.name.toLowerCase().endsWith(".heic") ||
         file.name.toLowerCase().endsWith(".heif") ||
-        file.type === "image/heic";
+        file.type === "image/heic" ||
+        file.type === "image/heif";
 
       if (isVideo) {
         const snapshot = await generateVideoThumbnail(file);
@@ -211,7 +210,7 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, initialFiles, 
         id: crypto.randomUUID(),
         file,
         previewUrl: newPreviewUrl || URL.createObjectURL(file),
-        mimeType: file.type,
+        mimeType: file.type || (isVideo ? "video/quicktime" : isHeic ? "image/heic" : "application/octet-stream"),
         fileName: file.name,
         ...exifResult,
         exifDone: true,
@@ -491,9 +490,9 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, initialFiles, 
             ref={fileInputRef}
             type="file"
             multiple
-            accept="image/*,video/*"
+            accept={MEDIA_FILE_ACCEPT}
             onChange={handleFileSelect}
-            className="hidden"
+            className="sr-only"
           />
           <span className="rounded-xl bg-primary px-6 py-2.5 text-sm font-semibold text-primary-foreground shadow-md">
             Browse Files
