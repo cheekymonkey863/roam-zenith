@@ -377,8 +377,8 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const geminiApiKey = Deno.env.get("GOOGLE_AI_STUDIO_KEY");
-    if (!geminiApiKey) throw new Error("GOOGLE_AI_STUDIO_KEY is not configured");
+    const lovableApiKey = Deno.env.get("LOVABLE_API_KEY");
+    if (!lovableApiKey) throw new Error("LOVABLE_API_KEY is not configured");
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabase = getServiceClient();
@@ -406,7 +406,7 @@ Deno.serve(async (req) => {
     let failed = 0;
 
     for (const job of pendingJobs) {
-      await processJob(job, geminiApiKey, supabaseUrl);
+      await processJob(job, lovableApiKey, supabaseUrl);
       processed++;
 
       // Pace between jobs to respect rate limits
