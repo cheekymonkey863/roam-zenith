@@ -1,5 +1,6 @@
 import type { Json } from "@/integrations/supabase/types";
 import type { PhotoExifData } from "@/lib/exif";
+import { isKnownVideoFile } from "@/lib/mediaFiles";
 
 const MONTH_TAGS = [
   "january",
@@ -46,7 +47,7 @@ export function buildMediaBaseTags(
   photo: PhotoExifData,
   context: { locationName?: string | null; country?: string | null } = {},
 ) {
-  const mediaType = photo.file.type.startsWith("video/") ? "video" : "image";
+  const mediaType = isKnownVideoFile(photo.file) ? "video" : "image";
   const extension = getFileExtension(photo.file.name);
 
   return dedupeTags([
@@ -68,7 +69,7 @@ export function buildStoredMediaMetadata(
   photo: PhotoExifData,
   context: { locationName?: string | null; country?: string | null } = {},
 ): Json {
-  const mediaType = photo.file.type.startsWith("video/") ? "video" : "image";
+  const mediaType = isKnownVideoFile(photo.file) ? "video" : "image";
   const extension = getFileExtension(photo.file.name);
   const baseTags = buildMediaBaseTags(photo, context);
   const aiTags = dedupeTags(photo.aiTags ?? []);

@@ -13,6 +13,7 @@ import {
   buildImportedLocationSummary,
   buildImportedStepDetails,
 } from "@/lib/placeClassification";
+import { isKnownVideoFile, isSupportedMediaFile } from "@/lib/mediaFiles";
 
 export type StepConfidence = "high" | "medium" | "low";
 
@@ -112,7 +113,7 @@ function buildEventDescription(locationName: string, country: string, eventType 
 }
 
 function buildMediaCaption(photo: PhotoExifData, locationName: string, eventType = "activity") {
-  const isVideo = photo.file.type.startsWith("video/");
+  const isVideo = isKnownVideoFile(photo.file);
   if (!isKnownLocationName(locationName)) {
     return isVideo ? "Video from this travel stop" : "Photo from this travel stop";
   }
@@ -151,7 +152,7 @@ function applyMediaInsights(
   );
 
   return sortMediaByCapturedTime(photos).map((photo) => {
-    const isVideo = photo.file.type.startsWith("video/");
+    const isVideo = isKnownVideoFile(photo.file);
     const videoInsight = isVideo ? videoInsights?.get(photo.captionId) : undefined;
     const photoInsight = captionMap.get(photo.captionId);
     const fallbackCaption = buildMediaCaption(photo, locationName, eventType);
@@ -217,7 +218,7 @@ function findStepByCapturedTime(targetDate: Date | null, steps: ImportedMediaSte
 
 function findStepForUngroupedMedia(media: PhotoExifData, steps: ImportedMediaStep[]) {
   if (!media.takenAt) return null;
-  if (media.file.type.startsWith("video/")) return null;
+  if (isKnownVideoFile(media.file)) return null;
 
   return findStepByCapturedTime(media.takenAt, steps);
 }
@@ -339,7 +340,7 @@ export async function processImportedMediaFiles(
   onProgress?: ImportProgressCallback,
   existingTripSteps?: ExistingTripStep[],
 ): Promise<ProcessedMediaImport> {
-  const mediaFiles = files.filter((file) => file.type.startsWith("image/") || file.type.startsWith("video/"));
+  const mediaFiles = files.filter(isSupportedMediaFile);
   if (mediaFiles.length === 0) {
     return {
       steps: [],

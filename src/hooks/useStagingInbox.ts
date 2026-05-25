@@ -3,6 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { extractExifFromFile, type PhotoExifData } from "@/lib/exif";
 import { resumableUpload } from "@/lib/resumableUpload";
+import { isKnownVideoFile, isSupportedMediaFile } from "@/lib/mediaFiles";
 import { toast } from "sonner";
 
 export interface StagedMediaFile {
@@ -169,7 +170,7 @@ export function useStagingInbox(tripId: string) {
     async (files: File[]) => {
       if (!user) return;
 
-      const mediaFiles = files.filter((f) => f.type.startsWith("image/") || f.type.startsWith("video/"));
+      const mediaFiles = files.filter(isSupportedMediaFile);
       if (mediaFiles.length === 0) {
         toast.error("No image or video files found");
         return;
@@ -252,7 +253,7 @@ export function useStagingInbox(tripId: string) {
         }
 
         // Upload via TUS
-        const ext = file.name.split(".").pop() || (file.type.startsWith("video/") ? "mp4" : "jpg");
+        const ext = file.name.split(".").pop() || (isKnownVideoFile(file) ? "mp4" : "jpg");
         const objectName = `${user.id}/${tripId}/staging/${crypto.randomUUID()}.${ext}`;
 
         await resumableUpload({
