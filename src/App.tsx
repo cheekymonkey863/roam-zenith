@@ -11,6 +11,7 @@ import TripDetail from "@/pages/TripDetail";
 import AuthPage from "@/pages/AuthPage";
 import JoinTrip from "@/pages/JoinTrip";
 import StatsPage from "@/pages/StatsPage";
+import BackfillHeic from "@/pages/BackfillHeic";
 import NotFound from "@/pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -32,6 +33,7 @@ const AppRoutes = () => (
         <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
         <Route path="/trip/:id" element={<ProtectedRoute><TripDetail /></ProtectedRoute>} />
         <Route path="/stats" element={<ProtectedRoute><StatsPage /></ProtectedRoute>} />
+        <Route path="/backfill-heic" element={<ProtectedRoute><BackfillHeic /></ProtectedRoute>} />
         <Route path="*" element={<NotFound />} />
       </Routes>
     </main>
