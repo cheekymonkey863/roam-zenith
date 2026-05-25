@@ -384,7 +384,8 @@ export function PhotoImport({ tripId, onImportComplete, onCancel, initialFiles, 
       await supabase.from("step_photos").insert(photoRows);
 
       for (const { file, objectName } of uploadedFiles) {
-        if (file.mimeType.startsWith("video/")) {
+        const isMedia = file.mimeType.startsWith("video/") || file.mimeType.startsWith("image/");
+        if (isMedia) {
           queueVideoAnalysisJob({
             captionId: file.id,
             userId: user.id,
