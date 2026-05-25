@@ -37,8 +37,7 @@ function jsonResponse(body: unknown, status = 200) {
 }
 
 const GEMINI_MODEL = "gemini-2.5-flash";
-const RATE_LIMIT_RETRY_DELAYS_MS = [2000, 5000, 15000];
-const TRANSIENT_STATUSES = new Set([429, 500, 502, 503, 504]);
+const RATE_LIMIT_RETRY_DELAYS_MS = [2000, 4000, 8000];
 const FILE_POLL_INTERVAL_MS = 5000;
 const FILE_POLL_MAX_ATTEMPTS = 60;
 const BATCH_SIZE = 5;
@@ -230,17 +229,14 @@ async function callGemini(apiKey: string, mediaPart: any, prompt: string) {
       body: JSON.stringify(body),
     });
 
-    if (TRANSIENT_STATUSES.has(response.status)) {
+    if (response.status === 429) {
       const errText = await response.text();
       if (attempt < RATE_LIMIT_RETRY_DELAYS_MS.length) {
-        console.warn(`Gemini transient ${response.status}, retrying in ${RATE_LIMIT_RETRY_DELAYS_MS[attempt]}ms`);
+        console.warn(`Gemini rate limited, retrying in ${RATE_LIMIT_RETRY_DELAYS_MS[attempt]}ms`);
         await sleep(RATE_LIMIT_RETRY_DELAYS_MS[attempt]);
         continue;
       }
-      const err = new Error(`Gemini transient error [${response.status}] after retries: ${errText}`);
-      // deno-lint-ignore no-explicit-any
-      (err as any).transient = true;
-      throw err;
+      throw new Error(`Rate limited after retries: ${errText}`);
     }
     if (!response.ok) {
       const errText = await response.text();
@@ -248,10 +244,7 @@ async function callGemini(apiKey: string, mediaPart: any, prompt: string) {
     }
     return await response.json();
   }
-  const err = new Error("Gemini transient error after all retries.");
-  // deno-lint-ignore no-explicit-any
-  (err as any).transient = true;
-  throw err;
+  throw new Error("Rate limited after all retries.");
 }
 
 // ── Parse result helper ─────────────────────────────────────────────
@@ -407,17 +400,11 @@ async function processJob(job: any, geminiApiKey: string, supabaseUrl: string) {
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
-    // deno-lint-ignore no-explicit-any
-    const isTransient = !!(error as any)?.transient;
-    console.error(`[Queue] Analysis ${isTransient ? "deferred (transient)" : "failed"} for job ${job.id}:`, message);
+    console.error(`[Queue] Analysis failed for job ${job.id}:`, message);
 
     await supabase
       .from("video_analysis_jobs")
-      .update({
-        status: isTransient ? "pending" : "failed",
-        error: message,
-        updated_at: new Date().toISOString(),
-      })
+      .update({ status: "failed", error: message, updated_at: new Date().toISOString() })
       .eq("id", job.id);
   } finally {
     if (geminiFileUri) {
