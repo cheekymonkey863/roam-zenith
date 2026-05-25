@@ -1,9 +1,10 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Upload, X, Image as ImageIcon, Loader2, GripVertical, Trash2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 import type { Tables } from "@/integrations/supabase/types";
+import { MEDIA_FILE_ACCEPT, isSupportedMediaFile } from "@/lib/mediaFiles";
 
 type StepPhoto = Tables<"step_photos">;
 
@@ -26,7 +27,6 @@ export function ActivityPhotoUpload({ stepId, tripId, onPhotosUploaded }: Activi
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
 
   const fetchExisting = useCallback(async () => {
     const { data } = await supabase
@@ -82,7 +82,7 @@ export function ActivityPhotoUpload({ stepId, tripId, onPhotosUploaded }: Activi
   };
 
   const addFiles = (newFiles: FileList | File[]) => {
-    const imageFiles = Array.from(newFiles).filter((f) => f.type.startsWith("image/") || f.type.startsWith("video/"));
+    const imageFiles = Array.from(newFiles).filter(isSupportedMediaFile);
     const newSelected = imageFiles.map((file) => ({
       file,
       preview: URL.createObjectURL(file),
@@ -174,11 +174,13 @@ export function ActivityPhotoUpload({ stepId, tripId, onPhotosUploaded }: Activi
       )}
 
       <div className="flex gap-2">
-        <button type="button" onClick={() => inputRef.current?.click()}
-          className="flex items-center gap-2 rounded-xl border border-dashed border-border px-4 py-2 text-sm text-muted-foreground hover:border-primary/50 hover:text-foreground transition-colors">
+        <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-dashed border-border px-4 py-2 text-sm text-muted-foreground hover:border-primary/50 hover:text-foreground transition-colors">
+          <input type="file" multiple accept={MEDIA_FILE_ACCEPT}
+            onChange={(e) => { if (e.target.files) addFiles(e.target.files); e.target.value = ""; }}
+            className="sr-only" />
           <ImageIcon className="h-4 w-4" />
           Add Photos
-        </button>
+        </label>
         {files.length > 0 && (
           <button type="button" onClick={uploadAll} disabled={uploading}
             className="flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors">
@@ -188,9 +190,6 @@ export function ActivityPhotoUpload({ stepId, tripId, onPhotosUploaded }: Activi
         )}
       </div>
 
-      <input ref={inputRef} type="file" multiple accept="image/*,video/*"
-        onChange={(e) => { if (e.target.files) addFiles(e.target.files); e.target.value = ""; }}
-        className="hidden" />
     </div>
   );
 }
@@ -202,12 +201,11 @@ interface PendingPhotoUploadProps {
 }
 
 export function PendingPhotoUpload({ files, onFilesChange }: PendingPhotoUploadProps) {
-  const inputRef = useRef<HTMLInputElement>(null);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
 
   const addFiles = (newFiles: FileList | File[]) => {
-    const imageFiles = Array.from(newFiles).filter((f) => f.type.startsWith("image/") || f.type.startsWith("video/"));
+    const imageFiles = Array.from(newFiles).filter(isSupportedMediaFile);
     const newSelected = imageFiles.map((file) => ({ file, preview: URL.createObjectURL(file) }));
     onFilesChange([...files, ...newSelected]);
   };
@@ -252,14 +250,13 @@ export function PendingPhotoUpload({ files, onFilesChange }: PendingPhotoUploadP
           ))}
         </div>
       )}
-      <button type="button" onClick={() => inputRef.current?.click()}
-        className="flex items-center gap-2 rounded-xl border border-dashed border-border px-4 py-2 text-sm text-muted-foreground hover:border-primary/50 hover:text-foreground transition-colors">
+      <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-dashed border-border px-4 py-2 text-sm text-muted-foreground hover:border-primary/50 hover:text-foreground transition-colors">
+        <input type="file" multiple accept={MEDIA_FILE_ACCEPT}
+          onChange={(e) => { if (e.target.files) addFiles(e.target.files); e.target.value = ""; }}
+          className="sr-only" />
         <ImageIcon className="h-4 w-4" />
         {files.length > 0 ? `${files.length} selected — Add more` : "Add Photos"}
-      </button>
-      <input ref={inputRef} type="file" multiple accept="image/*,video/*"
-        onChange={(e) => { if (e.target.files) addFiles(e.target.files); e.target.value = ""; }}
-        className="hidden" />
+      </label>
     </div>
   );
 }
