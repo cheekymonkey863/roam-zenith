@@ -12,6 +12,7 @@ const VALID_EVENT_TYPES = [
 
 interface ParsedActivity {
   locationName: string;
+  city: string;
   country: string;
   latitude: number | null;
   longitude: number | null;
@@ -69,7 +70,8 @@ For each item determine:
   Example: "Edinburgh Airport (EDI) → London Heathrow Airport (LHR)"
   Example: "São Paulo Guarulhos (GRU) → Madrid Barajas (MAD)"
   For trains: "Origin Station → Destination Station" (e.g. "London St Pancras → Paris Gare du Nord")
-- country: country name. For flights/trains, use the ORIGIN/DEPARTURE country.
+- city: REQUIRED. The city/town name for this stop. For flights/trains, use the ORIGIN/DEPARTURE city. NEVER leave this blank — if a city isn't explicitly stated, infer it from the venue, airport, address, or your knowledge of the location. Use only the city name (e.g. "Paris", "Cape Town", "Cusco") — no country, no region, no descriptors.
+- country: REQUIRED. The country name only (e.g. "France", "South Africa", "Peru"). For flights/trains, use the ORIGIN/DEPARTURE country. Never leave blank — infer from context if not explicit.
 - latitude/longitude: your best estimate of coordinates (use your knowledge of the location). For flights/trains, use the ORIGIN/DEPARTURE coordinates (departure airport/station).
 - eventType: MUST be one of these exact values:
 
@@ -143,7 +145,8 @@ Sort activities chronologically. Be thorough — extract every single stop menti
                       type: "object",
                       properties: {
                         locationName: { type: "string" },
-                        country: { type: "string" },
+                        city: { type: "string", description: "City/town name only (required, infer if needed)" },
+                        country: { type: "string", description: "Country name only (required, infer if needed)" },
                         latitude: { type: "number", description: "Estimated latitude" },
                         longitude: { type: "number", description: "Estimated longitude" },
                         eventType: {
@@ -155,7 +158,7 @@ Sort activities chronologically. Be thorough — extract every single stop menti
                         description: { type: "string" },
                         notes: { type: "string" },
                       },
-                      required: ["locationName", "country", "eventType", "description"],
+                      required: ["locationName", "city", "country", "eventType", "description"],
                       additionalProperties: false,
                     },
                   },
@@ -194,7 +197,8 @@ Sort activities chronologically. Be thorough — extract every single stop menti
     const activities: ParsedActivity[] = Array.isArray(parsed?.activities)
       ? parsed.activities.map((a: any) => ({
           locationName: typeof a.locationName === "string" ? a.locationName : "Unknown",
-          country: typeof a.country === "string" ? a.country : "Unknown",
+          city: typeof a.city === "string" ? a.city.trim() : "",
+          country: typeof a.country === "string" ? a.country.trim() : "Unknown",
           latitude: typeof a.latitude === "number" ? a.latitude : null,
           longitude: typeof a.longitude === "number" ? a.longitude : null,
           eventType: VALID_EVENT_TYPES.includes(a.eventType) ? a.eventType : mapLegacyEventType(a.eventType),

@@ -58,8 +58,8 @@ Extract:
   IMPORTANT FOR FLIGHTS: locationName MUST be formatted as "Origin Airport (IATA) → Destination Airport (IATA)"
   Example: "Edinburgh Airport (EDI) → London Heathrow Airport (LHR)"
   Example: "São Paulo Guarulhos (GRU) → Madrid Barajas (MAD)"
-- country: the country of the ORIGIN/DEPARTURE location for flights and trains, otherwise the country of the location
-- city: the city of the ORIGIN/DEPARTURE airport/station for flights and trains, otherwise the city of the location
+- country: REQUIRED. Country name only (e.g. "France"). For flights/trains, use the ORIGIN/DEPARTURE country. Never leave blank — infer from context if not explicit.
+- city: REQUIRED. City/town name only (e.g. "Paris"). For flights/trains, use the ORIGIN/DEPARTURE city. NEVER leave blank — infer from the venue, airport, address, or your knowledge of the location.
 - latitude/longitude: your best coordinate estimate for the ORIGIN/DEPARTURE location (for flights, use the departure airport; for trains, use the departure station)
 - date: ISO date (YYYY-MM-DD) if found
 - time: time (HH:MM) of departure if found
@@ -102,7 +102,7 @@ Be precise with eventType:
                   description: { type: "string" },
                   notes: { type: "string" },
                 },
-                required: ["eventType", "locationName", "activityName", "description"],
+                required: ["eventType", "locationName", "activityName", "city", "country", "description"],
                 additionalProperties: false,
               },
             },
