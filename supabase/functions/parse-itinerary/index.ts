@@ -145,7 +145,8 @@ Sort activities chronologically. Be thorough — extract every single stop menti
                       type: "object",
                       properties: {
                         locationName: { type: "string" },
-                        country: { type: "string" },
+                        city: { type: "string", description: "City/town name only (required, infer if needed)" },
+                        country: { type: "string", description: "Country name only (required, infer if needed)" },
                         latitude: { type: "number", description: "Estimated latitude" },
                         longitude: { type: "number", description: "Estimated longitude" },
                         eventType: {
@@ -157,7 +158,7 @@ Sort activities chronologically. Be thorough — extract every single stop menti
                         description: { type: "string" },
                         notes: { type: "string" },
                       },
-                      required: ["locationName", "country", "eventType", "description"],
+                      required: ["locationName", "city", "country", "eventType", "description"],
                       additionalProperties: false,
                     },
                   },
