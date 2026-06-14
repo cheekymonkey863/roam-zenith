@@ -27,6 +27,12 @@ interface PhotoCaptionResult {
   caption: string;
   sceneDescription?: string;
   richTags?: string[];
+  // Per-photo location identification (used to split no-GPS groups when
+  // the AI determines individual photos depict different places).
+  locationName?: string;
+  country?: string;
+  latitude?: number | null;
+  longitude?: number | null;
 }
 
 interface InferenceResult {
