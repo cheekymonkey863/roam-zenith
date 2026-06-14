@@ -25,6 +25,12 @@ export interface MediaInsightResult {
   richTags?: string[];
   suggestedVenueName?: string;
   suggestedCityName?: string;
+  // Per-photo location identification (only present for no-GPS groups);
+  // used by the importer to split a group when photos depict different places.
+  locationName?: string;
+  country?: string;
+  latitude?: number | null;
+  longitude?: number | null;
 }
 
 interface HybridLocationResult {
