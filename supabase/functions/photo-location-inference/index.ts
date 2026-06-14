@@ -292,7 +292,13 @@ METADATA:
 - Media count: ${group.photos.length} item(s)
 ${group.photos.filter(p => p.takenAt).map(p => `- Timestamp: ${p.takenAt}`).join("\n")}
 
-TASK: Identify the location purely from visual evidence (signage, architecture, landmarks, language on signs). Return city/landmark name, country, estimated lat/lng, one summary, one eventDescription, and one caption per media item.`,
+TASK: These media were grouped together ONLY because they lack GPS and were captured around the same time. They may or may not depict the same place.
+
+STEP 1 — Per-photo identification: For EACH media item, look at the visual evidence (signage, architecture, landmarks, language on signs, distinctive backdrops) and identify its specific location independently. Populate "locationName", "country", "latitude", and "longitude" on each photoCaptions entry with your best per-photo guess.
+
+STEP 2 — Group split detection: If the photos clearly depict DIFFERENT places (e.g. a beach + a city street + a museum interior), give each its own per-photo location so the client can split them into separate steps. If they all plausibly depict the same place, use the same locationName on every photoCaption.
+
+STEP 3 — Group-level fields: Set the group-level "locationName"/"country"/"latitude"/"longitude" to the most common per-photo location (or the dominant one). Provide a summary and eventDescription that reflect the dominant location.`,
         });
       }
 
