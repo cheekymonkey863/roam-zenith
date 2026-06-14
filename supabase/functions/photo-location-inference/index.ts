@@ -27,6 +27,12 @@ interface PhotoCaptionResult {
   caption: string;
   sceneDescription?: string;
   richTags?: string[];
+  // Per-photo location identification (used to split no-GPS groups when
+  // the AI determines individual photos depict different places).
+  locationName?: string;
+  country?: string;
+  latitude?: number | null;
+  longitude?: number | null;
 }
 
 interface InferenceResult {
@@ -73,12 +79,24 @@ function normalizePhotoCaptions(value: unknown): PhotoCaptionResult[] {
   if (!Array.isArray(value)) return [];
 
   return value
-    .map((item: any) => ({
-      captionId: normalizeString(item?.captionId, ""),
-      caption: normalizeString(item?.caption, ""),
-      sceneDescription: normalizeString(item?.sceneDescription, ""),
-      richTags: normalizeRichTags(item?.richTags),
-    }))
+    .map((item: any) => {
+      const lat = typeof item?.latitude === "number" && Number.isFinite(item.latitude) ? item.latitude : null;
+      const lng = typeof item?.longitude === "number" && Number.isFinite(item.longitude) ? item.longitude : null;
+      return {
+        captionId: normalizeString(item?.captionId, ""),
+        caption: normalizeString(item?.caption, ""),
+        sceneDescription: normalizeString(item?.sceneDescription, ""),
+        richTags: normalizeRichTags(item?.richTags),
+        locationName: typeof item?.locationName === "string" && item.locationName.trim().length > 0
+          ? item.locationName.trim()
+          : undefined,
+        country: typeof item?.country === "string" && item.country.trim().length > 0
+          ? item.country.trim()
+          : undefined,
+        latitude: lat !== null && Math.abs(lat) <= 90 ? lat : null,
+        longitude: lng !== null && Math.abs(lng) <= 180 ? lng : null,
+      };
+    })
     .filter((item: PhotoCaptionResult) => item.captionId.length > 0 && item.caption.length > 0);
 }
 
@@ -274,7 +292,13 @@ METADATA:
 - Media count: ${group.photos.length} item(s)
 ${group.photos.filter(p => p.takenAt).map(p => `- Timestamp: ${p.takenAt}`).join("\n")}
 
-TASK: Identify the location purely from visual evidence (signage, architecture, landmarks, language on signs). Return city/landmark name, country, estimated lat/lng, one summary, one eventDescription, and one caption per media item.`,
+TASK: These media were grouped together ONLY because they lack GPS and were captured around the same time. They may or may not depict the same place.
+
+STEP 1 — Per-photo identification: For EACH media item, look at the visual evidence (signage, architecture, landmarks, language on signs, distinctive backdrops) and identify its specific location independently. Populate "locationName", "country", "latitude", and "longitude" on each photoCaptions entry with your best per-photo guess.
+
+STEP 2 — Group split detection: If the photos clearly depict DIFFERENT places (e.g. a beach + a city street + a museum interior), give each its own per-photo location so the client can split them into separate steps. If they all plausibly depict the same place, use the same locationName on every photoCaption.
+
+STEP 3 — Group-level fields: Set the group-level "locationName"/"country"/"latitude"/"longitude" to the most common per-photo location (or the dominant one). Provide a summary and eventDescription that reflect the dominant location.`,
         });
       }
 
@@ -339,6 +363,10 @@ TASK: Identify the location purely from visual evidence (signage, architecture, 
                                 type: "array",
                                 items: { type: "string" },
                               },
+                              locationName: { type: "string", description: "Per-photo location name. For no-GPS groups, set this on every photo so the client can split the group if photos depict different places." },
+                              country: { type: "string", description: "Per-photo country. Optional; only set for no-GPS groups." },
+                              latitude: { type: "number", description: "Per-photo latitude. Optional; only set for no-GPS groups." },
+                              longitude: { type: "number", description: "Per-photo longitude. Optional; only set for no-GPS groups." },
                             },
                             required: ["captionId", "caption"],
                             additionalProperties: false,
