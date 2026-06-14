@@ -374,7 +374,7 @@ async function normalizeImageFileForBrowser(file: File): Promise<File> {
 
 async function parseMediaExif(file: File) {
   try {
-    return await exifr.parse(file, {
+    const result = await exifr.parse(file, {
       gps: true,
       tiff: true,
       xmp: true,
@@ -382,7 +382,17 @@ async function parseMediaExif(file: File) {
       jfif: true,
       multiSegment: true,
     });
-  } catch {
+    if (result) return result;
+    console.warn(`[exif] parse returned empty for ${file.name} (type=${file.type}, size=${file.size})`);
+  } catch (error) {
+    console.warn(`[exif] full parse failed for ${file.name}:`, error);
+  }
+
+  // Fallback: minimal parse — succeeds on files where the broader options fail
+  try {
+    return await exifr.parse(file, { gps: true });
+  } catch (error) {
+    console.warn(`[exif] fallback parse failed for ${file.name}:`, error);
     return null;
   }
 }
