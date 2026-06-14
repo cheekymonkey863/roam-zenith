@@ -500,56 +500,104 @@ export async function processImportedMediaFiles(
     };
   });
 
+  const normalizePlaceKey = (name: string | undefined | null) =>
+    (name ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+
   const inferredNoGpsSteps = (
     await Promise.all(
-      noGpsGroups.map(async (group): Promise<ImportedMediaStep | null> => {
+      noGpsGroups.flatMap((group): Array<Promise<ImportedMediaStep | null>> => {
         const inferred = inferredLocations.get(group.key);
         const contextualStep = findContextStepForNoGpsGroup(group.photos, baseSteps);
-        if (!inferred && !contextualStep) return null;
+        if (!inferred && !contextualStep) return [Promise.resolve(null)];
 
-        let latitude = contextualStep?.latitude ?? inferred?.latitude ?? null;
-        let longitude = contextualStep?.longitude ?? inferred?.longitude ?? null;
+        // Build a per-caption lookup for AI per-photo locations.
+        const captionMap = new Map(
+          (inferred?.photoCaptions ?? []).map((cap) => [cap.captionId, cap]),
+        );
 
-        if ((latitude === null || longitude === null) && inferred?.locationName) {
-          const geocoded = await geocodeLocationName(inferred.locationName, inferred.country);
-          latitude = geocoded?.latitude ?? null;
-          longitude = geocoded?.longitude ?? null;
+        // Partition the group's photos by AI-identified location.
+        // Photos without a per-photo location fall back to the group-level location.
+        const groupFallbackName = inferred?.locationName ?? contextualStep?.locationName ?? "Visually Identified Location";
+        const partitions = new Map<string, { name: string; country?: string; lat: number | null; lng: number | null; photos: PhotoExifData[] }>();
+
+        for (const photo of group.photos) {
+          const cap = captionMap.get(photo.captionId);
+          const perPhotoName = cap?.locationName?.trim();
+          const placeName = perPhotoName && perPhotoName.length > 0 ? perPhotoName : groupFallbackName;
+          const placeKey = normalizePlaceKey(placeName);
+          let bucket = partitions.get(placeKey);
+          if (!bucket) {
+            bucket = {
+              name: placeName,
+              country: cap?.country,
+              lat: typeof cap?.latitude === "number" ? cap.latitude : null,
+              lng: typeof cap?.longitude === "number" ? cap.longitude : null,
+              photos: [],
+            };
+            partitions.set(placeKey, bucket);
+          }
+          bucket.photos.push(photo);
         }
 
-        if (latitude === null || longitude === null) return null;
+        // Only treat as a split when the AI returned more than one distinct
+        // per-photo location and at least two partitions actually contain photos.
+        const isSplit = partitions.size > 1;
 
-        const locationName =
-          contextualStep && isKnownLocationName(contextualStep.locationName)
-            ? contextualStep.locationName
-            : inferred?.locationName || "Visually Identified Location";
-        const country =
-          contextualStep?.country && contextualStep.country !== "Unknown"
-            ? contextualStep.country
-            : inferred?.country || "Unknown";
-        const stepDetails = buildImportedStepDetails({
-          locationName,
-          country,
-          placeTypes: contextualStep?.placeTypes,
-          fallbackEventType: contextualStep?.eventType,
+        return Array.from(partitions.values()).map(async (bucket, partIdx): Promise<ImportedMediaStep | null> => {
+          let latitude = bucket.lat ?? (isSplit ? null : contextualStep?.latitude ?? inferred?.latitude ?? null);
+          let longitude = bucket.lng ?? (isSplit ? null : contextualStep?.longitude ?? inferred?.longitude ?? null);
+
+          if ((latitude === null || longitude === null) && bucket.name) {
+            const geocoded = await geocodeLocationName(bucket.name, bucket.country ?? inferred?.country);
+            latitude = geocoded?.latitude ?? latitude;
+            longitude = geocoded?.longitude ?? longitude;
+          }
+
+          if (latitude === null || longitude === null) return null;
+
+          const locationName =
+            !isSplit && contextualStep && isKnownLocationName(contextualStep.locationName)
+              ? contextualStep.locationName
+              : bucket.name;
+          const country =
+            bucket.country && bucket.country !== "Unknown"
+              ? bucket.country
+              : contextualStep?.country && contextualStep.country !== "Unknown"
+                ? contextualStep.country
+                : inferred?.country || "Unknown";
+
+          const stepDetails = buildImportedStepDetails({
+            locationName,
+            country,
+            placeTypes: contextualStep?.placeTypes,
+            fallbackEventType: contextualStep?.eventType,
+          });
+
+          // Scope the photoCaptions to this partition's photos only.
+          const allowedCaptionIds = new Set(bucket.photos.map((p) => p.captionId));
+          const scopedCaptions = (inferred?.photoCaptions ?? []).filter((cap) =>
+            allowedCaptionIds.has(cap.captionId),
+          );
+
+          const photos = applyMediaInsights(bucket.photos, scopedCaptions, videoInsights, locationName, stepDetails.eventType);
+          const dates = photos.map((photo) => photo.takenAt).filter(Boolean) as Date[];
+          const earliestDate = dates.length > 0 ? new Date(Math.min(...dates.map((date) => date.getTime()))) : null;
+
+          return {
+            key: isSplit ? `${group.key}-split-${partIdx}` : group.key,
+            locationName,
+            country,
+            latitude,
+            longitude,
+            photos,
+            earliestDate,
+            selected: true,
+            eventType: stepDetails.eventType,
+            confidence: contextualStep ? pickHigherConfidence(inferred?.confidence ?? "low", contextualStep.confidence) : inferred?.confidence ?? "low",
+            summary: buildLocationSummary(locationName, country, stepDetails.eventType),
+            description: buildEventDescription(locationName, country, stepDetails.eventType),
+          };
         });
-        const photos = applyMediaInsights(group.photos, inferred?.photoCaptions, videoInsights, locationName, stepDetails.eventType);
-        const dates = photos.map((photo) => photo.takenAt).filter(Boolean) as Date[];
-        const earliestDate = dates.length > 0 ? new Date(Math.min(...dates.map((date) => date.getTime()))) : null;
-
-        return {
-          key: group.key,
-          locationName,
-          country,
-          latitude,
-          longitude,
-          photos,
-          earliestDate,
-          selected: true,
-          eventType: stepDetails.eventType,
-          confidence: contextualStep ? pickHigherConfidence(inferred?.confidence ?? "low", contextualStep.confidence) : inferred?.confidence ?? "low",
-          summary: buildLocationSummary(locationName, country, stepDetails.eventType),
-          description: buildEventDescription(locationName, country, stepDetails.eventType),
-        };
       }),
     )
   ).filter((step): step is ImportedMediaStep => step !== null);
