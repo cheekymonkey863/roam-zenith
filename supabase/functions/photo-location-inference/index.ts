@@ -79,12 +79,24 @@ function normalizePhotoCaptions(value: unknown): PhotoCaptionResult[] {
   if (!Array.isArray(value)) return [];
 
   return value
-    .map((item: any) => ({
-      captionId: normalizeString(item?.captionId, ""),
-      caption: normalizeString(item?.caption, ""),
-      sceneDescription: normalizeString(item?.sceneDescription, ""),
-      richTags: normalizeRichTags(item?.richTags),
-    }))
+    .map((item: any) => {
+      const lat = typeof item?.latitude === "number" && Number.isFinite(item.latitude) ? item.latitude : null;
+      const lng = typeof item?.longitude === "number" && Number.isFinite(item.longitude) ? item.longitude : null;
+      return {
+        captionId: normalizeString(item?.captionId, ""),
+        caption: normalizeString(item?.caption, ""),
+        sceneDescription: normalizeString(item?.sceneDescription, ""),
+        richTags: normalizeRichTags(item?.richTags),
+        locationName: typeof item?.locationName === "string" && item.locationName.trim().length > 0
+          ? item.locationName.trim()
+          : undefined,
+        country: typeof item?.country === "string" && item.country.trim().length > 0
+          ? item.country.trim()
+          : undefined,
+        latitude: lat !== null && Math.abs(lat) <= 90 ? lat : null,
+        longitude: lng !== null && Math.abs(lng) <= 180 ? lng : null,
+      };
+    })
     .filter((item: PhotoCaptionResult) => item.captionId.length > 0 && item.caption.length > 0);
 }
 
