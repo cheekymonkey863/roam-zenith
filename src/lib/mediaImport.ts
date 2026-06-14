@@ -543,6 +543,12 @@ export async function processImportedMediaFiles(
         // per-photo location and at least two partitions actually contain photos.
         const isSplit = partitions.size > 1;
 
+        console.log(`[no-gps-split] group=${group.key} photos=${group.photos.length} partitions=${partitions.size} split=${isSplit}`, {
+          perPhotoLocations: Array.from(captionMap.values()).map((c) => ({ id: c.captionId, loc: c.locationName })),
+          partitionKeys: Array.from(partitions.keys()),
+        });
+
+
         return Array.from(partitions.values()).map(async (bucket, partIdx): Promise<ImportedMediaStep | null> => {
           let latitude = bucket.lat ?? (isSplit ? null : contextualStep?.latitude ?? inferred?.latitude ?? null);
           let longitude = bucket.lng ?? (isSplit ? null : contextualStep?.longitude ?? inferred?.longitude ?? null);
